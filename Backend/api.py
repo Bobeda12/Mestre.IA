@@ -42,19 +42,35 @@ class UserAction(BaseModel):
     session_id: str
     action: str
 
-# --- ENDPOINTS ---
+# --- ENDPOINTS DE OPÇÕES (MENU) ---
 
 @app.get("/options/races")
 def get_races():
+    """Retorna a lista de nomes das raças"""
     return {"opcoes": regras.get_races_list()}
+
+@app.get("/options/races/{name}")
+def get_race_info(name: str):
+    """Retorna os detalhes (lore, atributos) de uma raça específica"""
+    info = regras.get_race_details(name)
+    if not info:
+        raise HTTPException(status_code=404, detail="Raça não encontrada")
+    return info
+
+@app.get("/options/classes")
+def get_classes():
+    """Retorna a lista de nomes das classes"""
+    return {"opcoes": regras.get_classes_list()}
 
 @app.get("/options/classes/{name}")
 def get_class_info(name: str):
-    """Lê o arquivo classes.json e retorna a lore e status"""
+    """Retorna os detalhes (lore, hp) de uma classe específica"""
     info = regras.get_class_details(name)
     if not info:
         raise HTTPException(status_code=404, detail="Classe não encontrada")
     return info
+
+# --- ENDPOINTS DO JOGO ---
 
 @app.post("/create_character")
 def create_character(char: CharacterCreationRequest, db: Session = Depends(get_db)):
@@ -71,7 +87,7 @@ def create_character(char: CharacterCreationRequest, db: Session = Depends(get_d
     hp_inicial = dados_classe.get('dado_vida', 10) + 2
     inv_inicial = dados_classe.get('equipamento_inicial', [])
 
-    # 3. O "Cérebro" do Mestre (System Prompt) - AGORA COM A PALAVRA "JSON"
+    # 3. O "Cérebro" do Mestre (System Prompt)
     system_prompt = f"""
     Você é um Mestre de RPG D&D 5e Sombrio.
     O Jogador é: {char.nome} ({char.raca} {char.classe}).
@@ -101,7 +117,7 @@ def create_character(char: CharacterCreationRequest, db: Session = Depends(get_d
         hp_max=hp_inicial,
         forca=10, destreza=10, inteligencia=10,
         inventario=inv_inicial,
-        historico_chat=[{"role": "system", "content": system_prompt}] # Agora contém a palavra JSON!
+        historico_chat=[{"role": "system", "content": system_prompt}] 
     )
     
     db.add(novo_heroi)
@@ -118,7 +134,7 @@ async def chat_endpoint(user_input: UserAction, db: Session = Depends(get_db)):
         return {"narrativa": "Personagem não encontrado. Crie um novo!", "game_over": True}
 
     # 2. Recupera histórico
-    historico = list(heroi.historico_chat) # Copia para não travar
+    historico = list(heroi.historico_chat) 
     
     # 3. Adiciona ação do usuário
     prompt_usuario = f"[{heroi.nome} ({heroi.classe}) | HP: {heroi.hp_atual}/{heroi.hp_max}] Ação: {user_input.action}"
@@ -130,14 +146,14 @@ async def chat_endpoint(user_input: UserAction, db: Session = Depends(get_db)):
             model=MODEL_NAME,
             messages=historico,
             temperature=0.7,
-            response_format={"type": "json_object"} # Força JSON
+            response_format={"type": "json_object"} 
         )
         
         resp_text = completion.choices[0].message.content
         historico.append({"role": "assistant", "content": resp_text})
         
         # 5. Processa JSON da IA
-        dados = json.loads(resp_text) # A IA deve mandar narrativa, dano_recebido, etc.
+        dados = json.loads(resp_text) 
         
         # 6. Atualiza o Banco
         dano = dados.get("dano_recebido", 0)
@@ -146,13 +162,12 @@ async def chat_endpoint(user_input: UserAction, db: Session = Depends(get_db)):
         
         item_novo = dados.get("novo_item")
         if item_novo:
-            # Truque para atualizar lista no SQLAlchemy
             novo_inv = list(heroi.inventario)
             novo_inv.append(item_novo)
             heroi.inventario = novo_inv
 
-        heroi.historico_chat = historico # Salva o chat atualizado
-        db.commit() # Grava no disco!
+        heroi.historico_chat = historico 
+        db.commit() 
 
         return {
             "narrativa": dados.get("narrativa", "Algo aconteceu..."),

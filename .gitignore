@@ -1,12 +1,19 @@
-.en# Pastas pesadas do Python e Node
-node_modules/
-venv/
-__pycache__/
-
-# Arquivos de sistema
+# --- GERAL ---
 .DS_Store
 Thumbs.db
 
-# Arquivos Secretos (NUNCA REMOVA ISSO DAQUI)
+# --- PYTHON (Backend) ---
+Backend/venv/
+Backend/__pycache__/
+Backend/*.pyc
+*.db
+*.sqlite3
+
+# --- NODE (Frontend) ---
+Frontend/node_modules/
+Frontend/dist/
+Frontend/.eslintcache
+
+# --- SEGURANÇA (CRÍTICO) ---
 .env
 .env.local
