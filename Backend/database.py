@@ -2,38 +2,40 @@ from sqlalchemy import create_engine, Column, Integer, String, JSON
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 
-# 1. Conexão com o Arquivo (O "Save Game")
 DATABASE_URL = "sqlite:///./rpg_save.db"
 
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
-# 2. A Tabela de Personagem (Ficha)
 class HeroModel(Base):
     __tablename__ = "herois"
 
-    session_id = Column(String, primary_key=True, index=True) # A "Identidade" do save
+    session_id = Column(String, primary_key=True, index=True)
     nome = Column(String)
     raca = Column(String)
     classe = Column(String)
+    
+    # Status Vitais
     hp_atual = Column(Integer)
     hp_max = Column(Integer)
+    nivel = Column(Integer, default=1)
+    xp = Column(Integer, default=0)
     
-    # Atributos
-    forca = Column(Integer)
-    destreza = Column(Integer)
-    inteligencia = Column(Integer)
+    # Atributos (AGORA É UM JSON)
+    # Guarda: {"forca": 10, "destreza": 12, "inteligencia": 8...}
+    atributos = Column(JSON)
     
-    # Inventário e Histórico (Salvos como texto JSON)
-    inventario = Column(JSON) 
-    historico_chat = Column(JSON) # Salva o papo com a IA
+    # Estados do Mundo (JSONs para flexibilidade)
+    inventario = Column(JSON, default=[])
+    world_state = Column(JSON, default={})    # Guarda: Clima, Hora, Local
+    combat_state = Column(JSON, default={})   # Guarda: Inimigos vivos, Turno
+    
+    historico_chat = Column(JSON)
 
-# 3. Cria o arquivo do banco se não existir
 def criar_banco():
     Base.metadata.create_all(bind=engine)
 
-# 4. Ferramenta para abrir/fechar conexão
 def get_db():
     db = SessionLocal()
     try:

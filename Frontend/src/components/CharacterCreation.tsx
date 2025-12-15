@@ -57,7 +57,7 @@ export default function CharacterCreation({ onCharacterCreated }: CharacterCreat
   });
   const [pointsRemaining, setPointsRemaining] = useState(27);
   
-  // --- NOVO: ALOCAÇÃO DE PONTOS LIVRES ---
+  // --- ALOCAÇÃO DE PONTOS LIVRES ---
   const [freePointsAllocation, setFreePointsAllocation] = useState<Record<string, number>>({});
   
   // Estados de UI
@@ -94,7 +94,6 @@ export default function CharacterCreation({ onCharacterCreated }: CharacterCreat
 
   // --- LÓGICA DE ATRIBUTOS ---
   
-  // 1. Point Buy (Compra de Pontos)
   const handleAttributeChange = (attr: string, delta: number) => {
       const currentVal = attributes[attr];
       const newVal = currentVal + delta;
@@ -105,19 +104,15 @@ export default function CharacterCreation({ onCharacterCreated }: CharacterCreat
       setPointsRemaining(prev => prev - costDiff);
   };
 
-  // 2. Pontos Livres (Ex: Meio-Elfo)
   const handleFreeAllocation = (attr: string) => {
       setFreePointsAllocation(prev => {
           const isSelected = prev[attr] === 1;
-          // Se já está selecionado, remove.
           if (isSelected) {
               const { [attr]: _, ...rest } = prev;
               return rest;
           }
-          // Se não está, verifica se tem pontos disponíveis
           const currentTotal = Object.values(prev).reduce((a, b) => a + b, 0);
           const maxFree = raceData?.bonus_atributos?.['livre_escolha'] || 0;
-          
           if (currentTotal < maxFree) {
               return { ...prev, [attr]: 1 };
           }
@@ -125,7 +120,6 @@ export default function CharacterCreation({ onCharacterCreated }: CharacterCreat
       });
   };
 
-  // 3. Cálculo Final (Base + Raça Fixa + Raça Livre)
   const getFinalAttribute = (attr: string) => {
       const base = attributes[attr];
       const fixedBonus = raceData?.bonus_atributos?.[attr] || 0;
@@ -147,28 +141,50 @@ export default function CharacterCreation({ onCharacterCreated }: CharacterCreat
     (step === 3 && !!name && !!gender) || 
     (step === 4 && pointsRemaining === 0 && usedFreePoints === maxFreePoints);
 
+  // --- NOVA LÓGICA DE FINALIZAÇÃO (SAVE AUTOMÁTICO) ---
   const handleFinish = async () => {
     setLoading(true);
     try {
       const res = await axios.post("http://127.0.0.1:8000/create_character", {
         nome: name, raca: selectedRace, classe: selectedClass, historia: history
       });
-      onCharacterCreated(res.data.session_id);
+      const sessionId = res.data.session_id;
       
-      // --- A MUDANÇA ESTÁ AQUI ---
-      // Decide qual imagem mandar (a da IA se tiver, ou a da Classe se não tiver)
+      onCharacterCreated(sessionId);
+      
       const imageToSend = finalImageUrl || getLocalImage('classes', selectedClass);
       
-      // Navega levando os dados na "mochila" (state)
+      // Cálculos Finais
+      const finalDex = getFinalAttribute('destreza');
+      const finalCon = getFinalAttribute('constituicao');
+      const dexMod = getModifierValue(finalDex);
+      const conMod = getModifierValue(finalCon);
+      const calculatedDefense = 10 + dexMod;
+      const calculatedMaxHp = (classData?.dado_vida || 10) + conMod;
+
+      // --- SALVA NO LOCAL STORAGE (O SEGREDO!) ---
+      const saveInfo = {
+          id: sessionId,
+          name: name,
+          race: selectedRace,
+          class: selectedClass,
+          image: imageToSend,
+          maxHp: calculatedMaxHp,
+          defense: calculatedDefense,
+          date: new Date().toLocaleDateString()
+      };
+
+      const existingSaves = JSON.parse(localStorage.getItem('mestre_ia_saves') || '[]');
+      // Adiciona no início da lista
+      localStorage.setItem('mestre_ia_saves', JSON.stringify([saveInfo, ...existingSaves]));
+
+      // Navega
       navigate('/jogar', { 
         state: { 
-            charImage: imageToSend,
-            charName: name,
-            charRace: selectedRace,
-            charClass: selectedClass
+            charImage: imageToSend, charName: name, charRace: selectedRace, charClass: selectedClass,
+            charDefense: calculatedDefense, charMaxHp: calculatedMaxHp
         } 
       });
-      // ---------------------------
 
     } catch {
       alert("Erro ao conectar.");
@@ -210,12 +226,8 @@ export default function CharacterCreation({ onCharacterCreated }: CharacterCreat
                 {[1,2,3,4,5].map(s => (
                     <button 
                         key={s} 
-                        // Lógica: Só pode clicar em passos anteriores ou no atual
                         disabled={s > step && s !== step + 1} 
-                        onClick={() => {
-                            // Se estiver no passo 5, permite voltar
-                            if (step === 5 || (s < step)) setStep(s);
-                        }}
+                        onClick={() => { if (step === 5 || (s < step)) setStep(s); }}
                         className={`h-1 flex-1 mx-1 rounded transition-all duration-300 ${step >= s ? 'bg-rpg-gold cursor-pointer hover:h-2' : 'bg-gray-800 cursor-not-allowed'}`}
                     />
                 ))}
@@ -240,14 +252,12 @@ export default function CharacterCreation({ onCharacterCreated }: CharacterCreat
 
             {step === 4 && (
                 <div className="p-4 space-y-6 animate-fade-in">
-                    
-                    {/* POINT BUY */}
                     <div className="bg-black/40 p-4 rounded border border-blue-900 text-center">
                         <span className="block text-gray-400 text-xs uppercase tracking-widest">Pontos Restantes</span>
                         <span className={`text-4xl font-rpg ${pointsRemaining === 0 ? 'text-green-500' : 'text-blue-400'}`}>{pointsRemaining}/27</span>
                     </div>
 
-                    {/* ALOCAÇÃO DE PONTOS LIVRES (SE HOUVER) */}
+                    {/* SELEÇÃO DE PONTOS LIVRES */}
                     {maxFreePoints > 0 && (
                         <div className={`p-3 rounded border text-center ${usedFreePoints === maxFreePoints ? 'bg-green-900/20 border-green-700' : 'bg-rpg-gold/10 border-rpg-gold'}`}>
                             <span className="text-sm font-bold text-gray-200 block mb-1">
@@ -264,32 +274,17 @@ export default function CharacterCreation({ onCharacterCreated }: CharacterCreat
                         {Object.keys(attributes).map(attr => {
                             const fixedBonus = raceData?.bonus_atributos?.[attr] || 0;
                             const isFreeSelected = freePointsAllocation[attr] === 1;
-                            const isFreeAvailable = maxFreePoints > 0 && fixedBonus === 0; // Só pode por ponto livre se não tiver fixo
+                            const isFreeAvailable = maxFreePoints > 0 && fixedBonus === 0;
 
                             return (
                                 <div key={attr} className="flex items-center justify-between bg-gray-900/50 p-2 rounded border border-gray-800 hover:border-gray-600">
                                     <div className="w-20">
                                         <span className="font-bold text-sm text-gray-300 block">{formatAttribute(attr)}</span>
-                                        {/* Mostra Bônus Fixo */}
                                         {fixedBonus > 0 && <span className="text-[10px] text-blue-400 font-bold">+{fixedBonus} Raça</span>}
-                                        
-                                        {/* Botão de Bônus Livre */}
                                         {isFreeAvailable && (
-                                            <button 
-                                                onClick={() => handleFreeAllocation(attr)}
-                                                disabled={!isFreeSelected && usedFreePoints >= maxFreePoints}
-                                                className={`text-[10px] px-1 rounded border mt-1 transition-colors ${
-                                                    isFreeSelected 
-                                                    ? 'bg-green-600 text-white border-green-500' 
-                                                    : 'bg-black text-gray-500 border-gray-700 hover:border-gray-500'
-                                                }`}
-                                            >
-                                                {isFreeSelected ? '+1 Extra' : '+ Adicionar'}
-                                            </button>
+                                            <button onClick={() => handleFreeAllocation(attr)} disabled={!isFreeSelected && usedFreePoints >= maxFreePoints} className={`text-[10px] px-1 rounded border mt-1 transition-colors ${isFreeSelected ? 'bg-green-600 text-white border-green-500' : 'bg-black text-gray-500 border-gray-700 hover:border-gray-500'}`}>{isFreeSelected ? '+1 Extra' : '+ Adicionar'}</button>
                                         )}
                                     </div>
-
-                                    {/* Controles do Point Buy */}
                                     <div className="flex items-center gap-3">
                                         <button onClick={() => handleAttributeChange(attr, -1)} className="w-8 h-8 rounded bg-gray-800 hover:bg-red-900 flex items-center justify-center text-white disabled:opacity-30" disabled={attributes[attr] <= 8}><Minus size={14}/></button>
                                         <span className="text-xl w-6 text-center font-mono">{attributes[attr]}</span>
@@ -303,21 +298,12 @@ export default function CharacterCreation({ onCharacterCreated }: CharacterCreat
                 </div>
             )}
 
-            {/* BOTÃO FINAL (PASSO 5) */}
             {step === 5 && (
                 <div className="p-6 h-full flex flex-col justify-center items-center text-center animate-fade-in">
-                    <Crown size={48} className="text-rpg-gold mb-4 animate-pulse"/>
-                    <h3 className="text-2xl font-rpg text-white mb-2">Destino Selado</h3>
+                    <Crown size={48} className="text-rpg-gold mb-4 animate-pulse"/><h3 className="text-2xl font-rpg text-white mb-2">Destino Selado</h3>
                     <p className="text-gray-400 text-sm mb-8">Confirme os dados da ficha ao lado para iniciar.</p>
-                    
-                    <button onClick={handleFinish} disabled={loading} className="w-full py-5 bg-green-700 hover:bg-green-600 text-white font-bold text-lg rounded shadow-lg flex items-center justify-center gap-3 transition-all hover:scale-105 mb-4">
-                        {loading ? "Iniciando..." : <>JOGAR AGORA <ChevronRight /></>}
-                    </button>
-
-                    {/* Botão de Voltar Explícito */}
-                    <button onClick={() => setStep(4)} className="text-gray-500 hover:text-rpg-gold flex items-center gap-2 text-sm underline decoration-gray-700 hover:decoration-rpg-gold">
-                        <Edit2 size={14}/> Editar Atributos
-                    </button>
+                    <button onClick={handleFinish} disabled={loading} className="w-full py-5 bg-green-700 hover:bg-green-600 text-white font-bold text-lg rounded shadow-lg flex items-center justify-center gap-3 transition-all hover:scale-105 mb-4">{loading ? "Iniciando..." : <>JOGAR AGORA <ChevronRight /></>}</button>
+                    <button onClick={() => setStep(4)} className="text-gray-500 hover:text-rpg-gold flex items-center gap-2 text-sm underline decoration-gray-700 hover:decoration-rpg-gold"><Edit2 size={14}/> Editar Atributos</button>
                 </div>
             )}
         </div>
