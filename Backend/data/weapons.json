@@ -1,0 +1,20 @@
+{
+  "Simples": {
+    "Adaga": { "dano": "1d4", "tipo": "Perfurante", "propriedades": ["Leve", "Arremesso"] },
+    "Besta Leve": { "dano": "1d8", "tipo": "Perfurante", "propriedades": ["Munição", "Duas Mãos"] },
+    "Cajado": { "dano": "1d6", "tipo": "Concussão", "propriedades": ["Versátil (1d8)"] },
+    "Dardo": { "dano": "1d4", "tipo": "Perfurante", "propriedades": ["Arremesso"] },
+    "Funda": { "dano": "1d4", "tipo": "Concussão", "propriedades": ["Munição"] },
+    "Maça": { "dano": "1d6", "tipo": "Concussão", "propriedades": [] },
+    "Machadinha": { "dano": "1d6", "tipo": "Cortante", "propriedades": ["Leve", "Arremesso"] }
+  },
+  "Marciais": {
+    "Arco Longo": { "dano": "1d8", "tipo": "Perfurante", "propriedades": ["Munição", "Pesada", "Duas Mãos"] },
+    "Cimitarra": { "dano": "1d6", "tipo": "Cortante", "propriedades": ["Leve", "Sutil"] },
+    "Espada Curta": { "dano": "1d6", "tipo": "Perfurante", "propriedades": ["Leve", "Sutil"] },
+    "Espada Longa": { "dano": "1d8", "tipo": "Cortante", "propriedades": ["Versátil (1d10)"] },
+    "Machado Grande": { "dano": "1d12", "tipo": "Cortante", "propriedades": ["Pesada", "Duas Mãos"] },
+    "Martelo de Guerra": { "dano": "1d8", "tipo": "Concussão", "propriedades": ["Versátil (1d10)"] },
+    "Rapier": { "dano": "1d8", "tipo": "Perfurante", "propriedades": ["Sutil"] }
+  }
+}

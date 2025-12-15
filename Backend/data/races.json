@@ -1,0 +1,74 @@
+{
+  "Anão": {
+    "descricao": "Audazes e resilientes, os anões são conhecidos como habilidosos guerreiros, mineradores e trabalhadores em pedra e metal. Eles suportam o trabalho físico e perigos que a maioria das outras raças não consegue.",
+    "quote": "A pedra não mente, e o aço nunca esquece.",
+    "bonus_atributos": { "constituicao": 2 },
+    "deslocamento": 7.5,
+    "visao": "Escuro",
+    "tracos": ["Resistência a Veneno", "Treino de Combate Anão", "Especialização em Rochas"]
+  },
+  "Elfo": {
+    "descricao": "Elfos são um povo mágico de graça sobrenatural, vivendo no mundo sem fazer parte inteiramente dele. Eles amam a natureza e a magia, a arte e a música, a poesia e as coisas boas do mundo.",
+    "quote": "A vida humana é como o bater de asas de uma borboleta. Breve e frágil.",
+    "bonus_atributos": { "destreza": 2 },
+    "deslocamento": 9,
+    "visao": "Escuro",
+    "tracos": ["Sentidos Aguçados", "Ancestralidade Feérica", "Transe"]
+  },
+  "Halfling": {
+    "descricao": "Os pequeninos sobrevivem em um mundo cheio de criaturas maiores evitando serem notados ou, se isso não for possível, evitando o conflito. Eles valorizam a paz, a comida e o conforto do lar.",
+    "quote": "O mundo é grande demais para não se ter um bom café da manhã.",
+    "bonus_atributos": { "destreza": 2 },
+    "deslocamento": 7.5,
+    "visao": "Normal",
+    "tracos": ["Sortudo", "Bravura", "Agilidade Halfling"]
+  },
+  "Humano": {
+    "descricao": "Humanos são os mais adaptáveis e ambiciosos entre as raças comuns. Eles constroem impérios duradouros, exploram fronteiras desconhecidas e sonham mais alto que qualquer outro povo.",
+    "quote": "Nós moldamos nosso próprio destino.",
+    "bonus_atributos": { "forca": 1, "destreza": 1, "constituicao": 1, "inteligencia": 1, "sabedoria": 1, "carisma": 1 },
+    "deslocamento": 9,
+    "visao": "Normal",
+    "tracos": ["Versatilidade Humana"]
+  },
+  "Draconato": {
+    "descricao": "Nascidos de dragões, como o nome diz, os draconatos caminham orgulhosamente por um mundo que os recebe com temor incompreensível. Eles valorizam o clã e a honra acima da própria vida.",
+    "quote": "Meu sopro é o fogo da minha ancestralidade.",
+    "bonus_atributos": { "forca": 2, "carisma": 1 },
+    "deslocamento": 9,
+    "visao": "Normal",
+    "tracos": ["Ataque de Sopro", "Resistência a Dano Dracônico"]
+  },
+  "Gnomo": {
+    "descricao": "Um zumbido constante de atividade permeia os lares onde os gnomos formam seus bairros muito unidos. Eles vivem para a invenção, a exploração e a descoberta dos segredos da magia e da tecnologia.",
+    "quote": "Se não explodiu ainda, é porque não terminei de ajustar.",
+    "bonus_atributos": { "inteligencia": 2 },
+    "deslocamento": 7.5,
+    "visao": "Escuro",
+    "tracos": ["Esperteza Gnomica", "Engenhoqueiro"]
+  },
+  "Meio-Elfo": {
+    "descricao": "Caminhando entre dois mundos, mas não pertencendo a nenhum, os meio-elfos combinam o que alguns dizem ser as melhores qualidades de seus pais elfos e humanos: curiosidade e ambição temperadas pelos sentidos aguçados.",
+    "quote": "Eu vejo o que vocês ignoram.",
+    "bonus_atributos": { "carisma": 2, "livre_escolha": 2 },
+    "deslocamento": 9,
+    "visao": "Escuro",
+    "tracos": ["Ancestralidade Feérica", "Versatilidade em Perícia"]
+  },
+  "Meio-Orc": {
+    "descricao": "Com a força de seus ancestrais orcs e a astúcia humana, os meio-orcs são guerreiros formidáveis que lutam por um lugar no mundo. Eles sentem as emoções de forma intensa, seja a fúria da batalha ou a alegria da camaradagem.",
+    "quote": "A dor é apenas um aviso de que ainda estou vivo.",
+    "bonus_atributos": { "forca": 2, "constituicao": 1 },
+    "deslocamento": 9,
+    "visao": "Escuro",
+    "tracos": ["Ameaçador", "Resistência Implacável", "Ataques Selvagens"]
+  },
+  "Tiefling": {
+    "descricao": "Recebidos com olhares e sussurros, tieflings sofrem violência e insultos nas ruas, pagando pelos pecados de seus ancestrais infernais. Eles aprendem cedo a ser autossuficientes e desconfiados.",
+    "quote": "Não julgue meu coração pelos meus chifres.",
+    "bonus_atributos": { "inteligencia": 1, "carisma": 2 },
+    "deslocamento": 9,
+    "visao": "Escuro",
+    "tracos": ["Resistência Infernal", "Legado Infernal"]
+  }
+}

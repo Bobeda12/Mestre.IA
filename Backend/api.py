@@ -1,40 +1,26 @@
 import os
 import json
-import time
 from dotenv import load_dotenv
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Depends
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
-import google.generativeai as genai
+from groq import Groq
+from sqlalchemy.orm import Session
 
+# Importa nossos módulos
+from data_manager import regras
+from database import HeroModel, get_db, criar_banco
+
+# --- CONFIGURAÇÃO ---
 load_dotenv()
+criar_banco() # Garante que o arquivo .db existe
 
-MINHA_CHAVE = os.getenv("GENAI_API_KEY", "COLE_SUA_CHAVE_AQUI")
+MINHA_CHAVE = os.getenv("GROQ_API_KEY")
+if not MINHA_CHAVE:
+    raise ValueError("❌ Configure o GROQ_API_KEY no .env")
 
-if MINHA_CHAVE == "COLE_SUA_CHAVE_AQUI":
-    raise ValueError("Cole sua chave na linha 10!")
-
-genai.configure(api_key=MINHA_CHAVE)
-
-# MUDANÇA: Usando o nome exato que apareceu na sua lista
-MODEL_NAME = "models/gemini-2.0-flash-lite"
-
-SYSTEM_PROMPT = """
-Você é um Mestre de RPG. 
-REGRAS:
-1. IDIOMA: Português do Brasil.
-2. Seja breve (max 3 frases).
-3. Responda APENAS JSON.
-
-FORMATO JSON:
-{
-  "narrativa": "Texto...",
-  "dano_recebido": 0,
-  "novo_item": null,
-  "hp_atual": 20,
-  "game_over": false
-}
-"""
+client = Groq(api_key=MINHA_CHAVE)
+MODEL_NAME = "llama-3.3-70b-versatile"
 
 app = FastAPI()
 
@@ -45,84 +31,136 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# --- DADOS ---
+class CharacterCreationRequest(BaseModel):
+    nome: str
+    raca: str
+    classe: str
+    historia: str = ""
+
 class UserAction(BaseModel):
     session_id: str
     action: str
 
-class GameState:
-    def __init__(self):
-        self.history = []
-        self.hp = 20
-        self.inventory = []
-        self.chat_session = None
+# --- ENDPOINTS ---
 
-games_db = {}
+@app.get("/options/races")
+def get_races():
+    return {"opcoes": regras.get_races_list()}
 
-def limpar_json(texto_sujo):
-    return texto_sujo.replace("```json", "").replace("```", "").strip()
+@app.get("/options/classes/{name}")
+def get_class_info(name: str):
+    """Lê o arquivo classes.json e retorna a lore e status"""
+    info = regras.get_class_details(name)
+    if not info:
+        raise HTTPException(status_code=404, detail="Classe não encontrada")
+    return info
 
-def get_or_create_game(session_id: str):
-    if session_id not in games_db:
-        try:
-            model = genai.GenerativeModel(
-                model_name=MODEL_NAME,
-                generation_config={"response_mime_type": "application/json"},
-                system_instruction=SYSTEM_PROMPT
-            )
-            new_game = GameState()
-            new_game.chat_session = model.start_chat(history=[])
-            games_db[session_id] = new_game
-            
-            # Intro
-            response = new_game.chat_session.send_message("O jogo começou.")
-            texto_limpo = limpar_json(response.text)
-            return new_game, json.loads(texto_limpo)
-        except Exception as e:
-            print(f"Erro ao criar jogo: {e}")
-            # Fallback para não travar se a IA falhar na intro
-            game_fallback = GameState()
-            games_db[session_id] = game_fallback
-            return game_fallback, {"narrativa": "Você acorda na masmorra... (Modo offline temporário)", "hp_atual": 20, "inventory": []}
-            
-    return games_db[session_id], None
+@app.post("/create_character")
+def create_character(char: CharacterCreationRequest, db: Session = Depends(get_db)):
+    session_id = "sessao_demo_1" 
+    
+    # 1. Verifica se já existe save e deleta (reset)
+    heroi_antigo = db.query(HeroModel).filter(HeroModel.session_id == session_id).first()
+    if heroi_antigo:
+        db.delete(heroi_antigo)
+        db.commit()
+
+    # 2. Pega status base da classe
+    dados_classe = regras.get_class_details(char.classe)
+    hp_inicial = dados_classe.get('dado_vida', 10) + 2
+    inv_inicial = dados_classe.get('equipamento_inicial', [])
+
+    # 3. O "Cérebro" do Mestre (System Prompt) - AGORA COM A PALAVRA "JSON"
+    system_prompt = f"""
+    Você é um Mestre de RPG D&D 5e Sombrio.
+    O Jogador é: {char.nome} ({char.raca} {char.classe}).
+    
+    REGRAS DE RESPOSTA (IMPORTANTE):
+    1. Você DEVE responder APENAS no formato JSON.
+    2. Não escreva nada fora do JSON.
+    3. Use o campo 'narrativa' para descrever a história.
+    
+    FORMATO JSON ESPERADO:
+    {{
+        "narrativa": "A descrição da cena...",
+        "dano_recebido": 0,
+        "novo_item": null,
+        "hp_atual": {hp_inicial},
+        "game_over": false
+    }}
+    """
+
+    # 4. Cria a ficha no Banco
+    novo_heroi = HeroModel(
+        session_id=session_id,
+        nome=char.nome,
+        raca=char.raca,
+        classe=char.classe,
+        hp_atual=hp_inicial,
+        hp_max=hp_inicial,
+        forca=10, destreza=10, inteligencia=10,
+        inventario=inv_inicial,
+        historico_chat=[{"role": "system", "content": system_prompt}] # Agora contém a palavra JSON!
+    )
+    
+    db.add(novo_heroi)
+    db.commit()
+    
+    return {"status": "Personagem Salvo!", "session_id": session_id}
 
 @app.post("/chat")
-async def chat_endpoint(user_input: UserAction):
-    session_id = user_input.session_id
-    action = user_input.action
+async def chat_endpoint(user_input: UserAction, db: Session = Depends(get_db)):
+    # 1. Carrega o herói do Banco
+    heroi = db.query(HeroModel).filter(HeroModel.session_id == user_input.session_id).first()
     
+    if not heroi:
+        return {"narrativa": "Personagem não encontrado. Crie um novo!", "game_over": True}
+
+    # 2. Recupera histórico
+    historico = list(heroi.historico_chat) # Copia para não travar
+    
+    # 3. Adiciona ação do usuário
+    prompt_usuario = f"[{heroi.nome} ({heroi.classe}) | HP: {heroi.hp_atual}/{heroi.hp_max}] Ação: {user_input.action}"
+    historico.append({"role": "user", "content": prompt_usuario})
+
     try:
-        game, intro_data = get_or_create_game(session_id)
+        # 4. Chama a IA
+        completion = client.chat.completions.create(
+            model=MODEL_NAME,
+            messages=historico,
+            temperature=0.7,
+            response_format={"type": "json_object"} # Força JSON
+        )
         
-        if action == "START":
-            if intro_data: return intro_data
-            return {"narrativa": "Masmorra reiniciada.", "hp_atual": 20, "inventory": []}
-
-        # Verifica se o jogo foi criado corretamente
-        if not game.chat_session:
-             return {"narrativa": "Erro crítico: O mestre sumiu. Tente reiniciar o backend.", "hp_atual": 20, "inventory": []}
-
-        prompt = f"Ação: {action} (HP: {game.hp}, Itens: {game.inventory})"
+        resp_text = completion.choices[0].message.content
+        historico.append({"role": "assistant", "content": resp_text})
         
-        response = game.chat_session.send_message(prompt)
-        texto_limpo = limpar_json(response.text)
-        dados = json.loads(texto_limpo)
+        # 5. Processa JSON da IA
+        dados = json.loads(resp_text) # A IA deve mandar narrativa, dano_recebido, etc.
         
+        # 6. Atualiza o Banco
         dano = dados.get("dano_recebido", 0)
-        item = dados.get("novo_item")
+        if dano > 0:
+            heroi.hp_atual -= dano
         
-        if dano > 0: game.hp -= dano
-        if item: game.inventory.append(item)
-            
-        dados["hp_atual"] = game.hp
-        dados["inventory"] = game.inventory
-        
-        return dados
+        item_novo = dados.get("novo_item")
+        if item_novo:
+            # Truque para atualizar lista no SQLAlchemy
+            novo_inv = list(heroi.inventario)
+            novo_inv.append(item_novo)
+            heroi.inventario = novo_inv
+
+        heroi.historico_chat = historico # Salva o chat atualizado
+        db.commit() # Grava no disco!
+
+        return {
+            "narrativa": dados.get("narrativa", "Algo aconteceu..."),
+            "hp_atual": heroi.hp_atual,
+            "inventory": heroi.inventario,
+            "game_over": heroi.hp_atual <= 0
+        }
 
     except Exception as e:
-        print(f"Erro no chat: {e}")
-        msg = "O Mestre está pensando... (Erro de cota, tente em 10s)" if "429" in str(e) else "Erro desconhecido."
-        return {
-            "narrativa": msg,
-            "hp_atual": 20, "dano_recebido": 0, "novo_item": None, "game_over": False, "inventory": []
-        }
+        print(f"Erro: {e}")
+        return {"narrativa": "A conexão falhou.", "hp_atual": heroi.hp_atual}

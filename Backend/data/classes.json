@@ -1,0 +1,86 @@
+{
+  "Bárbaro": {
+    "descricao": "Um guerreiro feroz de origem primitiva que pode entrar em fúria durante o combate. Eles não lutam apenas pela vitória, mas pela emoção do caos.",
+    "dado_vida": 12,
+    "atributo_primario": ["Força"],
+    "proficiencias": ["Armaduras Leves", "Escudos", "Armas Marciais"],
+    "equipamento_inicial": ["Machado Grande", "Machadinhas (2)"]
+  },
+  "Bardo": {
+    "descricao": "Um místico inspirador que possui poderes que ecoam a música da criação. Bardos sabem que o universo foi falado antes de ser criado, e suas palavras carregam magia.",
+    "dado_vida": 8,
+    "atributo_primario": ["Carisma"],
+    "proficiencias": ["Armaduras Leves", "Rapiers", "Instrumentos Musicais"],
+    "equipamento_inicial": ["Rapier", "Alaúde", "Armadura de Couro"]
+  },
+  "Clérigo": {
+    "descricao": "Um campeão sacerdotal que empunha magia divina a serviço de um poder maior. Eles são a ponte entre o mundo mortal e os deuses.",
+    "dado_vida": 8,
+    "atributo_primario": ["Sabedoria"],
+    "proficiencias": ["Armaduras Médias", "Escudos", "Magia Divina"],
+    "equipamento_inicial": ["Maça", "Cota de Malha", "Símbolo Sagrado"]
+  },
+  "Druida": {
+    "descricao": "Um sacerdote da Antiga Crença, empunhando os poderes da natureza — luz da lua e crescimento das plantas, fogo e relâmpago — e adotando formas animais.",
+    "dado_vida": 8,
+    "atributo_primario": ["Sabedoria"],
+    "proficiencias": ["Escudos de Madeira", "Cimitarras", "Magia Natural"],
+    "equipamento_inicial": ["Escudo de Madeira", "Cimitarra", "Foco Druídico"]
+  },
+  "Guerreiro": {
+    "descricao": "Um mestre do combate marcial, perito em uma variedade de armas e armaduras. Soldados, guardas-costas, campeões e cavaleiros.",
+    "dado_vida": 10,
+    "atributo_primario": ["Força", "Destreza"],
+    "proficiencias": ["Todas as Armaduras", "Armas Marciais"],
+    "equipamento_inicial": ["Cota de Malha", "Espada Longa", "Escudo"]
+  },
+  "Monge": {
+    "descricao": "Um mestre das artes marciais, canalizando o poder do corpo em busca da perfeição física e espiritual. Seus punhos são armas letais.",
+    "dado_vida": 8,
+    "atributo_primario": ["Destreza", "Sabedoria"],
+    "proficiencias": ["Armas Simples", "Espadas Curtas"],
+    "equipamento_inicial": ["Espada Curta", "Dardos (10)"]
+  },
+  "Paladino": {
+    "descricao": "Um guerreiro santo preso a um juramento sagrado. Eles são a luz contra a escuridão, protegendo os inocentes com aço e fé.",
+    "dado_vida": 10,
+    "atributo_primario": ["Força", "Carisma"],
+    "proficiencias": ["Todas as Armaduras", "Armas Marciais"],
+    "equipamento_inicial": ["Armadura de Placas", "Martelo de Guerra", "Escudo"]
+  },
+  "Patrulheiro": {
+    "descricao": "Um guerreiro que usa proezas marciais e magia natural para combater ameaças nos limites da civilização. Caçadores implacáveis.",
+    "dado_vida": 10,
+    "atributo_primario": ["Destreza", "Sabedoria"],
+    "proficiencias": ["Armaduras Leves", "Arcos", "Armas Marciais"],
+    "equipamento_inicial": ["Armadura de Escamas", "Arco Longo", "Espadas Curtas (2)"]
+  },
+  "Ladino": {
+    "descricao": "Um trapaceiro que usa furtividade e astúcia para superar obstáculos e inimigos. Assassinos, ladrões e espiões.",
+    "dado_vida": 8,
+    "atributo_primario": ["Destreza"],
+    "proficiencias": ["Armaduras Leves", "Rapiers", "Ferramentas de Ladrão"],
+    "equipamento_inicial": ["Rapier", "Arco Curto", "Adagas (2)"]
+  },
+  "Feiticeiro": {
+    "descricao": "Um conjurador que possui magia latente inerente devido a um dom ou linhagem. A magia corre em suas veias como fogo.",
+    "dado_vida": 6,
+    "atributo_primario": ["Carisma"],
+    "proficiencias": ["Adagas", "Magia Arcana"],
+    "equipamento_inicial": ["Besta Leve", "Foco Arcano", "Adagas (2)"]
+  },
+  "Bruxo": {
+    "descricao": "Um portador de magia derivada de um pacto com uma entidade extraplanar. Eles buscam segredos proibidos em troca de poder.",
+    "dado_vida": 8,
+    "atributo_primario": ["Carisma"],
+    "proficiencias": ["Armaduras Leves", "Magia de Pacto"],
+    "equipamento_inicial": ["Armadura de Couro", "Foco Arcano", "Adagas (2)"]
+  },
+  "Mago": {
+    "descricao": "Um usuário de magia escolástico capaz de manipular as estruturas da realidade. O poder não vem de talento, vem de estudo.",
+    "dado_vida": 6,
+    "atributo_primario": ["Inteligência"],
+    "proficiencias": ["Grimórios", "Magia Arcana"],
+    "equipamento_inicial": ["Cajado", "Grimório", "Bolsa de Componentes"]
+  }
+}

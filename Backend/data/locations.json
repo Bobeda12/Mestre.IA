@@ -1,0 +1,17 @@
+{
+  "Vila de Phandalin": {
+    "descricao": "Uma vila mineradora poeirenta e rústica.",
+    "pontos_interesse": ["Taverna Rocha Colina", "Loja Escudo de Leão", "Prefeitura"],
+    "npcs": ["Toblen (Taverneiro)", "Halia (Mercadora)"]
+  },
+  "Masmorra Esquecida": {
+    "descricao": "Ruínas de um antigo templo anão, cheiro de mofo e pedras úmidas.",
+    "perigos": ["Armadilhas de Fosso", "Goblins", "Aranhas Gigantes"],
+    "tesouros": ["Ouro antigo", "Estátuas de Jade"]
+  },
+  "Floresta das Sombras": {
+    "descricao": "Árvores retorcidas que bloqueiam a luz do sol.",
+    "perigos": ["Lobos", "Corujas-Urso", "Bandidos"],
+    "clima": "Sempre neblina e frio."
+  }
+}

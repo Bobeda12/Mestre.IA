@@ -2,8 +2,39 @@
 @tailwind components;
 @tailwind utilities;
 
+/* --- ESTILOS PERSONALIZADOS RPG --- */
+
+/* Fontes importadas no index.html (Cinzel e MedievalSharp) funcionam aqui */
+
 body {
-  background-color: #121212;
-  color: #e0e0e0;
-  font-family: sans-serif;
+  background-color: #050505; /* Garante fundo escuro mesmo se o Tailwind falhar */
+  color: #d4c5a9;
+}
+
+/* Efeito de Brilho Dourado para Textos Épicos */
+.text-glow {
+  text-shadow: 0 0 10px rgba(197, 160, 89, 0.5);
+}
+
+/* Scrollbar personalizada (Parece feita de ferro) */
+::-webkit-scrollbar {
+  width: 10px;
+}
+::-webkit-scrollbar-track {
+  background: #1a1a1a;
+  border-left: 1px solid #333;
+}
+::-webkit-scrollbar-thumb {
+  background: #4a3b2a; /* Cor de couro */
+  border: 1px solid #c5a059; /* Borda dourada */
+  border-radius: 4px;
+}
+
+/* Animação de "Respiração" para o botão principal */
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 15px rgba(138, 28, 28, 0.2); }
+  50% { box-shadow: 0 0 25px rgba(138, 28, 28, 0.6); }
+}
+.btn-epic {
+  animation: pulse-glow 3s infinite;
 }
