@@ -1,0 +1,12 @@
+.en# Pastas pesadas do Python e Node
+node_modules/
+venv/
+__pycache__/
+
+# Arquivos de sistema
+.DS_Store
+Thumbs.db
+
+# Arquivos Secretos (NUNCA REMOVA ISSO DAQUI)
+.env
+.env.local
