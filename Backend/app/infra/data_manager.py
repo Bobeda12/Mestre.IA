@@ -49,5 +49,23 @@ class DataManager:
         por `context_keywords` é escopo da Etapa 5 (memória / RAG sobre regras)."""
         return {"monsters": self.monsters, "weapons": self.weapons}
 
+    def get_monster(self, nome: str) -> dict | None:
+        """Busca um monstro pelo nome em todos os níveis de data/monsters.json.
+        Usado por services/combat.py para spawnar inimigos de verdade —
+        antes da Etapa 3, ninguém chamava esta função nem `self.monsters`."""
+        for grupo in self.monsters.values():
+            if nome in grupo:
+                return dict(grupo[nome])
+        return None
+
+    def get_monstros_nivel_1(self) -> list[str]:
+        return list(self.monsters.get("Nivel_1", {}).keys())
+
+    def get_weapon(self, nome: str) -> dict | None:
+        for grupo in self.weapons.values():
+            if nome in grupo:
+                return dict(grupo[nome])
+        return None
+
 
 regras = DataManager()

@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Lição 4 — Determinismo, semente, e como testar dado sem trapacear</title>
+<link rel="stylesheet" href="../assets/curso.css">
+</head>
+<body>
+<main class="page">
+
+<p class="kicker">Lição 04 · Mestre.IA</p>
+<h1>Determinismo, semente, e como testar dado sem trapacear</h1>
+<p class="standfirst">A Etapa 3 escreveu 63 testes para um motor de combate que rola d20 de verdade — e nenhum deles depende de sorte. <code>test_natural_20_sempre_acerta_e_e_critico</code> força um 20 sem rodar a função 200 vezes esperando que ele apareça. Esta lição explica o mecanismo por trás disso: por que <code>random.Random</code> é uma classe, e não só um punhado de funções soltas, e como esse detalhe vira a diferença entre "testei e pareceu funcionar" e "testei e sei que funciona".</p>
+<div class="tagline">
+  <span>~10 minutos</span>
+  <span>Arquivos: <code>app/services/rules_engine.py</code> · <code>app/services/combat.py</code> · <code>tests/test_rules_engine.py</code></span>
+  <span><a href="0003-o-que-um-orm-faz.html">Lição 3 — o que um ORM faz ↗</a></span>
+</div>
+
+<h2>O problema: como você testa uma função que rola dados?</h2>
+
+<p><code>resolver_ataque(bonus_ataque, ca_alvo)</code> precisa acertar às vezes e errar às vezes — é literalmente o que a função existe para decidir. Mas se ela chama <code>random.randint(1, 20)</code> direto, todo teste vira uma aposta: <code>assert resultado.acerto</code> só passa quando o dado colabora. A saída ingênua — rodar a função 200 vezes e conferir que o resultado <em>tende</em> a ficar certo — é exatamente o que <code>test_rules_engine.py</code> já fazia para <code>rolar_dado()</code> desde a Etapa 1 (<code>for _ in range(200): assert 1 &lt;= rolar_dado("1d20") &lt;= 20</code>). Isso prova que a função não quebra, mas nunca prova um caso específico: "quando o d20 sai 20, é sempre crítico, mesmo com um bônus de -10". Testar isso com sorte exigiria rodar a suíte até um 20 aparecer — e torcer.</p>
+
+<h2>Injeção de dependência disfarçada de parâmetro opcional</h2>
+
+<p>A saída real é simples de enunciar e fácil de esquecer de aplicar: <strong>a função não deveria decidir de onde vem a aleatoriedade — quem chama ela é que decide.</strong> Em produção, "de onde vem" é o gerador global do Python. Em teste, é qualquer coisa que você controle. Toda função estocástica do motor segue o mesmo formato:</p>
+
+<pre><code>def resolver_ataque(bonus_ataque: int, ca_alvo: int, rng: random.Random | None = None) -> ResultadoAtaque:
+    dado = rng or random
+    rolagem = dado.randint(1, 20)
+    ...</code></pre>
+
+<p>Isso é <a href="https://en.wikipedia.org/wiki/Dependency_injection">injeção de dependência</a> com o mínimo de cerimônia possível — sem container, sem framework, só um parâmetro com valor padrão. Em produção, ninguém passa <code>rng</code>; <code>dado</code> vira o módulo <code>random</code> global, e o jogo joga de verdade. Em teste, você passa um gerador com sequência conhecida, e a função — sem saber, sem precisar saber — usa exatamente os números que você escolheu.</p>
+
+<h2><code>random.Random</code> é uma classe, não só um módulo</h2>
+
+<p>É fácil nunca perceber isso: <code>import random; random.randint(1, 20)</code> parece uma função solta, como <code>len()</code>. Por baixo, o módulo <code>random</code> mantém uma instância global de <code>random.Random</code> e delega toda chamada a ela — <code>random.randint</code> é, na prática, <code>_instância_global.randint</code>. Como é uma classe de verdade, dá para instanciar a sua própria: <code>random.Random(42)</code> cria um gerador com semente fixa, que sempre produz a mesma sequência de números para a mesma semente. É esse objeto — não o módulo — que os testes passam como <code>rng</code>.</p>
+
+<div class="note"><b>Semente (seed) não é o mesmo que sequência controlada</b>Uma semente fixa (<code>random.Random(42)</code>) garante <em>reprodutibilidade</em> — rodar duas vezes dá o mesmo resultado — mas você ainda precisaria descobrir, por tentativa, qual semente produz um 20 na terceira chamada. O Mestre.IA vai um passo além: <code>tests/test_rules_engine.py</code> define <code>RngFixo</code>, uma subclasse de <code>random.Random</code> que ignora a semente e devolve, em ordem, exatamente os valores que o teste passou:</p>
+<pre><code>class RngFixo(random.Random):
+    def __init__(self, valores: list[int]) -> None:
+        super().__init__()
+        self._valores = iter(valores)
+
+    def randint(self, a: int, b: int) -> int:
+        return next(self._valores)</code></pre>
+<p><code>resolver_ataque(bonus_ataque=-10, ca_alvo=15, rng=RngFixo([20]))</code> não deixa dúvida: o próximo <code>randint()</code> vai devolver 20, sempre, não importa quantas vezes você rode o teste. É assim que <code>test_natural_20_sempre_acerta_e_e_critico</code> prova a regra "natural 20 sempre acerta, mesmo com bônus terrível" sem depender de sorte nenhuma.</p>
+</div>
+
+<h2>O bug de tipo que essa mesma sessão encontrou</h2>
+
+<p>Vale registrar um tropeço real, porque ensina mais que um exemplo limpo. Em <code>services/combat.py</code>, o primeiro rascunho de <code>iniciar_combate</code> fazia <code>dado = rng or random</code> uma vez, no topo da função, e reaproveitava <code>dado</code> em toda chamada — inclusive nas que delegam para <code>rules_engine.py</code>. O <code>mypy</code> recusou:</p>
+
+<pre><code>error: Argument 2 to "rolar_iniciativa" has incompatible type "Random | Module"; expected "Random | None"</code></pre>
+
+<div class="warn"><b>Por que isso é um erro de tipo real, não só chatice do mypy</b><code>rng or random</code> tem tipo <code>random.Random | ModuleType</code> — o módulo <code>random</code> não é uma instância de <code>random.Random</code>, mesmo se comportando como uma (ele expõe os mesmos métodos, por delegação). Toda função do motor espera <code>random.Random | None</code> e resolve o <code>or random</code> <em>por dentro de si mesma</em>. Passar adiante o resultado de um <code>or</code> já resolvido é passar o tipo errado — a correção foi parar de pré-resolver e simplesmente repassar o `rng` original (o `Optional`) para cada chamada, deixando cada função decidir seu próprio fallback.</div>
+
+<p>A lição segura: quando um padrão precisa se repetir em vários lugares (aqui, "use o rng se ele existir, senão o global"), resolva ele <strong>uma vez, no nível mais baixo</strong> — dentro de cada função que efetivamente rola o dado — não no nível de quem orquestra. Isso também é o que já fazia `rules_engine.py` sozinho; o bug só apareceu quando `combat.py` tentou "ser esperto" e resolver o fallback cedo demais.</p>
+
+<h2>Por que isso importa mais do que "os testes passam"</h2>
+
+<p>O critério de pronto da Etapa 3, no <code>PLANO_MESTRE.md</code>, é literal: <em>"você roda a suíte 100 vezes e ela dá o mesmo resultado 100 vezes"</em>. Sem injeção de aleatoriedade, isso seria uma contradição — testar um sistema aleatório de forma determinística soa como um paradoxo até você perceber que o sistema não precisa <em>ser</em> determinístico, só precisa ser <strong>determinístico quando alguém pedir para ser</strong>. É o mesmo truque usado para testar relógios (<code>freeze_time</code>), UUIDs (<code>uuid4</code> mockado) ou qualquer chamada de rede (a Etapa 6 vai usar <code>respx</code> para o mesmo fim, mockando a Groq em vez do <code>random</code>). O padrão se repete: identifique a fonte de não-determinismo, isole-a atrás de um parâmetro, e injete uma versão controlável só em teste.</p>
+
+<div class="win"><b>Achado 1</b>"Testável" não é uma propriedade que código aleatório ganha por acidente — é uma escolha de design. A diferença entre <code>random.randint()</code> chamado direto e <code>rng.randint()</code> com <code>rng</code> injetável é uma linha, mas ela é o que separa "só dá para testar as bordas do intervalo" de "dá para testar qualquer cenário específico, exato, sob demanda".</div>
+
+<div class="win"><b>Achado 2</b>Um bug de tipo do mypy (<code>Random | Module</code> onde se esperava <code>Random | None</code>) não é burocracia — ele pegou, em tempo de checagem, uma decisão de design errada (resolver o fallback cedo demais) que só apareceria em produção se alguém, por acidente, tentasse chamar um método que só existe em <code>random.Random</code> e não no módulo <code>random</code> (ou vice-versa). O tipo forçou a pergunta certa antes do código rodar.</div>
+
+<h2>Teste rápido</h2>
+<p>Sem olhar para cima. O objetivo aqui é lembrar, não acertar de primeira.</p>
+
+<div id="quiz"></div>
+<p class="score" id="score"></p>
+
+<div class="next">
+  <h4>Fonte primária desta lição</h4>
+  <ul>
+    <li><a href="https://docs.python.org/3/library/random.html#random.Random">Python docs — <code>random.Random</code></a> — a classe por trás das funções soltas do módulo <code>random</code>, e a base de <code>RngFixo</code>.</li>
+    <li><a href="https://docs.python.org/3/library/random.html#random.seed">Python docs — <code>random.seed()</code></a> — reprodutibilidade por semente, o passo antes de controlar a sequência inteira.</li>
+  </ul>
+  <h4>Próximas lições possíveis</h4>
+  <ul>
+    <li><strong>Lição 5 —</strong> quando a Etapa 4 chegar: anatomia de uma chamada com ferramentas (tool calling), e por que a descrição da ferramenta é prompt engineering</li>
+  </ul>
+  <div class="ask">Travou em algo, ou uma explicação ficou pela metade? Me pergunta — eu sou o seu professor aqui, e é melhor desentortar agora do que seguir com um modelo mental torto.</div>
+</div>
+
+</main>
+
+<script>
+const QUESTIONS = [
+ {q:"Por que resolver_ataque() recebe um parâmetro rng: random.Random | None = None em vez de chamar random.randint() direto?",
+  o:["Para permitir injetar um gerador com sequência conhecida em teste, sem mudar o comportamento em produção","Porque random.randint() é mais lento que um objeto Random","Porque FastAPI exige que toda função aleatória receba um parâmetro","Para gerar números maiores que 20"], a:0,
+  fb:"É injeção de dependência mínima: em produção ninguém passa rng e a função usa o gerador global; em teste, um Random controlado garante um resultado exato e reproduzível."},
+
+ {q:"O que RngFixo faz de diferente de um random.Random(42) comum?",
+  o:["Ignora a semente e devolve, em ordem, exatamente os valores passados na lista — não uma sequência 'aleatória com semente fixa'","É mais rápido para gerar números grandes","Só funciona dentro de testes do pytest","Gera sempre o número 20"], a:0,
+  fb:"random.Random(42) ainda é pseudo-aleatório reproduzível — você teria que descobrir por tentativa qual semente produz o valor que quer. RngFixo sobrescreve randint() para devolver exatamente a sequência que você escolheu."},
+
+ {q:"Por que 'dado = rng or random' seguido de repassar `dado` para rules_engine.rolar_iniciativa() quebrou o mypy?",
+  o:["Porque o tipo de 'rng or random' é Random | ModuleType, e a função espera Random | None — o módulo não é uma instância de Random, mesmo se comportando como uma","Porque o módulo random não tem o método randint","Porque mypy não suporta o operador 'or'","Porque random.Random precisa de uma semente explícita"], a:0,
+  fb:"O módulo random delega para uma instância global de Random, mas não É uma instância de Random para fins de tipo. A correção foi parar de resolver 'rng or random' cedo e repassar o Optional original para cada função decidir seu próprio fallback."},
+
+ {q:"O que o critério de pronto \"a suíte roda 100 vezes e dá o mesmo resultado 100 vezes\" (PLANO_MESTRE.md, Etapa 3) realmente exige?",
+  o:["Que o sistema seja determinístico QUANDO alguém pedir para ser (rng injetado) — não que ele nunca use aleatoriedade de verdade","Que o jogo pare de usar random.randint() em produção","Que todo teste rode exatamente 100 vezes no CI","Que os dados do jogo sempre deem o mesmo resultado, mesmo em produção"], a:0,
+  fb:"O jogo continua aleatório de verdade em produção (rng=None → random global). O que precisa ser 100% reproduzível são os TESTES, que passam um rng controlado — a aleatoriedade real e a testabilidade determinística coexistem porque a fonte de números é injetável."}
+];
+
+let answered=0, right=0;
+const host=document.getElementById('quiz');
+QUESTIONS.forEach((item,i)=>{
+  const order=item.o.map((t,k)=>k);
+  for(let k=order.length-1;k>0;k--){const j=Math.floor(Math.random()*(k+1));[order[k],order[j]]=[order[j],order[k]];}
+  const el=document.createElement('div');
+  el.className='quiz';
+  el.innerHTML=`<p class="q">${i+1}. ${item.q}</p>
+    <div class="opts">${order.map(k=>`<button data-k="${k}">${item.o[k]}</button>`).join('')}</div>
+    <p class="fb">${item.fb}</p>`;
+  el.querySelectorAll('button').forEach(b=>{
+    b.addEventListener('click',()=>{
+      if(el.dataset.done) return;
+      el.dataset.done='1'; answered++;
+      const ok = Number(b.dataset.k)===item.a;
+      if(ok) right++;
+      el.querySelectorAll('button').forEach(x=>{
+        x.disabled=true;
+        if(Number(x.dataset.k)===item.a) x.classList.add('right');
+      });
+      if(!ok) b.classList.add('wrong');
+      el.querySelector('.fb').classList.add('on');
+      document.getElementById('score').textContent =
+        `${right} de ${answered} respondidas corretamente` +
+        (answered===QUESTIONS.length ? (right===QUESTIONS.length
+          ? " — você sabe defender essa fronteira." : " — reveja as perguntas que escaparam.") : "");
+    });
+  });
+  host.appendChild(el);
+});
+</script>
+
+</body>
+</html>

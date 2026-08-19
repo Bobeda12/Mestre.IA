@@ -91,22 +91,36 @@ def gerar_prologo_missao(char: CharacterCreationRequest) -> dict:
 
 
 def montar_contexto(heroi: Personagem, w_state: WorldState, c_state: CombatState, q_state: QuestLog) -> str:
-    combate_txt = ""
+    # HP não é mais um campo que o modelo escreve (Etapa 3, ADR-0006): quem
+    # decide dano e HP é o motor determinístico em services/combat.py. O
+    # modelo só PROPÕE — qual monstro encaixa na cena, qual arma e alvo o
+    # jogador quis usar — e o servidor decide via "comando_combate".
     if c_state.ativo:
         vivos = [i.model_dump() for i in c_state.inimigos if i.hp > 0]
-        combate_txt = f"[COMBATE ATIVO] Inimigos: {json.dumps(vivos, ensure_ascii=False)}"
+        secao_combate = f"""[COMBATE ATIVO] Inimigos vivos: {json.dumps(vivos, ensure_ascii=False)}
+    O jogador está em combate. Interprete a ação dele e preencha "comando_combate":
+    {{"tipo": "atacar", "arma": "<um item do inventário do herói>", "alvo": "<nome de um inimigo vivo>"}}
+    Narre só a INTENÇÃO da ação, num parágrafo curto — nunca peça ao jogador
+    para rolar um dado ou informar um resultado, e não escreva números de
+    ataque, dano ou PV: o resultado real do dado aparece automaticamente
+    logo depois da sua narrativa, escrito pelo servidor."""
+    else:
+        secao_combate = """Se a cena pedir um confronto, proponha em "inimigos_sugeridos" uma lista
+    com nomes de monstros do bestiário do mundo (ex: ["Goblin"]) e marque "spawn_battle": true.
+    O servidor confirma que os nomes existem antes de spawná-los."""
 
     return f"""
     {regras.get_biblia()}
-    [HEROI] {heroi.nome} ({heroi.classe}) | HP: {heroi.hp_atual}/{heroi.hp_max}
+    [HEROI] {heroi.nome} ({heroi.classe}) | HP: {heroi.hp_atual}/{heroi.hp_max} | Inventário: {heroi.inventario}
     [MISSÃO ATUAL] {q_state.nome_missao}: {q_state.objetivo_missao}
     [CENA] {w_state.local} | {w_state.clima}
-    {combate_txt}
+    {secao_combate}
 
-    Responda JSON:
+    Responda APENAS JSON:
     {{
         "narrativa": "...",
         "spawn_battle": false,
-        "hp_atual": {heroi.hp_atual}
+        "inimigos_sugeridos": [],
+        "comando_combate": null
     }}
     """

@@ -69,7 +69,7 @@ flowchart TB
 
     subgraph app["Backend/app"]
         RT["routers/<br/>character · game · options"]
-        SV["services/<br/>narrator · rules_engine · memory"]
+        SV["services/<br/>narrator · combat · rules_engine · memory"]
         DM["domain/<br/>character · state<br/>(Pydantic — a 'verdade' do sistema)"]
         IF["infra/<br/>db · settings · llm_client · data_manager"]
 
@@ -86,21 +86,20 @@ flowchart TB
 ```
 
 - **`routers/`** — só HTTP: parseia a requisição (via os modelos de `domain/`), chama um `service`, devolve a resposta. Não sabe nada sobre regras de D&D nem sobre o LLM.
-- **`services/`** — a lógica: `narrator.py` fala com a Groq (e sabe transformar cada tipo de falha numa mensagem própria), `rules_engine.py` é determinístico (zero I/O, zero LLM — modificador de atributo, rolagem de dado, point-buy), `memory.py` hoje só recorta as últimas N mensagens (a base da memória em camadas da Etapa 5).
+- **`services/`** — a lógica: `narrator.py` fala com a Groq (e sabe transformar cada tipo de falha numa mensagem própria), `rules_engine.py` é determinístico (zero I/O, zero LLM — dados, ataque, dano, iniciativa, testes de morte, point-buy), `combat.py` orquestra o combate ligando o bestiário real ao motor (Etapa 3, ADR-0006), `memory.py` hoje só recorta as últimas N mensagens (a base da memória em camadas da Etapa 5).
 - **`domain/`** — os modelos Pydantic que definem a forma do estado do jogo: o que o cliente pode propor na criação de personagem (`character.py`) e como `world_state`/`combat_state`/`quest_log` são tipados (`state.py`), em vez de dicionários soltos.
 - **`infra/`** — tudo que fala com o mundo externo: banco (SQLAlchemy 2.0 tipado), config (`pydantic-settings`, lendo `.env`), o client da Groq, e o carregador dos JSONs de regras (`data/`).
 
-Ver [`ADR-0003`](docs/adr/0003-camadas-router-service-domain-infra.md) para o porquê dessa divisão, [`ADR-0004`](docs/adr/0004-alembic-para-migrations.md) para as migrations, e [`ADR-0005`](docs/adr/0005-usuario-personagem-antes-do-login.md) para o par `usuario`/`personagem` no schema.
+Ver [`ADR-0003`](docs/adr/0003-camadas-router-service-domain-infra.md) para o porquê dessa divisão, [`ADR-0004`](docs/adr/0004-alembic-para-migrations.md) para as migrations, [`ADR-0005`](docs/adr/0005-usuario-personagem-antes-do-login.md) para o par `usuario`/`personagem` no schema, e [`ADR-0006`](docs/adr/0006-llm-nao-e-motor-de-regras.md) para a separação juiz × narrador do combate.
 
 ## Limitações conhecidas
 
 Honestas de propósito — ver `PLANO_MESTRE.md` §2.2 para o diagnóstico completo e as etapas que fecham cada uma:
 
 - **Não existe login de verdade.** Todo personagem pertence a um único `usuario` local fixo (id 1), criado no startup. O schema já suporta múltiplos usuários (Etapa 2); a autenticação por e-mail mágico chega na Etapa 8.
-- **O combate não é determinístico.** `spawn_battle` cria um inimigo genérico (`hp: 10`); não há dano real, iniciativa, nem fim de combate. O motor de regras de verdade é a Etapa 3 ("O Juiz").
-- **HP não muda em jogo.** O modelo pode narrar dano, mas ninguém grava. Mesma etapa acima.
+- **O modelo ainda propõe as ações de combate em JSON solto, não em tool calling de verdade.** `comando_combate` é um campo estruturado no mesmo JSON de sempre — o motor (`services/combat.py`) já decide acerto/dano/HP de forma determinística, mas a chamada de ferramenta nativa da API (com loop de agente, retry e fallback entre provedores) é a Etapa 4 ("O narrador").
 - **A memória do mestre é curta.** Só as últimas 4 mensagens (`services/memory.py`). Memória hierárquica (curto/médio/longo prazo, busca híbrida) é a Etapa 5.
-- **`rolar_dado()` engole entrada inválida e devolve 0 em silêncio.** Correção proposital adiada para a Etapa 3 — ver o teste que caracteriza esse comportamento em `tests/test_rules_engine.py`.
+- **D&D 5e enxuto, de propósito** (`PLANO_MESTRE.md` §9.2): sem magias com slots, multiclasse, façanhas, grid tático com deslocamento em metros, nem a maior parte das condições. O combate é theater-of-the-mind com resolução determinística — CA, dado de vida, `d20+mod` vs CD, dano por arma, iniciativa e testes de morte, e mais nada por enquanto.
 - **Um único herói, sem mesa multiplayer** — decisão de escopo deliberada (`PLANO_MESTRE.md` §9.3), não uma limitação a corrigir.
 - **CORS aberto (`*`) e sem rate limit.** Aceitável em dev; fechar isso é Etapa 9 (deploy).
 

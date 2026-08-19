@@ -2,8 +2,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.domain.character import LoadRequest, UserAction
-from app.domain.state import CombatState, Inimigo, QuestLog, WorldState
+from app.domain.state import CombatState, QuestLog, WorldState
 from app.infra.db import Personagem, get_db
+from app.services import combat
 from app.services.memory import contexto_recente
 from app.services.narrator import ErroMestre, chamar_mestre, montar_contexto
 
@@ -68,12 +69,24 @@ async def chat_endpoint(user_input: UserAction, db: Session = Depends(get_db)) -
         }
 
     narrativa = dados.get("narrativa", "")
+    eventos: list[str] = []
+    hp_novo = heroi.hp_atual
 
-    # Combate básico (a máquina de estados de verdade é a Etapa 3).
-    if dados.get("spawn_battle") and not c_state.ativo:
-        c_state.ativo = True
-        c_state.inimigos = [Inimigo(nome="Inimigo", hp=10, max_hp=10, ca=10)]
-        narrativa += "\n\n⚔️ Inimigos surgem!"
+    # O motor de regras decide combate (Etapa 3, ADR-0006): o modelo propõe
+    # (quais inimigos, qual arma, qual alvo), o servidor resolve dano e HP.
+    if c_state.ativo:
+        comando = dados.get("comando_combate") or {}
+        hp_novo, eventos = combat.resolver_turno(
+            c_state, heroi.hp_atual, heroi.defesa, heroi.atributos, heroi.inventario, comando
+        )
+    elif dados.get("spawn_battle"):
+        nomes = dados.get("inimigos_sugeridos") or []
+        c_state, eventos, dano_surpresa = combat.iniciar_combate(nomes, heroi.atributos, heroi.defesa)
+        hp_novo = max(0, heroi.hp_atual - dano_surpresa)
+
+    if eventos:
+        narrativa += "\n\n" + "\n".join(eventos)
+    heroi.hp_atual = hp_novo
 
     novo_hist = list(heroi.historico_chat)
     novo_hist.append({"role": "user", "content": user_input.action})
