@@ -7,8 +7,6 @@ rolar_dado() passou a levantar ValueError em entrada inválida em vez de
 devolver 0 em silêncio — exatamente como o diário da Etapa 2 previu.
 """
 
-import random
-
 import pytest
 
 from app.services.rules_engine import (
@@ -17,24 +15,13 @@ from app.services.rules_engine import (
     calcular_modificador,
     parse_ataque_monstro,
     resolver_ataque,
+    resolver_teste_atributo,
     rolar_dado,
     rolar_iniciativa,
     rolar_teste_morte,
     validar_point_buy,
 )
-
-
-class RngFixo(random.Random):
-    """Um `random.Random` cujas próximas N chamadas a randint() são
-    conhecidas de antemão — é o que torna um sistema estocástico testável
-    com um resultado exato, sem depender de sorte ou de rodar 200 vezes."""
-
-    def __init__(self, valores: list[int]) -> None:
-        super().__init__()
-        self._valores = iter(valores)
-
-    def randint(self, a: int, b: int) -> int:
-        return next(self._valores)
+from tests.helpers import RngFixo
 
 
 class TestCalcularModificador:
@@ -114,6 +101,23 @@ class TestResolverAtaque:
 class TestRolarIniciativa:
     def test_soma_d20_ao_modificador_de_destreza(self):
         assert rolar_iniciativa(mod_destreza=3, rng=RngFixo([10])) == 13
+
+
+class TestResolverTesteAtributo:
+    def test_sucesso_quando_total_bate_a_cd(self):
+        resultado = resolver_teste_atributo(modificador=2, cd=15, rng=RngFixo([13]))
+        assert resultado.total == 15
+        assert resultado.sucesso is True
+
+    def test_falha_quando_total_nao_bate_a_cd(self):
+        resultado = resolver_teste_atributo(modificador=2, cd=15, rng=RngFixo([5]))
+        assert resultado.sucesso is False
+
+    def test_nao_tem_regra_especial_para_natural_20_ou_1(self):
+        # Diferente de resolver_ataque: teste de atributo não tem "sempre
+        # acerta"/"sempre erra" no d20 — é só a soma contra a CD.
+        assert resolver_teste_atributo(modificador=-10, cd=15, rng=RngFixo([20])).sucesso is False
+        assert resolver_teste_atributo(modificador=99, cd=15, rng=RngFixo([1])).sucesso is True
 
 
 class TestRolarTesteMorte:

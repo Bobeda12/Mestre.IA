@@ -46,6 +46,10 @@ class Personagem(Base):
     hp_atual: Mapped[int]
     hp_max: Mapped[int]
     defesa: Mapped[int]
+    # Nenhum JSON de classe/raça define ouro inicial (Etapa 4) — 10 é um
+    # ponto de partida arbitrário, pequeno o bastante para a ferramenta
+    # `gastar_ouro` já nascer com um limite real para testar.
+    ouro: Mapped[int] = mapped_column(default=10, server_default="10")
 
     atributos: Mapped[dict] = mapped_column(JSON)
     inventario: Mapped[list] = mapped_column(JSON, default=list)

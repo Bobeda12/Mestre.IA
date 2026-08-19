@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Lição 5 — Anatomia de uma chamada com ferramentas</title>
+<link rel="stylesheet" href="../assets/curso.css">
+</head>
+<body>
+<main class="page">
+
+<p class="kicker">Lição 05 · Mestre.IA</p>
+<h1>Anatomia de uma chamada com ferramentas — e por que a descrição é prompt engineering</h1>
+<p class="standfirst">Até a Etapa 3, o "juiz" já existia — <code>rules_engine.py</code> rolava o d20 de verdade. Mas o modelo ainda dizia o que queria fazer escrevendo <code>{"comando_combate": {"tipo": "atacar", ...}}</code> dentro do mesmo JSON da narrativa: um campo que o servidor confiava por convenção de nome, não por contrato. A Etapa 4 troca isso por tool calling nativo — o modelo chama <code>atacar(alvo="Goblin", arma="Cimitarra")</code> como uma função de verdade, validada pela própria API antes de chegar ao seu código. Esta lição abre essa caixa: o que exatamente vai no fio, por que isso não é mágica, e um achado desconfortável — ter a ferramenta certa não significa que o modelo vai usá-la.</p>
+<div class="tagline">
+  <span>~12 minutos</span>
+  <span>Arquivos: <code>app/services/tools.py</code> · <code>app/services/agent_loop.py</code> · <code>scripts/tool_call_accuracy.py</code></span>
+  <span><a href="0004-determinismo-e-semente.html">Lição 4 — determinismo e semente ↗</a></span>
+</div>
+
+<h2>O que "tools=[...]" realmente é: JSON Schema, não configuração</h2>
+
+<p>Quando <code>services/agent_loop.py</code> chama <code>chamar_com_fallback(msgs, tools=TOOLS_SCHEMA, tool_choice="auto")</code>, o parâmetro <code>tools</code> não é um objeto especial de nenhuma linguagem de IA misteriosa — é <a href="https://json-schema.org/">JSON Schema</a> puro, o mesmo formato que valida a resposta de qualquer API REST. Cada ferramenta em <code>app/services/tools.py</code> tem essa forma:</p>
+
+<pre><code>{
+  "type": "function",
+  "function": {
+    "name": "gastar_ouro",
+    "description": "Debita ouro do herói — compra, suborno, pagamento de taxa. Falha se não houver saldo.",
+    "parameters": {
+      "type": "object",
+      "properties": {"qtd": {"type": "integer", "description": "Quantidade de ouro a gastar."}},
+      "required": ["qtd"]
+    }
+  }
+}</code></pre>
+
+<p>Isso vai literalmente dentro do corpo da requisição HTTP para a Groq, junto com as mensagens. O modelo não "sabe" Python, não importa <code>tools.py</code> — ele lê essa descrição em texto, no mesmo contexto onde lê a bíblia do mestre e o histórico da conversa, e decide (é uma decisão probabilística, não uma chamada de função de verdade) se algum trecho da resposta dele deveria ser uma chamada a uma dessas funções. Quando decide que sim, a API devolve <code>message.tool_calls</code> — uma lista de <code>{id, function: {name, arguments}}</code>, onde <code>arguments</code> é uma <em>string</em> JSON, não um dicionário Python. A validação de schema (tipo certo, campos obrigatórios presentes) acontece do lado da Groq antes disso voltar pra você — é isso que elimina a classe de bug que existia até a Etapa 3: <code>dados.get("comando_combate") or {}</code> não tinha garantia nenhuma de forma.</p>
+
+<h2>Por que uma chamada não basta: o loop</h2>
+
+<p><code>app/services/agent_loop.py:executar_turno</code> não faz uma chamada, faz até <code>max_passos</code>:</p>
+
+<pre><code>for _passo in range(max_passos):
+    resp = chamar_com_fallback(msgs, tools=TOOLS_SCHEMA, tool_choice="auto")
+    mensagem = resp.choices[0].message
+    if not mensagem.tool_calls:
+        return mensagem.content or "", executor.eventos, chamadas
+    msgs.append({"role": "assistant", "tool_calls": [...], ...})
+    for tc in mensagem.tool_calls:
+        resultado, sucesso = executor.executar(tc.function.name, tc.function.arguments)
+        msgs.append({"role": "tool", "tool_call_id": tc.id, "content": json.dumps(resultado)})</code></pre>
+
+<p>A razão é simples: uma resposta com <code>tool_calls</code> não tem narrativa nenhuma junto — o modelo "gastou" a resposta chamando a ferramenta, e precisa ver o <em>resultado</em> dela (a mensagem <code>role="tool"</code> que você anexa de volta) antes de conseguir escrever a prosa. É por isso que um turno de combate no Mestre.IA é, no mínimo, duas idas e voltas: uma para chamar <code>atacar</code>, outra para o modelo receber "ACERTO, 6 de dano, Goblin: 1/7 PV" de volta e então narrar a cena com esse resultado em mãos. <code>max_passos</code> (padrão 6, <code>settings.agent_max_passos</code>) existe porque nada impede, em teoria, um modelo entrar num ciclo chamando ferramenta atrás de ferramenta sem nunca "terminar" — um loop sem limite é uma cota da Groq sendo consumida em segundos, não minutos.</p>
+
+<div class="note"><b>O <code>tool_call_id</code> não é decorativo</b>Cada chamada tem um <code>id</code> (<code>tc.id</code>), e a mensagem de resposta precisa referenciar esse mesmo id em <code>tool_call_id</code>. Quando o modelo pede duas ferramentas no mesmo passo (aconteceu ao vivo: <code>rolar_teste</code> + <code>consultar_regra</code> juntos), é assim que ele sabe qual resultado pertence a qual chamada — sem isso a conversa ficaria ambígua sobre "o resultado que acabei de ver era de qual das duas coisas que eu pedi?".</div>
+
+<h2>A descrição é o prompt — testado com números reais, nesta sessão</h2>
+
+<p>A primeira versão de <code>rolar_teste</code> em <code>tools.py</code> tinha a descrição mais curta possível: <code>"atributo": {"type": "string", "description": "atributo"}</code>. Rodando <code>scripts/tool_call_accuracy.py</code> — 10 cenários fixos, cada um com o estado da cena e a ação esperada — contra a Groq de verdade, o resultado foi <strong>70% de acerto completo</strong> (ferramenta certa + argumentos certos). Um dos erros: pedido para escalar um muro, o modelo chamou <code>rolar_teste(atributo="atletismo", cd=15)</code> — "atletismo" não é um atributo de D&D 5e, é uma perícia. A ferramenta certa, o argumento errado, porque nada no schema dizia quais valores eram válidos.</p>
+
+<p>A correção não foi no código Python — foi só reescrever o JSON Schema, adicionando um <code>"enum"</code>:</p>
+
+<pre><code>"atributo": {
+    "type": "string",
+    "enum": ["forca", "destreza", "constituicao", "inteligencia", "sabedoria", "carisma"],
+    "description": "O atributo mais relevante para a ação (força para escalar/arrombar, ...)."
+}</code></pre>
+
+<p>Rodando o mesmo script de novo, sem mudar nenhuma linha de <code>Python</code>: <strong>80%</strong>. O caso do "atletismo" sumiu — o modelo passou a escolher sempre entre os seis atributos válidos. Isso é o achado central da lição: <strong>a descrição e o schema de uma ferramenta não são documentação para humanos, são a única informação que o modelo tem para decidir certo</strong>. Um <code>enum</code> vazio de exemplo, uma frase genérica onde devia ter um exemplo concreto — isso é, literalmente, a diferença entre 70% e 80% medida na mesma tarde, no mesmo modelo, na mesma cadeia de cenários.</p>
+
+<div class="win"><b>Achado 1</b>Prompt engineering para tool calling não é escrever um parágrafo bonito na <code>description</code> da função — é o <code>enum</code>, o exemplo dentro da própria descrição do parâmetro ("ex: '1d6', '2d6+2'"), o "NUNCA use esta ferramenta para X, use Y" explícito. É engenharia de restrição, não de prosa. E dá para medir o efeito de uma mudança específica com um número antes/depois — não precisa ficar no "parece que melhorou".</div>
+
+<h2>Ter a ferramenta não é o mesmo que usá-la</h2>
+
+<p>O achado mais desconfortável desta etapa não veio do script — veio de testar ao vivo contra o servidor rodando de verdade. Mandei "Eu me esforço para perceber o perigo escondido nas sombras" — uma ação óbvia para <code>rolar_teste(atributo="sabedoria", cd=...)</code>. A resposta:</p>
+
+<blockquote>"...role um teste de Percepção (CD 12) lançando um d20 para determinar se Kaelen detecta o perigo."</blockquote>
+
+<p>Nenhuma chamada de ferramenta. O modelo <em>narrou pedindo o dado ao jogador</em> — o mesmo comportamento que o <a href="../../docs/adr/0006-llm-nao-e-motor-de-regras.md">ADR-0006</a> já tinha documentado na Etapa 3, quando o mecanismo era JSON solto. Adicionei uma instrução explícita no prompt de sistema ("chame rolar_teste você mesmo, na hora — NUNCA peça ao jogador para rolar") e testei de novo, em uma sessão nova. Mesmo resultado. Um terceiro teste, pedindo para arrombar um baú: de novo, "role um d20 e me informe o resultado".</p>
+
+<div class="warn"><b>Por que isso importa mais do que parece</b>É tentador pensar que dar ao modelo a ferramenta certa resolve o problema — afinal, na Etapa 3 o argumento era "o modelo não pode calcular dano de forma confiável, então tire isso dele". Mas ter <code>rolar_teste</code> disponível não muda o hábito de treino do modelo de <em>simular</em> ser um mestre de RPG de mesa, onde é o jogador humano que joga o dado físico. <code>tool_choice="auto"</code> deixa a decisão de chamar ou não a cargo do modelo — e para testes de perícia informais, ele prefere narrar a pedir. Corrigir isso de verdade provavelmente exige <code>tool_choice</code> forçado em contextos específicos, não mais uma frase de instrução — ficou registrado como aberto no <a href="../../docs/adr/0007-tool-calling-em-vez-de-json-solto.md">ADR-0007</a>.</div>
+
+<div class="win"><b>Achado 2</b>Tool calling resolve o problema de <em>schema</em> (o modelo não pode mais inventar um JSON com forma errada) mas não resolve, sozinho, o problema de <em>hábito</em> (o modelo pode simplesmente optar por não chamar a ferramenta e narrar em texto livre, como sempre fez). São dois problemas diferentes que parecem o mesmo até você medir os dois separadamente — o primeiro se resolve com schema; o segundo, aparentemente, não.</div>
+
+<h2>Teste rápido</h2>
+<p>Sem olhar para cima. O objetivo aqui é lembrar, não acertar de primeira.</p>
+
+<div id="quiz"></div>
+<p class="score" id="score"></p>
+
+<div class="next">
+  <h4>Fonte primária desta lição</h4>
+  <ul>
+    <li><a href="https://console.groq.com/docs/tool-use">Groq — Tool use</a> — schema de <code>tools=</code>, <code>tool_choice</code>, formato de <code>message.tool_calls</code>.</li>
+    <li><a href="https://json-schema.org/understanding-json-schema/">Understanding JSON Schema</a> — <code>enum</code>, <code>required</code>, e o resto do vocabulário que <code>TOOLS_SCHEMA</code> usa.</li>
+  </ul>
+  <h4>Próximas lições possíveis</h4>
+  <ul>
+    <li><strong>Lição 6 —</strong> quando a Etapa 5 chegar: embeddings, similaridade, e como se mede recall — a memória de longo prazo que substitui o <code>historico_chat[-4:]</code>.</li>
+  </ul>
+  <div class="ask">Travou em algo, ou uma explicação ficou pela metade? Me pergunta — eu sou o seu professor aqui, e é melhor desentortar agora do que seguir com um modelo mental torto.</div>
+</div>
+
+</main>
+
+<script>
+const QUESTIONS = [
+ {q:"O parâmetro `tools=[...]` mandado para a API da Groq é, na prática, o quê?",
+  o:["JSON Schema descrevendo cada função — o mesmo formato usado para validar qualquer API REST","Um objeto binário compilado que a Groq interpreta como bytecode","Uma lista de funções Python serializadas via pickle","Um arquivo de configuração YAML convertido para JSON"], a:0,
+  fb:"É JSON Schema puro. O modelo lê essa descrição como texto, no mesmo contexto de qualquer outra informação — não há mágica nem execução de código do seu lado enviada pela rede."},
+
+ {q:"Por que `agent_loop.executar_turno` roda em loop (até `max_passos`) em vez de uma chamada só?",
+  o:["Porque uma resposta com tool_calls não vem acompanhada de narrativa — o modelo precisa ver o resultado da ferramenta de volta antes de conseguir escrever a prosa final","Porque a API da Groq limita cada resposta a uma função por chamada","Porque o loop existe só para tentar novamente em caso de erro de rede","Porque o modelo exige confirmação humana entre cada ferramenta"], a:0,
+  fb:"Uma resposta com tool_calls 'gastou' a vez chamando a ferramenta. Só depois de receber o resultado (mensagem role='tool') o modelo consegue narrar o que aconteceu — daí o vai-e-volta."},
+
+ {q:"O que mudou entre a versão de `rolar_teste` com 70% de acerto e a versão com 80%, medidas nesta mesma etapa?",
+  o:["Foi adicionado um `enum` no parâmetro `atributo`, restringindo às seis opções válidas de D&D 5e — nenhuma linha de Python mudou","Foi trocado o modelo da Groq usado para responder","Foi adicionado retry com tenacity nas chamadas de ferramenta","O loop de agente ganhou mais passos (max_passos)"], a:0,
+  fb:"Só o JSON Schema mudou — um enum na descrição do parâmetro. O modelo passou a escolher só entre os seis atributos válidos em vez de inventar 'atletismo' (uma perícia, não um atributo)."},
+
+ {q:"Testado ao vivo: mesmo com a ferramenta `rolar_teste` disponível e uma instrução explícita no prompt, o modelo às vezes ainda...",
+  o:["Narra pedindo ao jogador para 'rolar um d20', sem chamar a ferramenta nenhuma","Chama a ferramenta duas vezes seguidas por engano","Trava o loop até estourar max_passos","Ignora completamente o resultado da bíblia do mestre"], a:0,
+  fb:"Ter a ferramenta certa resolve o problema de SCHEMA (forma da resposta), mas não garante que o modelo vai escolher chamá-la em vez de narrar pedindo ao jogador — um problema de hábito de treino, não de contrato de API."}
+];
+
+let answered=0, right=0;
+const host=document.getElementById('quiz');
+QUESTIONS.forEach((item,i)=>{
+  const order=item.o.map((t,k)=>k);
+  for(let k=order.length-1;k>0;k--){const j=Math.floor(Math.random()*(k+1));[order[k],order[j]]=[order[j],order[k]];}
+  const el=document.createElement('div');
+  el.className='quiz';
+  el.innerHTML=`<p class="q">${i+1}. ${item.q}</p>
+    <div class="opts">${order.map(k=>`<button data-k="${k}">${item.o[k]}</button>`).join('')}</div>
+    <p class="fb">${item.fb}</p>`;
+  el.querySelectorAll('button').forEach(b=>{
+    b.addEventListener('click',()=>{
+      if(el.dataset.done) return;
+      el.dataset.done='1'; answered++;
+      const ok = Number(b.dataset.k)===item.a;
+      if(ok) right++;
+      el.querySelectorAll('button').forEach(x=>{
+        x.disabled=true;
+        if(Number(x.dataset.k)===item.a) x.classList.add('right');
+      });
+      if(!ok) b.classList.add('wrong');
+      el.querySelector('.fb').classList.add('on');
+      document.getElementById('score').textContent =
+        `${right} de ${answered} respondidas corretamente` +
+        (answered===QUESTIONS.length ? (right===QUESTIONS.length
+          ? " — você sabe defender essa fronteira." : " — reveja as perguntas que escaparam.") : "");
+    });
+  });
+  host.appendChild(el);
+});
+</script>
+
+</body>
+</html>

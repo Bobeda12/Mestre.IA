@@ -86,6 +86,28 @@ def rolar_iniciativa(mod_destreza: int, rng: random.Random | None = None) -> int
 
 
 @dataclass
+class ResultadoTeste:
+    rolagem: int
+    bonus: int
+    total: int
+    cd: int
+    sucesso: bool
+
+
+def resolver_teste_atributo(modificador: int, cd: int, rng: random.Random | None = None) -> ResultadoTeste:
+    """d20 + modificador de atributo contra uma Classe de Dificuldade — a
+    forma genérica de teste (furtividade, persuasão, percepção...) que a
+    Etapa 3 previu em `PLANO_MESTRE.md` mas nunca chegou a escrever: só
+    ataque (`resolver_ataque`) e teste de morte (`rolar_teste_morte`) tinham
+    resolução própria até a Etapa 4 precisar de uma ferramenta `rolar_teste`
+    genérica para o modelo chamar."""
+    dado = rng or random
+    rolagem = dado.randint(1, 20)
+    total = rolagem + modificador
+    return ResultadoTeste(rolagem, modificador, total, cd, sucesso=total >= cd)
+
+
+@dataclass
 class ResultadoMorte:
     rolagem: int
     resultado: Literal["sucesso", "falha", "estabilizado_critico", "falha_critica"]

@@ -12,8 +12,8 @@ Template: [`0000-template.md`](0000-template.md) · Sistema completo: [`../READM
 | [0004](0004-alembic-para-migrations.md) | Adotar Alembic para migrations | 2 | ✅ aceito | 19/08/2026 |
 | [0005](0005-usuario-personagem-antes-do-login.md) | Modelo de dados usuário × personagem, antes da tela de login | 2 | ✅ aceito | 19/08/2026 |
 | [0006](0006-llm-nao-e-motor-de-regras.md) | **O LLM não é o motor de regras** | 3 | ✅ aceito | 19/08/2026 |
-| 0007 | Tool calling em vez de JSON solto | 4 | 🕓 previsto | — |
-| 0008 | Cadeia de fallback entre provedores de LLM | 4 | 🕓 previsto | — |
+| [0007](0007-tool-calling-em-vez-de-json-solto.md) | Tool calling em vez de JSON solto | 4 | ✅ aceito | 19/08/2026 |
+| [0008](0008-cadeia-de-fallback-de-modelo.md) | Cadeia de fallback entre modelos da Groq | 4 | ✅ aceito | 19/08/2026 |
 | 0009 | Memória hierárquica em três camadas | 5 | 🕓 previsto | — |
 | 0010 | Busca híbrida BM25 + densa com fusão RRF | 5 | 🕓 previsto | — |
 | 0011 | Estratégia de avaliação: determinístico + julgado | 6 | 🕓 previsto | — |

@@ -3,23 +3,9 @@
 o `random.Random` com semente/sequência fixa: o mesmo padrão de
 test_rules_engine.py, para que "um goblin te mata" seja reproduzível."""
 
-import random
-
 from app.domain.state import CombatState, Inimigo
 from app.services import combat
-
-
-class RngFixo(random.Random):
-    def __init__(self, valores: list) -> None:
-        super().__init__()
-        self._valores = iter(valores)
-
-    def randint(self, a: int, b: int) -> int:
-        return next(self._valores)
-
-    def choice(self, seq):  # usado pelo fallback de monstro aleatório
-        return seq[0]
-
+from tests.helpers import RngFixo
 
 ATRIBUTOS_HEROI = {
     "forca": 14, "destreza": 12, "constituicao": 13,

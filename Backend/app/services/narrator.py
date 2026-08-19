@@ -6,15 +6,9 @@ from app.domain.character import CharacterCreationRequest
 from app.domain.state import CombatState, QuestLog, WorldState
 from app.infra.data_manager import regras
 from app.infra.db import Personagem
-from app.infra.llm_client import MODEL_NAME, client
+from app.infra.llm_client import MODEL_NAME, ErroMestre, client
 
-
-class ErroMestre(Exception):
-    """Erro ao consultar a IA, com uma mensagem já pronta para o jogador ler."""
-
-    def __init__(self, mensagem: str) -> None:
-        self.mensagem = mensagem
-        super().__init__(mensagem)
+__all__ = ["ErroMestre", "chamar_mestre", "gerar_prologo_missao", "montar_contexto"]
 
 
 def chamar_mestre(msgs: list[dict]) -> dict:
@@ -26,10 +20,10 @@ def chamar_mestre(msgs: list[dict]) -> dict:
             "O mestre está sem acesso à IA — falta configurar a chave da Groq no servidor (GROQ_API_KEY)."
         )
     try:
-        # O SDK da Groq espera TypedDicts específicos por papel (system/user/
-        # assistant), não dict[str, str] solto. Tipar `msgs` de verdade é
-        # trabalho da Etapa 4 (tool calling), quando as mensagens ganham
-        # estrutura própria; por ora, silenciamos aqui e não na assinatura.
+        # Só o prólogo (gerar_prologo_missao) ainda usa este caminho em modo
+        # JSON solto — não tem estado de jogo para chamar ferramenta nenhuma,
+        # é uma chamada única. O turno de jogo (routers/game.py) usa
+        # services/agent_loop.py + tool calling nativo desde a Etapa 4.
         resp = client.chat.completions.create(
             model=MODEL_NAME, messages=msgs, response_format={"type": "json_object"}  # type: ignore[call-overload]
         )
@@ -91,36 +85,47 @@ def gerar_prologo_missao(char: CharacterCreationRequest) -> dict:
 
 
 def montar_contexto(heroi: Personagem, w_state: WorldState, c_state: CombatState, q_state: QuestLog) -> str:
-    # HP não é mais um campo que o modelo escreve (Etapa 3, ADR-0006): quem
-    # decide dano e HP é o motor determinístico em services/combat.py. O
-    # modelo só PROPÕE — qual monstro encaixa na cena, qual arma e alvo o
-    # jogador quis usar — e o servidor decide via "comando_combate".
+    # Etapa 4 (ADR-0007): o modelo não escreve mais nenhum campo de estado
+    # em JSON — toda mudança (dano, item, ouro, movimento, combate) passa
+    # por uma ferramenta (services/tools.py), chamada via tool calling
+    # nativo da Groq. Esta função só monta o texto de sistema; quem oferece
+    # `tools=` ao modelo é services/agent_loop.py.
     if c_state.ativo:
         vivos = [i.model_dump() for i in c_state.inimigos if i.hp > 0]
         secao_combate = f"""[COMBATE ATIVO] Inimigos vivos: {json.dumps(vivos, ensure_ascii=False)}
-    O jogador está em combate. Interprete a ação dele e preencha "comando_combate":
-    {{"tipo": "atacar", "arma": "<um item do inventário do herói>", "alvo": "<nome de um inimigo vivo>"}}
-    Narre só a INTENÇÃO da ação, num parágrafo curto — nunca peça ao jogador
-    para rolar um dado ou informar um resultado, e não escreva números de
-    ataque, dano ou PV: o resultado real do dado aparece automaticamente
-    logo depois da sua narrativa, escrito pelo servidor."""
+    O jogador está em combate. Chame a ferramenta "atacar" com o alvo (e a
+    arma, se o jogador escolheu uma) para resolver a ação dele. Narre só a
+    INTENÇÃO da ação, num parágrafo curto — nunca peça ao jogador para rolar
+    um dado ou informar um resultado, e não escreva números de ataque, dano
+    ou PV: o resultado real da ferramenta aparece automaticamente logo
+    depois da sua narrativa."""
     else:
-        secao_combate = """Se a cena pedir um confronto, proponha em "inimigos_sugeridos" uma lista
-    com nomes de monstros do bestiário do mundo (ex: ["Goblin"]) e marque "spawn_battle": true.
-    O servidor confirma que os nomes existem antes de spawná-los."""
+        secao_combate = """Se a cena pedir um confronto, chame a ferramenta "iniciar_combate" com os
+    nomes dos monstros do bestiário que encaixam na cena (ex: ["Goblin"]).
+    O servidor confirma que os nomes existem antes de criar o combate."""
 
     return f"""
     {regras.get_biblia()}
-    [HEROI] {heroi.nome} ({heroi.classe}) | HP: {heroi.hp_atual}/{heroi.hp_max} | Inventário: {heroi.inventario}
+    [HEROI] {heroi.nome} ({heroi.classe}) | HP: {heroi.hp_atual}/{heroi.hp_max} | Ouro: {heroi.ouro}
+    [INVENTÁRIO] {heroi.inventario}
     [MISSÃO ATUAL] {q_state.nome_missao}: {q_state.objetivo_missao}
     [CENA] {w_state.local} | {w_state.clima}
     {secao_combate}
 
-    Responda APENAS JSON:
-    {{
-        "narrativa": "...",
-        "spawn_battle": false,
-        "inimigos_sugeridos": [],
-        "comando_combate": null
-    }}
+    Você tem ferramentas para agir no mundo (dano, item, ouro, movimento,
+    teste de atributo, consulta de regra). Use-as para qualquer mudança de
+    estado — nunca escreva HP, dano, ouro ou resultado de rolagem no texto,
+    a ferramenta já mostra isso ao jogador. Se o jogador encontra ou recebe
+    um item (saque, recompensa, presente), chame "dar_item" ANTES de narrar
+    — nunca escreva que ele "guarda X no inventário" sem ter chamado a
+    ferramenta primeiro, ou o item vira mentira: existe na narrativa, mas
+    não no inventário de verdade. Em especial: se a ação do
+    jogador é arriscada e incerta (perceber algo, escalar, persuadir,
+    resistir a um efeito), chame "rolar_teste" você mesmo, na hora — NUNCA
+    escreva "role um teste de X" ou peça ao jogador para rolar um dado; o
+    jogador não rola dado nenhum, só decide a ação, e a ferramenta decide o
+    resultado. Depois de usar as ferramentas que a cena pedir, narre o
+    resultado em prosa, num tom sombrio e sensorial (visão, som, cheiro — a
+    bíblia acima exige isso). Não responda em JSON: a resposta final é só o
+    texto da narrativa.
     """

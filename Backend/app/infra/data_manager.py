@@ -67,5 +67,15 @@ class DataManager:
                 return dict(grupo[nome])
         return None
 
+    def get_location(self, nome: str) -> dict | None:
+        """Usado pela ferramenta `mover` (Etapa 4) para confirmar que o
+        destino proposto pelo modelo existe em data/locations.json — mesma
+        fronteira de confiança do bestiário (`get_monster`)."""
+        dados = self.locations.get(nome)
+        return dict(dados) if dados is not None else None
+
+    def get_locations_list(self) -> list[str]:
+        return list(self.locations.keys())
+
 
 regras = DataManager()

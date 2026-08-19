@@ -9,6 +9,7 @@ um servidor ativo nem de rede.
 
 from fastapi.testclient import TestClient
 
+from app.infra import llm_client
 from app.main import app
 from app.services import narrator
 
@@ -145,8 +146,11 @@ def test_chat_sem_chave_de_api_devolve_mensagem_explicita(monkeypatch):
     """O bug original (api.py, versão anterior às Etapas 1 e 2) engolia qualquer
     erro num `except:` nu e respondia sempre a mesma narrativa "...". Agora
     cada causa de falha tem uma mensagem própria — aqui testamos a mais
-    comum: a chave da Groq não está configurada."""
+    comum: a chave da Groq não está configurada. `/chat` passa pelo loop de
+    agente (Etapa 4), que consulta `llm_client.client` — não mais
+    `narrator.client`, usado só pelo prólogo do `/create_character`."""
     monkeypatch.setattr(narrator, "client", None)
+    monkeypatch.setattr(llm_client, "client", None)
     criado = client.post("/create_character", json=_payload_base(nome="TesteErro"))
     session_id = criado.json()["session_id"]
 
@@ -166,3 +170,33 @@ def test_chat_de_sessao_inexistente_devolve_404():
 def test_load_game_de_sessao_inexistente_devolve_404():
     resp = client.post("/load_game", json={"session_id": "isso-nao-existe"})
     assert resp.status_code == 404
+
+
+def test_chat_com_ferramenta_chamada_de_ponta_a_ponta(monkeypatch):
+    """Sobe o /chat inteiro (Etapa 4) com um LLM falso roteirizado — chama a
+    ferramenta `mover`, depois entrega a narrativa final — provando que
+    routers/game.py, services/agent_loop.py e services/tools.py estão
+    ligados de verdade, sem precisar de rede nem de GROQ_API_KEY."""
+    from app.services import agent_loop
+    from tests.test_agent_loop import _LLMFalso, _MensagemFalsa, _ToolCallFalso
+
+    monkeypatch.setattr(narrator, "client", None)  # prólogo cai no fallback determinístico, sem rede
+    criado = client.post("/create_character", json=_payload_base(nome="TesteFerramentaChat"))
+    assert criado.status_code == 200
+    session_id = criado.json()["session_id"]
+
+    fake = _LLMFalso(
+        [
+            _MensagemFalsa(tool_calls=[_ToolCallFalso("t1", "mover", '{"destino": "Floresta das Sombras"}')]),
+            _MensagemFalsa(content="Vocês seguem para a floresta, sob galhos retorcidos."),
+        ]
+    )
+    monkeypatch.setattr(agent_loop, "chamar_com_fallback", fake)
+
+    resp = client.post("/chat", json={"session_id": session_id, "action": "Eu vou para a floresta"})
+    assert resp.status_code == 200
+    dados = resp.json()
+    assert "erro" not in dados
+    assert "Vocês seguem para a floresta" in dados["narrativa"]
+    assert "🧭" in dados["narrativa"]  # evento da ferramenta mover anexado
+    assert "ouro" in dados
