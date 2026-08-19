@@ -16,13 +16,21 @@ default:
 backend-install:
     cd Backend && uv sync
 
-# Sobe o backend em modo desenvolvimento (recarrega a cada mudança), porta 8000
-backend-dev: backend-install
-    cd Backend && uv run uvicorn api:app --reload --port 8000
+# Aplica as migrations do Alembic (cria/atualiza rpg_save.db)
+backend-migrate: backend-install
+    cd Backend && uv run alembic upgrade head
 
-# Roda a suíte de testes do backend
+# Sobe o backend em modo desenvolvimento (recarrega a cada mudança), porta 8000
+backend-dev: backend-migrate
+    cd Backend && uv run uvicorn app.main:app --reload --port 8000
+
+# Roda a suíte de testes do backend, com cobertura em domain/ e services/
 backend-test: backend-install
-    cd Backend && uv run pytest -v
+    cd Backend && uv run pytest -v --cov=app/domain --cov=app/services --cov-report=term-missing
+
+# Roda ruff (lint) e mypy (tipos) no backend
+backend-lint: backend-install
+    cd Backend && uv run ruff check . && uv run mypy app
 
 # ============================================================
 # Frontend (Vite + React)
@@ -51,9 +59,8 @@ install: backend-install frontend-install
 # (só o backend tem testes até a Etapa 7; Vitest/Playwright entram lá)
 test: backend-test
 
-# Roda o que já existe de lint no projeto
-# (ruff no backend é escopo da Etapa 2 — ainda não existe)
-lint: frontend-lint
+# Roda o lint dos dois lados
+lint: backend-lint frontend-lint
 
 # Sobe o backend em modo dev — o frontend sobe à parte, em outro
 # terminal, com `just frontend-dev` (são dois processos bloqueantes,

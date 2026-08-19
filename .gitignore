@@ -9,6 +9,9 @@ Backend/__pycache__/
 Backend/**/__pycache__/
 Backend/*.pyc
 Backend/.pytest_cache/
+Backend/.ruff_cache/
+Backend/.mypy_cache/
+Backend/.coverage
 *.db
 *.sqlite3
 

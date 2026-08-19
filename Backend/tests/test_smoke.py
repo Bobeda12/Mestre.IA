@@ -9,9 +9,10 @@ um servidor ativo nem de rede.
 
 from fastapi.testclient import TestClient
 
-import api
+from app.main import app
+from app.services import narrator
 
-client = TestClient(api.app)
+client = TestClient(app)
 
 
 def test_lista_racas():
@@ -42,12 +43,12 @@ def test_detalhe_de_raca_inexistente_nao_quebra():
 
 def test_criar_e_carregar_personagem(monkeypatch):
     """
-    Força client=None para que gerar_prologo_missao (api.py:47) caia
-    no fallback determinístico — o teste fica rápido, gratuito e sem
+    Força client=None para que gerar_prologo_missao (app/services/narrator.py)
+    caia no fallback determinístico — o teste fica rápido, gratuito e sem
     dependência da cota da Groq, não importa se quem roda o pytest tem
     GROQ_API_KEY configurada ou não.
     """
-    monkeypatch.setattr(api, "client", None)
+    monkeypatch.setattr(narrator, "client", None)
 
     criado = client.post(
         "/create_character",
@@ -122,7 +123,7 @@ def test_atributos_livre_sem_direito_a_raca_e_rejeitado():
 
 
 def test_atributos_livre_do_meio_elfo_e_aceito(monkeypatch):
-    monkeypatch.setattr(api, "client", None)
+    monkeypatch.setattr(narrator, "client", None)
     # Meio-Elfo (data/races.json): +2 carisma fixo, 2 pontos livres.
     payload = _payload_base(raca="Meio-Elfo", atributos_livre=["forca", "destreza"])
     resp = client.post("/create_character", json=payload)
@@ -141,11 +142,11 @@ def test_atributos_livre_em_atributo_com_bonus_fixo_e_rejeitado():
 
 
 def test_chat_sem_chave_de_api_devolve_mensagem_explicita(monkeypatch):
-    """O bug original (api.py, versão anterior à Etapa 1) engolia qualquer
+    """O bug original (api.py, versão anterior às Etapas 1 e 2) engolia qualquer
     erro num `except:` nu e respondia sempre a mesma narrativa "...". Agora
     cada causa de falha tem uma mensagem própria — aqui testamos a mais
     comum: a chave da Groq não está configurada."""
-    monkeypatch.setattr(api, "client", None)
+    monkeypatch.setattr(narrator, "client", None)
     criado = client.post("/create_character", json=_payload_base(nome="TesteErro"))
     session_id = criado.json()["session_id"]
 

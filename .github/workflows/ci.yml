@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: Backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Instalar uv
+        uses: astral-sh/setup-uv@v3
+
+      - name: Instalar dependências
+        run: uv sync
+
+      - name: Lint (ruff)
+        run: uv run ruff check .
+
+      - name: Tipos (mypy)
+        run: uv run mypy app
+
+      - name: Testes (pytest, com gate de cobertura em domain/services)
+        run: |
+          uv run pytest -v \
+            --cov=app/domain --cov=app/services \
+            --cov-report=term-missing --cov-fail-under=60

@@ -1,0 +1,53 @@
+import json
+
+from app.infra.settings import settings
+
+
+class DataManager:
+    def __init__(self) -> None:
+        self.data_dir = settings.data_dir
+
+        self.races = self._load_json("races.json")
+        self.classes = self._load_json("classes.json")
+        self.monsters = self._load_json("monsters.json")
+        self.weapons = self._load_json("weapons.json")
+        self.locations = self._load_json("locations.json")
+
+        self.biblia_text = self._load_text("biblia_mestre.txt")
+
+    def _load_json(self, filename: str) -> dict:
+        try:
+            with open(self.data_dir / filename, encoding="utf-8") as f:
+                return json.load(f)
+        except (OSError, json.JSONDecodeError):
+            return {}
+
+    def _load_text(self, filename: str) -> str:
+        try:
+            with open(self.data_dir / filename, encoding="utf-8") as f:
+                return f.read()
+        except OSError:
+            return "Você é um Mestre de RPG justo."
+
+    def get_biblia(self) -> str:
+        return self.biblia_text
+
+    def get_race_details(self, name: str) -> dict:
+        return self.races.get(name, {})
+
+    def get_class_details(self, name: str) -> dict:
+        return self.classes.get(name, {})
+
+    def get_races_list(self) -> list[str]:
+        return list(self.races.keys())
+
+    def get_classes_list(self) -> list[str]:
+        return list(self.classes.keys())
+
+    def get_relevant_rules(self, context_keywords: list[str] | None = None) -> dict:
+        """RAG simples: hoje devolve o bestiário e as armas inteiros. Filtrar
+        por `context_keywords` é escopo da Etapa 5 (memória / RAG sobre regras)."""
+        return {"monsters": self.monsters, "weapons": self.weapons}
+
+
+regras = DataManager()

@@ -1,0 +1,16 @@
+# Sobe o Mestre.IA inteiro com um comando: `docker compose up --build`.
+# Uso local/dev — hospedagem de verdade (Postgres, Fly.io) é Etapa 9.
+services:
+  backend:
+    build: ./Backend
+    ports:
+      - "8000:8000"
+    env_file:
+      - ./Backend/.env
+
+  frontend:
+    build: ./Frontend
+    ports:
+      - "5173:5173"
+    depends_on:
+      - backend

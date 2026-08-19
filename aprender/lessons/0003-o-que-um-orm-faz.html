@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Lição 3 — O que um ORM faz, de verdade</title>
+<link rel="stylesheet" href="../assets/curso.css">
+</head>
+<body>
+<main class="page">
+
+<p class="kicker">Lição 03 · Mestre.IA</p>
+<h1>O que um ORM faz, de verdade</h1>
+<p class="standfirst">A Lição 1 já avisou: se você editar <code>combat_state</code> no lugar em vez de atribuir um objeto novo, a mudança some no <code>commit()</code> — sem erro, sem aviso. Esta lição explica <em>por que</em> isso acontece, usando o mecanismo real do SQLAlchemy (não "é assim que funciona, decore"), e por que ele sobrevive à Etapa 2 mesmo depois do <code>api.py</code> virar quatro camadas.</p>
+<div class="tagline">
+  <span>~12 minutos</span>
+  <span>Arquivos: <code>app/infra/db.py</code> · <code>app/routers/game.py</code></span>
+  <span><a href="0001-o-caminho-de-uma-jogada.html">Lição 1 — o caminho de uma jogada ↗</a></span>
+</div>
+
+<p>Em <code>app/infra/db.py</code>, <code>Personagem</code> é uma classe Python comum, só que herda de <code>Base</code> (SQLAlchemy). Isso não é decoração — é o que faz <code>heroi.hp_atual</code> deixar de ser um atributo Python qualquer e virar o que o SQLAlchemy chama de <strong>atributo instrumentado</strong>. Por baixo, cada coluna mapeada (<code>Mapped[int]</code>, <code>Mapped[str]</code>...) vira uma propriedade especial que, quando você <em>atribui</em> um valor a ela (<code>heroi.hp_atual = 7</code>), dispara um evento: "este atributo, deste objeto, mudou". É esse evento que o SQLAlchemy usa para saber o que escrever no próximo <code>commit()</code> — sem ele, o ORM não teria como saber que algo mudou sem comparar o objeto inteiro contra o banco toda vez.</p>
+
+<h2>A sessão lembra o que você tocou, não o que você fez</h2>
+
+<p>Cada requisição do Mestre.IA ganha uma <code>Session</code> nova (<code>get_db()</code>, <code>app/infra/db.py</code> — é o que o <code>Depends(get_db)</code> de cada router injeta). Uma <code>Session</code> mantém, na memória, um "mapa de identidade": para cada linha do banco que ela já carregou nesta requisição, existe exatamente um objeto Python representando ela. Quando você faz <code>heroi.hp_atual = 7</code>, a <code>Session</code> não escreve no banco na hora — ela só marca o objeto <code>heroi</code> como "sujo" (<em>dirty</em>). Só no <code>commit()</code> ela percorre tudo que está sujo e gera o <code>UPDATE</code> de verdade. Esse padrão tem nome: <a href="https://docs.sqlalchemy.org/en/20/orm/queryguide/dml.html">Unit of Work</a> — acumular mudanças e aplicar todas de uma vez, em vez de uma escrita por atribuição.</p>
+
+<p>É exatamente aqui que mora a armadilha. O evento "este atributo mudou" dispara quando você <strong>atribui</strong> (<code>heroi.combat_state = algo</code>). Ele não dispara quando você <strong>muta o valor por dentro</strong> — porque, do ponto de vista do Python, <code>heroi.combat_state["ativo"] = True</code> nunca toca no atributo <code>combat_state</code> do objeto <code>heroi</code>. Ele pega o dicionário que já estava lá (uma referência) e muda uma chave dele. O SQLAlchemy nunca é chamado — não há evento, não há "sujo", não há <code>UPDATE</code>.</p>
+
+<div class="warn"><b>Por que isso não acontece com uma coluna <code>Integer</code></b>Se <code>hp_atual</code> fosse mutável e você fizesse algo como <code>heroi.hp_atual += 1</code>, isso <em>também</em> é, por baixo, uma atribuição (<code>heroi.hp_atual = heroi.hp_atual + 1</code>) — o operador <code>+=</code> em Python sempre reatribui para tipos imutáveis como <code>int</code>. O problema é exclusivo de colunas <code>JSON</code> guardando algo mutável (<code>dict</code>, <code>list</code>), porque só esses tipos permitem mudar o conteúdo <em>sem</em> reatribuir a variável que aponta para eles.</div>
+
+<h2>O código já sabia disso — veja onde</h2>
+
+<p><code>app/routers/game.py</code>, no fim de <code>chat_endpoint</code>, é a prova ao vivo:</p>
+
+<pre><code>novo_hist = list(heroi.historico_chat)
+novo_hist.append({"role": "user", "content": user_input.action})
+novo_hist.append({"role": "assistant", "content": narrativa})
+<span class="hl">heroi.historico_chat = novo_hist</span>          <span class="cm"># reatribuição — dispara o evento</span>
+<span class="hl">heroi.combat_state = c_state.model_dump()</span> <span class="cm"># idem</span>
+db.commit()</code></pre>
+
+<p><code>list(heroi.historico_chat)</code> cria uma <strong>lista nova</strong> (uma cópia rasa) em vez de reaproveitar a que já estava no objeto. O código então mexe só nessa cópia — nunca na lista original que o SQLAlchemy está de olho. No fim, <code>heroi.historico_chat = novo_hist</code> troca o atributo pela lista nova inteira. É essa troca, não os dois <code>.append()</code>, que o SQLAlchemy enxerga. Se o código tivesse feito <code>heroi.historico_chat.append(...)</code> direto, os dois <code>append</code> teriam efeito na memória — a lista Python mudaria — mas o <code>commit()</code> gravaria o banco exatamente como estava antes. Um bug silencioso: nenhuma exceção, nenhum log, só uma mensagem de chat que "sumiu" depois do F5.</p>
+
+<div class="note"><b>A regra de bolso</b>Coluna <code>JSON</code> guardando <code>dict</code>/<code>list</code>: sempre trate como imutável do lado de fora. Leia, copie (ou, como o Mestre.IA faz desde a Etapa 2, valide para um modelo Pydantic com <code>model_validate</code>), mude a cópia, e devolva com uma atribuição nova no final. Nunca mexa direto no que <code>heroi.combat_state</code> devolve.</div>
+
+<h2>Por que a Etapa 2 não resolveu isso — e não devia</h2>
+
+<p>Existe uma correção de verdade para essa classe de bug: o SQLAlchemy tem uma extensão, <a href="https://docs.sqlalchemy.org/en/20/orm/extensions/mutable.html"><code>sqlalchemy.ext.mutable</code></a>, que embrulha o <code>dict</code>/<code>list</code> num tipo que <em>intercepta</em> mutação e dispara o evento sozinho — <code>MutableDict.as_mutable(JSON)</code> na definição da coluna, e <code>combat_state["ativo"] = True</code> passaria a funcionar sem reatribuição. O Mestre.IA não adotou isso na Etapa 2, de propósito: <code>domain/state.py</code> já resolve o problema por outro caminho — os campos JSON viram modelos Pydantic (<code>CombatState</code>, <code>WorldState</code>, <code>QuestLog</code>) assim que saem do banco, o código de negócio nunca mais toca no <code>dict</code> cru, e a gravação final sempre passa por <code>.model_dump()</code> seguido de atribuição — que já dispara o evento corretamente. Ensinar "sempre reatribua" para quem vai mexer no motor de regras da Etapa 3 é mais barato, e mais transferível para qualquer outro ORM, do que instalar uma extensão que resolve só este sintoma.</p>
+
+<h2>Duas coisas que você já sabe agora</h2>
+
+<div class="win"><b>Achado 1</b>O SQLAlchemy não observa o seu objeto em Python — ele observa <em>atribuições</em> a atributos mapeados. Mutação em memória (um <code>.append()</code>, um <code>dict[chave] = valor</code>) é invisível para o ORM, porque nenhuma dessas operações passa pela propriedade instrumentada que dispara o evento de "sujo". É a mesma razão pela qual, em Python puro, <code>lista_a = lista_b</code> não copia a lista — só copia a referência.</div>
+
+<div class="win"><b>Achado 2</b>O bug de coluna JSON silenciosa e o bug de "validar só no front" (Lição 2) têm a mesma forma: os dois são casos de <strong>confiar em algo que atravessou uma fronteira sem confirmar do outro lado</strong> — lá, a fronteira era rede (navegador → servidor); aqui, é a fronteira entre "objeto Python na sua mão" e "o que a <code>Session</code> está observando". Fronteiras que não avisam quando são cruzadas errado são o padrão mais comum de bug silencioso neste projeto.</div>
+
+<h2>Teste rápido</h2>
+<p>Sem olhar para cima. O objetivo aqui é lembrar, não acertar de primeira.</p>
+
+<div id="quiz"></div>
+<p class="score" id="score"></p>
+
+<div class="next">
+  <h4>Fonte primária desta lição</h4>
+  <ul>
+    <li><a href="https://docs.sqlalchemy.org/en/20/orm/session_basics.html">SQLAlchemy — Session Basics</a>, seção <em>Is the Session a cache?</em> e <em>Flushing</em> — a base do "mapa de identidade" e do Unit of Work usados aqui.</li>
+    <li><a href="https://docs.sqlalchemy.org/en/20/orm/extensions/mutable.html">SQLAlchemy — Mutation Tracking</a> — a extensão que resolveria o problema pelo caminho "instrumentar o dict", não adotada nesta etapa (ver seção acima).</li>
+  </ul>
+  <h4>Próximas lições possíveis</h4>
+  <ul>
+    <li><strong>Lição 4 —</strong> quando a Etapa 3 chegar: determinismo, seed, e por que testar código aleatório é mais fácil do que parece</li>
+  </ul>
+  <div class="ask">Travou em algo, ou uma explicação ficou pela metade? Me pergunta — eu sou o seu professor aqui, e é melhor desentortar agora do que seguir com um modelo mental torto.</div>
+</div>
+
+</main>
+
+<script>
+const QUESTIONS = [
+ {q:"Por que heroi.combat_state[\"ativo\"] = True não é gravado no commit(), mas heroi.combat_state = novo_dict é?",
+  o:["Porque só a atribuição dispara o evento que marca o objeto como 'sujo' para o SQLAlchemy","Porque dicionários não podem ser salvos em colunas JSON","Porque o commit() só salva o primeiro atributo alterado","Porque mutação em dict é mais lenta e o SQLAlchemy ignora por performance"], a:0,
+  fb:"Colunas mapeadas são propriedades instrumentadas: atribuir a elas dispara um evento de mudança. Mutar o conteúdo de um dict/list já guardado não passa por essa propriedade — o SQLAlchemy simplesmente nunca fica sabendo."},
+
+ {q:"O que é o 'mapa de identidade' de uma Session?",
+  o:["Um registro de que cada linha do banco carregada nesta sessão tem exatamente um objeto Python representando ela","Um cache que evita consultas repetidas ao banco por 24 horas","Um mapa de quais usuários têm permissão para editar cada personagem","O nome interno da tabela que guarda os personagens"], a:0,
+  fb:"Enquanto a Session existir, buscar o mesmo registro duas vezes devolve o mesmo objeto Python — é isso que permite ao SQLAlchemy saber quais objetos existem e rastrear se algum deles mudou."},
+
+ {q:"Por que esse bug não acontece com uma coluna Integer como hp_atual?",
+  o:["Porque int é imutável em Python — qualquer 'mudança' nele é, por baixo, uma reatribuição","Porque colunas Integer são verificadas duas vezes pelo SQLAlchemy","Porque hp_atual tem um validador especial que dict não tem","Porque números inteiros sempre dispersam eventos automaticamente"], a:0,
+  fb:"heroi.hp_atual += 1 já é, na prática, heroi.hp_atual = heroi.hp_atual + 1 — uma atribuição nova. Só tipos mutáveis (dict, list) permitem mudar o conteúdo sem passar pela propriedade instrumentada."},
+
+ {q:"Por que o Mestre.IA não adotou sqlalchemy.ext.mutable (MutableDict) na Etapa 2?",
+  o:["Porque os campos JSON já viram modelos Pydantic tipados antes de qualquer código de negócio tocar neles, e a gravação final sempre reatribui","Porque essa extensão não funciona com SQLite","Porque ela deixaria o código mais rápido, o que não é prioridade","Porque ela exigiria reescrever toda a tabela personagens"], a:0,
+  fb:"domain/state.py resolve o problema por outro caminho: o dict cru vira CombatState/WorldState/QuestLog assim que sai do banco, e volta com .model_dump() + atribuição. 'Sempre reatribua' é mais barato de ensinar — e vale para qualquer ORM, não só SQLAlchemy."}
+];
+
+let answered=0, right=0;
+const host=document.getElementById('quiz');
+QUESTIONS.forEach((item,i)=>{
+  const order=item.o.map((t,k)=>k);
+  for(let k=order.length-1;k>0;k--){const j=Math.floor(Math.random()*(k+1));[order[k],order[j]]=[order[j],order[k]];}
+  const el=document.createElement('div');
+  el.className='quiz';
+  el.innerHTML=`<p class="q">${i+1}. ${item.q}</p>
+    <div class="opts">${order.map(k=>`<button data-k="${k}">${item.o[k]}</button>`).join('')}</div>
+    <p class="fb">${item.fb}</p>`;
+  el.querySelectorAll('button').forEach(b=>{
+    b.addEventListener('click',()=>{
+      if(el.dataset.done) return;
+      el.dataset.done='1'; answered++;
+      const ok = Number(b.dataset.k)===item.a;
+      if(ok) right++;
+      el.querySelectorAll('button').forEach(x=>{
+        x.disabled=true;
+        if(Number(x.dataset.k)===item.a) x.classList.add('right');
+      });
+      if(!ok) b.classList.add('wrong');
+      el.querySelector('.fb').classList.add('on');
+      document.getElementById('score').textContent =
+        `${right} de ${answered} respondidas corretamente` +
+        (answered===QUESTIONS.length ? (right===QUESTIONS.length
+          ? " — você sabe defender essa fronteira." : " — reveja as perguntas que escaparam.") : "");
+    });
+  });
+  host.appendChild(el);
+});
+</script>
+
+</body>
+</html>
