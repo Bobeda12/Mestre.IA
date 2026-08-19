@@ -23,6 +23,7 @@ def _heroi(**overrides) -> Personagem:
         ouro=10,
         atributos=dict(ATRIBUTOS_HEROI),
         inventario=["Cimitarra"],
+        reputacao_npcs={},
     )
     base.update(overrides)
     return Personagem(**base)
@@ -170,6 +171,31 @@ class TestGastarOuro:
         resultado = _executor(heroi=heroi).gastar_ouro(4)
         assert resultado["ouro_restante"] == 6
         assert heroi.ouro == 6
+
+
+class TestAjustarReputacaoNpc:
+    def test_primeira_interacao_parte_de_zero(self):
+        heroi = _heroi()
+        resultado = _executor(heroi=heroi).ajustar_reputacao_npc("Taverneiro Gundren", -5, "insultou o taverneiro")
+        assert resultado["reputacao"] == -5
+        assert heroi.reputacao_npcs == {"Taverneiro Gundren": -5}
+
+    def test_delta_por_chamada_e_clampado(self):
+        heroi = _heroi()
+        resultado = _executor(heroi=heroi).ajustar_reputacao_npc("Ferreiro", 999, "presente generoso")
+        assert resultado["reputacao"] == 10  # clamp de delta em +-10, não +999
+
+    def test_valor_acumulado_e_clampado_no_total(self):
+        heroi = _heroi(reputacao_npcs={"Ferreiro": 95})
+        resultado = _executor(heroi=heroi).ajustar_reputacao_npc("Ferreiro", 10, "outro presente")
+        assert resultado["reputacao"] == 100  # 95+10=105, clamp em 100
+
+    def test_reputacoes_de_npcs_diferentes_nao_se_misturam(self):
+        heroi = _heroi()
+        executor = _executor(heroi=heroi)
+        executor.ajustar_reputacao_npc("Taverneiro", -5, "rude")
+        executor.ajustar_reputacao_npc("Ferreiro", 5, "gentil")
+        assert heroi.reputacao_npcs == {"Taverneiro": -5, "Ferreiro": 5}
 
 
 class TestIniciarCombate:

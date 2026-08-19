@@ -44,13 +44,37 @@ client = _build_client()
     reraise=True,
 )
 def _chamar_modelo(
-    modelo: str, msgs: list[dict], tools: list[dict] | None, tool_choice: str
+    modelo: str,
+    msgs: list[dict],
+    tools: list[dict] | None,
+    tool_choice: str,
+    response_format: dict | None = None,
 ) -> Any:
     kwargs: dict[str, Any] = {"model": modelo, "messages": msgs}
     if tools:
         kwargs["tools"] = tools
         kwargs["tool_choice"] = tool_choice
+    if response_format:
+        kwargs["response_format"] = response_format
     return client.chat.completions.create(**kwargs)  # type: ignore[union-attr]
+
+
+def chamar_modelo_unico(modelo: str, msgs: list[dict], response_format: dict | None = None) -> Any:
+    """Chama um único modelo específico, sem a cadeia de fallback —
+    usado pelo resumo rolante (Etapa 5, services/memory.py), que aceita
+    usar sempre o modelo mais barato e falhar sem alternativa: comprimir
+    memória não vale o custo de escalar para um modelo caro, e uma falha
+    aqui não derruba o turno (o resumo antigo continua valendo)."""
+    if not client:
+        raise ErroMestre(
+            "O mestre está sem acesso à IA — falta configurar a chave da Groq no servidor (GROQ_API_KEY)."
+        )
+    try:
+        return _chamar_modelo(modelo, msgs, None, "auto", response_format)
+    except _ERROS_TRANSITORIOS as e:
+        raise ErroMestre("A cota de uso da IA acabou por agora, ou o serviço demorou demais.") from e
+    except groq.APIStatusError as e:
+        raise ErroMestre(f"O serviço de IA recusou o pedido (código {e.status_code}).") from e
 
 
 def chamar_com_fallback(msgs: list[dict], tools: list[dict] | None = None, tool_choice: str = "auto") -> Any:

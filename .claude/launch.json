@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "mestre-ia-frontend",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "Frontend", "run", "dev"],
+      "port": 5173
+    },
+    {
+      "name": "mestre-ia-backend",
+      "runtimeExecutable": "uv",
+      "runtimeArgs": ["run", "--project", "Backend", "uvicorn", "app.main:app", "--app-dir", "Backend", "--port", "8000"],
+      "port": 8000
+    }
+  ]
+}

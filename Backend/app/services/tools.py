@@ -158,6 +158,20 @@ class ToolExecutor:
         self.eventos.append(f"💰 Gasta {qtd} de ouro. Restam {self.heroi.ouro}.")
         return {"ouro_restante": self.heroi.ouro}
 
+    def ajustar_reputacao_npc(self, npc: str, delta: int, motivo: str = "") -> dict:
+        """Reputação por NPC (Etapa 5) — cumpre a promessa da bíblia do
+        mestre ("NPCs têm memória"). `delta` é clampado por chamada e o
+        valor acumulado é clampado no total: o modelo propõe a direção e a
+        intensidade aproximada, o servidor decide o número final (mesmo
+        espírito de `gastar_ouro`). Só alimenta a narrativa — não existe
+        motor de preço de loja, é escopo explicitamente fora desta etapa."""
+        delta_clampado = max(-10, min(10, delta))
+        atual = self.heroi.reputacao_npcs.get(npc, 0)
+        novo = max(-100, min(100, atual + delta_clampado))
+        self.heroi.reputacao_npcs = {**self.heroi.reputacao_npcs, npc: novo}
+        self.eventos.append(f"🤝 Reputação com {npc}: {atual:+d} → {novo:+d} ({motivo or 'sem motivo informado'}).")
+        return {"npc": npc, "reputacao": novo}
+
     def iniciar_combate(self, inimigos: list[str]) -> dict:
         if self.c_state.ativo:
             return {"erro": "já há um combate ativo"}
@@ -208,6 +222,7 @@ ToolExecutor._DESPACHO = {
     "usar_item": ToolExecutor.usar_item,
     "dar_item": ToolExecutor.dar_item,
     "gastar_ouro": ToolExecutor.gastar_ouro,
+    "ajustar_reputacao_npc": ToolExecutor.ajustar_reputacao_npc,
     "iniciar_combate": ToolExecutor.iniciar_combate,
 }
 
@@ -360,6 +375,31 @@ TOOLS_SCHEMA: list[dict] = [
                 "type": "object",
                 "properties": {"qtd": {"type": "integer", "description": "Quantidade de ouro a gastar."}},
                 "required": ["qtd"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "ajustar_reputacao_npc",
+            "description": (
+                "Registra que o herói foi notavelmente rude, ameaçador, generoso ou gentil com um NPC "
+                "nomeado — não em toda interação trivial, só quando o tom da cena claramente muda a "
+                "relação. O NPC vai lembrar disso em cenas futuras (preço, disposição a ajudar, tom)."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "npc": {"type": "string", "description": "Nome exato do NPC."},
+                    "delta": {
+                        "type": "integer",
+                        "description": "Positivo para melhorar a relação, negativo para piorar. "
+                        "Use algo entre -10 e 10 proporcional à gravidade (insulto leve: -2, "
+                        "ameaça grave: -8, presente generoso: +5).",
+                    },
+                    "motivo": {"type": "string", "description": "O que o herói fez, em poucas palavras."},
+                },
+                "required": ["npc", "delta"],
             },
         },
     },

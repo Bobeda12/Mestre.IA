@@ -2,11 +2,12 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.domain.character import LoadRequest, UserAction
+from app.domain.memoria import ResumoRolante
 from app.domain.state import CombatState, QuestLog, WorldState
 from app.infra.data_manager import regras
 from app.infra.db import Personagem, get_db
 from app.infra.llm_client import ErroMestre, chamar_com_fallback
-from app.services import combat
+from app.services import combat, memory, rag_regras
 from app.services.agent_loop import executar_turno
 from app.services.guardrail import corrigir_narrativa, validar_narrativa
 from app.services.memory import contexto_recente
@@ -69,6 +70,7 @@ async def chat_endpoint(user_input: UserAction, db: Session = Depends(get_db)) -
     c_state = CombatState.model_validate(heroi.combat_state or {})
     q_state = QuestLog.model_validate(heroi.quest_log or {})
 
+    w_state.turno += 1
     hist = contexto_recente(list(heroi.historico_chat), n=4)
 
     # Teste de morte é consequência automática de HP 0, não uma decisão do
@@ -90,7 +92,27 @@ async def chat_endpoint(user_input: UserAction, db: Session = Depends(get_db)) -
         except ErroMestre:
             narrativa = ""
     else:
-        prompt = montar_contexto(heroi, w_state, c_state, q_state)
+        # Etapa 5: as três camadas de memória entram aqui — longo prazo
+        # (busca híbrida sobre eventos passados deste personagem), regras
+        # (RAG sobre a bíblia, em vez do texto inteiro) e médio prazo
+        # (sumário rolante estruturado). Ver services/memory.py e
+        # services/rag_regras.py.
+        resumo = ResumoRolante.model_validate(heroi.resumo_rolante or {})
+        memorias = memory.memorias_relevantes(db, heroi.id, user_input.action, w_state.turno)
+        regras_relevantes = rag_regras.regras_relevantes(user_input.action)
+        nomes_na_cena = {i.nome for i in c_state.inimigos} | set(resumo.npcs_conhecidos)
+        reputacoes = {nome: valor for nome, valor in heroi.reputacao_npcs.items() if nome in nomes_na_cena}
+
+        prompt = montar_contexto(
+            heroi,
+            w_state,
+            c_state,
+            q_state,
+            regras_relevantes=regras_relevantes,
+            memorias=memorias,
+            resumo=resumo,
+            reputacoes=reputacoes,
+        )
         msgs = [{"role": "system", "content": prompt}] + hist + [{"role": "user", "content": user_input.action}]
         executor = ToolExecutor(heroi, c_state, w_state)
         try:
@@ -114,6 +136,16 @@ async def chat_endpoint(user_input: UserAction, db: Session = Depends(get_db)) -
     heroi.historico_chat = novo_hist
     heroi.combat_state = c_state.model_dump()
     heroi.world_state = w_state.model_dump()
+    memory.atualizar_resumo_rolante(heroi)
     db.commit()
+
+    memory.registrar_evento(
+        db,
+        heroi.id,
+        w_state.turno,
+        tipo="morte" if eventos_morte else "turno",
+        texto=f"{user_input.action} → {narrativa[:300]}",
+        personagens=[i.nome for i in c_state.inimigos],
+    )
 
     return _resposta(heroi, c_state, q_state, narrativa=narrativa)

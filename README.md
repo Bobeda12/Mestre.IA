@@ -69,9 +69,9 @@ flowchart TB
 
     subgraph app["Backend/app"]
         RT["routers/<br/>character · game · options"]
-        SV["services/<br/>narrator · combat · rules_engine · memory"]
-        DM["domain/<br/>character · state<br/>(Pydantic — a 'verdade' do sistema)"]
-        IF["infra/<br/>db · settings · llm_client · data_manager"]
+        SV["services/<br/>narrator · combat · rules_engine<br/>memory · hybrid_search · rag_regras"]
+        DM["domain/<br/>character · state · memoria<br/>(Pydantic — a 'verdade' do sistema)"]
+        IF["infra/<br/>db · settings · llm_client · data_manager · embeddings"]
 
         RT --> SV
         RT --> DM
@@ -80,25 +80,26 @@ flowchart TB
         SV --> IF
     end
 
-    IF -->|SQLAlchemy 2.0| DB[("rpg_save.db<br/>usuarios · personagens")]
+    IF -->|SQLAlchemy 2.0| DB[("rpg_save.db<br/>usuarios · personagens · eventos_memoria")]
     IF -->|Alembic| MIG["migrations/"]
     SV -->|chat completions| GROQ["Groq API"]
+    IF -->|embeddings locais| ONNX["fastembed (ONNX Runtime)"]
 ```
 
 - **`routers/`** — só HTTP: parseia a requisição (via os modelos de `domain/`), chama um `service`, devolve a resposta. Não sabe nada sobre regras de D&D nem sobre o LLM.
-- **`services/`** — a lógica: `narrator.py` fala com a Groq (e sabe transformar cada tipo de falha numa mensagem própria), `rules_engine.py` é determinístico (zero I/O, zero LLM — dados, ataque, dano, iniciativa, testes de morte, point-buy), `combat.py` orquestra o combate ligando o bestiário real ao motor (Etapa 3, ADR-0006), `memory.py` hoje só recorta as últimas N mensagens (a base da memória em camadas da Etapa 5).
-- **`domain/`** — os modelos Pydantic que definem a forma do estado do jogo: o que o cliente pode propor na criação de personagem (`character.py`) e como `world_state`/`combat_state`/`quest_log` são tipados (`state.py`), em vez de dicionários soltos.
-- **`infra/`** — tudo que fala com o mundo externo: banco (SQLAlchemy 2.0 tipado), config (`pydantic-settings`, lendo `.env`), o client da Groq, e o carregador dos JSONs de regras (`data/`).
+- **`services/`** — a lógica: `narrator.py` fala com a Groq (e sabe transformar cada tipo de falha numa mensagem própria), `rules_engine.py` é determinístico (zero I/O, zero LLM — dados, ataque, dano, iniciativa, testes de morte, point-buy), `combat.py` orquestra o combate ligando o bestiário real ao motor (Etapa 3, ADR-0006), `agent_loop.py`/`tools.py` são o tool calling da Etapa 4 (ADR-0007), `memory.py` é a memória em três camadas — curto prazo cru, médio prazo (resumo estruturado) e longo prazo (eventos buscáveis) —, e `hybrid_search.py`/`rag_regras.py` são a busca híbrida (BM25 + embeddings) que alimenta a memória de longo prazo e filtra a bíblia do mestre por relevância (Etapa 5, ADR-0009/ADR-0010).
+- **`domain/`** — os modelos Pydantic que definem a forma do estado do jogo: o que o cliente pode propor na criação de personagem (`character.py`), como `world_state`/`combat_state`/`quest_log` são tipados (`state.py`), e a forma do resumo rolante (`memoria.py`) — em vez de dicionários soltos.
+- **`infra/`** — tudo que fala com o mundo externo: banco (SQLAlchemy 2.0 tipado), config (`pydantic-settings`, lendo `.env`), o client da Groq, o carregador dos JSONs de regras (`data/`), e o modelo de embeddings local (`embeddings.py`, via `fastembed`/ONNX Runtime — sem rede depois do primeiro download).
 
-Ver [`ADR-0003`](docs/adr/0003-camadas-router-service-domain-infra.md) para o porquê dessa divisão, [`ADR-0004`](docs/adr/0004-alembic-para-migrations.md) para as migrations, [`ADR-0005`](docs/adr/0005-usuario-personagem-antes-do-login.md) para o par `usuario`/`personagem` no schema, e [`ADR-0006`](docs/adr/0006-llm-nao-e-motor-de-regras.md) para a separação juiz × narrador do combate.
+Ver [`ADR-0003`](docs/adr/0003-camadas-router-service-domain-infra.md) para o porquê dessa divisão, [`ADR-0004`](docs/adr/0004-alembic-para-migrations.md) para as migrations, [`ADR-0005`](docs/adr/0005-usuario-personagem-antes-do-login.md) para o par `usuario`/`personagem` no schema, [`ADR-0006`](docs/adr/0006-llm-nao-e-motor-de-regras.md) para a separação juiz × narrador do combate, [`ADR-0007`](docs/adr/0007-tool-calling-em-vez-de-json-solto.md) para o tool calling, e [`ADR-0009`](docs/adr/0009-memoria-hierarquica-em-tres-camadas.md)/[`ADR-0010`](docs/adr/0010-busca-hibrida-bm25-mais-densa-e-por-que-nao-sqlite-vec.md) para a memória e a busca híbrida.
 
 ## Limitações conhecidas
 
 Honestas de propósito — ver `PLANO_MESTRE.md` §2.2 para o diagnóstico completo e as etapas que fecham cada uma:
 
 - **Não existe login de verdade.** Todo personagem pertence a um único `usuario` local fixo (id 1), criado no startup. O schema já suporta múltiplos usuários (Etapa 2); a autenticação por e-mail mágico chega na Etapa 8.
-- **O modelo ainda propõe as ações de combate em JSON solto, não em tool calling de verdade.** `comando_combate` é um campo estruturado no mesmo JSON de sempre — o motor (`services/combat.py`) já decide acerto/dano/HP de forma determinística, mas a chamada de ferramenta nativa da API (com loop de agente, retry e fallback entre provedores) é a Etapa 4 ("O narrador").
-- **A memória do mestre é curta.** Só as últimas 4 mensagens (`services/memory.py`). Memória hierárquica (curto/médio/longo prazo, busca híbrida) é a Etapa 5.
+- **O resumo rolante de médio prazo pode divergir do estado real** — visto ao vivo na Etapa 5: o resumo estruturado registrou uma mudança de reputação de NPC que a ferramenta que governa esse número nunca aplicou. O guardrail (Etapa 4) confere a narrativa contra o estado; não confere o resumo contra nada ainda (ver ADR-0009).
+- **Reputação de NPC só alimenta a narrativa, não existe motor de preço de loja** — a bíblia promete "o preço na loja sobe 20%", a Etapa 5 implementa o número (`reputacao_npcs`) mas não um sistema de comércio (não é regressão: esse sistema nunca existiu no jogo).
 - **D&D 5e enxuto, de propósito** (`PLANO_MESTRE.md` §9.2): sem magias com slots, multiclasse, façanhas, grid tático com deslocamento em metros, nem a maior parte das condições. O combate é theater-of-the-mind com resolução determinística — CA, dado de vida, `d20+mod` vs CD, dano por arma, iniciativa e testes de morte, e mais nada por enquanto.
 - **Um único herói, sem mesa multiplayer** — decisão de escopo deliberada (`PLANO_MESTRE.md` §9.3), não uma limitação a corrigir.
 - **CORS aberto (`*`) e sem rate limit.** Aceitável em dev; fechar isso é Etapa 9 (deploy).

@@ -58,7 +58,39 @@ class Personagem(Base):
     combat_state: Mapped[dict] = mapped_column(JSON, default=dict)
     historico_chat: Mapped[list] = mapped_column(JSON, default=list)
 
+    # Etapa 5 (memória): sumário estruturado de médio prazo — ver
+    # domain/memoria.py:ResumoRolante e services/memory.py. `turno_resumido_ate`
+    # é o índice de `historico_chat` já processado, para o resumo rolante
+    # nunca reprocessar a mesma fatia de mensagens duas vezes.
+    resumo_rolante: Mapped[dict] = mapped_column(JSON, default=dict)
+    turno_resumido_ate: Mapped[int] = mapped_column(default=0, server_default="0")
+    # NPC -> reputação (-100..100). Mesmo padrão de `inventario`: o
+    # ToolExecutor nunca toca o banco diretamente, só reatribui esta coluna
+    # (ver services/tools.py:ajustar_reputacao_npc e Lição 03).
+    reputacao_npcs: Mapped[dict] = mapped_column(JSON, default=dict)
+
     usuario: Mapped["Usuario"] = relationship(back_populates="personagens")
+    eventos_memoria: Mapped[list["EventoMemoria"]] = relationship(back_populates="personagem")
+
+
+class EventoMemoria(Base):
+    """Memória de longo prazo (Etapa 5) — um registro por evento
+    significativo do jogo, recuperável por busca híbrida
+    (services/hybrid_search.py) filtrada sempre por `personagem_id`, para
+    nunca vazar memória entre personagens/sessões diferentes."""
+
+    __tablename__ = "eventos_memoria"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    personagem_id: Mapped[int] = mapped_column(ForeignKey("personagens.id"), index=True)
+    turno: Mapped[int]
+    tipo: Mapped[str]
+    texto: Mapped[str]
+    personagens_citados: Mapped[list] = mapped_column(JSON, default=list)
+    embedding: Mapped[list] = mapped_column(JSON)
+    criado_em: Mapped[datetime] = mapped_column(default=lambda: datetime.now(UTC))
+
+    personagem: Mapped["Personagem"] = relationship(back_populates="eventos_memoria")
 
 
 _connect_args = {"check_same_thread": False} if settings.database_url.startswith("sqlite") else {}

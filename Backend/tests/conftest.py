@@ -9,10 +9,13 @@ absoluto por padrão; aqui só sobrescrevemos via variável de ambiente
 temporário — sem tocar no save de verdade nem precisar de chdir.
 """
 
+import hashlib
 import os
 import sys
 import tempfile
 from pathlib import Path
+
+import pytest
 
 BACKEND_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BACKEND_DIR))
@@ -32,3 +35,21 @@ def pytest_configure(config):
         garantir_usuario_local(db)
     finally:
         db.close()
+
+
+def _embedding_falso(texto: str) -> list[float]:
+    """Hash determinístico, sem semântica real — só para nenhum teste de
+    integração (ex. TestClient batendo em /chat) precisar baixar/carregar o
+    modelo real de embeddings (Etapa 5). Relevância de busca é
+    responsabilidade de tests/test_hybrid_search.py, que sempre passa seu
+    próprio `embed_fn` explícito."""
+    digest = hashlib.sha256(texto.encode("utf-8")).digest()
+    return [b / 255 for b in digest[:16]]
+
+
+@pytest.fixture(autouse=True)
+def _embeddings_sem_rede(monkeypatch):
+    from app.infra import embeddings
+
+    monkeypatch.setattr(embeddings, "embed_um", _embedding_falso)
+    monkeypatch.setattr(embeddings, "embed", lambda textos: [_embedding_falso(t) for t in textos])

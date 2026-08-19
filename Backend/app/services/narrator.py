@@ -3,8 +3,8 @@ import json
 import groq
 
 from app.domain.character import CharacterCreationRequest
+from app.domain.memoria import ResumoRolante
 from app.domain.state import CombatState, QuestLog, WorldState
-from app.infra.data_manager import regras
 from app.infra.db import Personagem
 from app.infra.llm_client import MODEL_NAME, ErroMestre, client
 
@@ -84,12 +84,48 @@ def gerar_prologo_missao(char: CharacterCreationRequest) -> dict:
         }
 
 
-def montar_contexto(heroi: Personagem, w_state: WorldState, c_state: CombatState, q_state: QuestLog) -> str:
+def montar_contexto(
+    heroi: Personagem,
+    w_state: WorldState,
+    c_state: CombatState,
+    q_state: QuestLog,
+    regras_relevantes: list[str] | None = None,
+    memorias: list[str] | None = None,
+    resumo: ResumoRolante | None = None,
+    reputacoes: dict[str, int] | None = None,
+) -> str:
     # Etapa 4 (ADR-0007): o modelo não escreve mais nenhum campo de estado
     # em JSON — toda mudança (dano, item, ouro, movimento, combate) passa
     # por uma ferramenta (services/tools.py), chamada via tool calling
     # nativo da Groq. Esta função só monta o texto de sistema; quem oferece
     # `tools=` ao modelo é services/agent_loop.py.
+    #
+    # Etapa 5 (ADR-0009/ADR-0010): a bíblia inteira não é mais despejada
+    # aqui — `regras_relevantes` já vem filtrada por RAG
+    # (services/rag_regras.py). `memorias`/`resumo`/`reputacoes` são as
+    # camadas de médio e longo prazo (services/memory.py); o parâmetro
+    # `hist` de curto prazo continua sendo montado por quem chama (mesmo
+    # contrato desde a Etapa 1).
+    resumo = resumo or ResumoRolante()
+    secao_regras = "\n\n".join(regras_relevantes) if regras_relevantes else ""
+
+    secao_memoria = ""
+    if memorias:
+        secao_memoria += "[MEMÓRIAS RELEVANTES]\n" + "\n".join(f"- {m}" for m in memorias) + "\n"
+    if resumo.fatos_estabelecidos:
+        secao_memoria += "[FATOS ESTABELECIDOS]\n" + "\n".join(f"- {f}" for f in resumo.fatos_estabelecidos) + "\n"
+    if resumo.npcs_conhecidos:
+        secao_memoria += "[NPCS CONHECIDOS]\n" + "\n".join(f"- {n}" for n in resumo.npcs_conhecidos) + "\n"
+    if resumo.promessas_feitas:
+        secao_memoria += "[PROMESSAS FEITAS]\n" + "\n".join(f"- {p}" for p in resumo.promessas_feitas) + "\n"
+    if resumo.mudancas_no_mundo:
+        secao_memoria += "[MUDANÇAS NO MUNDO]\n" + "\n".join(f"- {m}" for m in resumo.mudancas_no_mundo) + "\n"
+    if reputacoes:
+        linhas_reputacao = "\n".join(
+            f"- {npc}: {valor:+d} (negativo é hostil, positivo é favorável)" for npc, valor in reputacoes.items()
+        )
+        secao_memoria += f"[REPUTAÇÃO DO HERÓI COM NPCS PRESENTES]\n{linhas_reputacao}\n"
+
     if c_state.ativo:
         vivos = [i.model_dump() for i in c_state.inimigos if i.hp > 0]
         secao_combate = f"""[COMBATE ATIVO] Inimigos vivos: {json.dumps(vivos, ensure_ascii=False)}
@@ -105,7 +141,8 @@ def montar_contexto(heroi: Personagem, w_state: WorldState, c_state: CombatState
     O servidor confirma que os nomes existem antes de criar o combate."""
 
     return f"""
-    {regras.get_biblia()}
+    {secao_regras}
+    {secao_memoria}
     [HEROI] {heroi.nome} ({heroi.classe}) | HP: {heroi.hp_atual}/{heroi.hp_max} | Ouro: {heroi.ouro}
     [INVENTÁRIO] {heroi.inventario}
     [MISSÃO ATUAL] {q_state.nome_missao}: {q_state.objetivo_missao}

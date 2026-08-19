@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Lição 6 — Embeddings, similaridade e como se mede recall</title>
+<link rel="stylesheet" href="../assets/curso.css">
+</head>
+<body>
+<main class="page">
+
+<p class="kicker">Lição 06 · Mestre.IA</p>
+<h1>Embeddings, similaridade e como se mede recall — a memória que substitui o <code>[-4:]</code></h1>
+<p class="standfirst">Desde a Etapa 1, o mestre só enxergava as últimas 4 mensagens da conversa (<code>historico_chat[-4:]</code>) — o resto simplesmente não existia mais para o modelo. A Etapa 5 troca isso por uma memória de longo prazo de verdade: cada turno vira um evento buscável, e "buscável" aqui significa duas técnicas combinadas — busca por palavra exata (a mesma família do <code>consultar_regra</code> da Etapa 4) e busca por <em>sentido</em>, via embedding. Esta lição explica o que um embedding realmente é, por que nenhum dos dois métodos sozinho basta, e dois bugs reais que só apareceram medindo com número — não adivinhando.</p>
+<div class="tagline">
+  <span>~14 minutos</span>
+  <span>Arquivos: <code>app/infra/embeddings.py</code> · <code>app/services/hybrid_search.py</code> · <code>scripts/memory_recall.py</code></span>
+  <span><a href="0005-anatomia-de-uma-chamada-com-ferramentas.html">Lição 5 — anatomia de uma chamada com ferramentas ↗</a></span>
+</div>
+
+<h2>O que um embedding é, sem mistério</h2>
+
+<p>Um embedding é uma lista de números — um vetor — que representa o <em>sentido</em> de um texto. <code>app/infra/embeddings.py:embed_um("O taverneiro está furioso")</code> devolve uma lista de 384 números (<code>float</code>). Sozinha, essa lista não significa nada legível. O que importa é a <strong>distância</strong> entre dois vetores: frases com sentido parecido produzem vetores próximos no espaço; frases sem relação nenhuma produzem vetores distantes. É por isso que "o taverneiro está furioso" e "o dono da taverna está bravo" ficam perto uma da outra mesmo sem compartilhar uma palavra sequer — o modelo de embedding (aqui, <code>sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2</code>, carregado via <code>fastembed</code>) foi treinado para aproximar frases parafraseadas.</p>
+
+<p>A distância usada aqui é <strong>similaridade de cosseno</strong> — o cosseno do ângulo entre os dois vetores, não a distância "em linha reta" entre eles:</p>
+
+<pre><code>def _cosseno(a: list[float], b: list[float]) -> float:
+    produto = sum(x * y for x, y in zip(a, b, strict=True))
+    norma_a = math.sqrt(sum(x * x for x in a))
+    norma_b = math.sqrt(sum(y * y for y in b))
+    return produto / (norma_a * norma_b)</code></pre>
+
+<p>1.0 significa "mesma direção" (sentido idêntico); 0.0 significa "sem relação"; -1.0 significa "sentido oposto" (raro em texto). <code>services/hybrid_search.py:busca_densa</code> calcula isso entre a pergunta e cada evento guardado, e ordena do mais parecido para o menos parecido. Repare que não existe nenhuma chamada de rede aqui — o modelo roda localmente (via ONNX Runtime, a engine por trás do <code>fastembed</code>), baixado uma vez (~220MB) e reusado depois. Isso é o que torna calcular um embedding por turno viável: é rápido e não gasta cota de LLM nenhuma.</p>
+
+<div class="note"><b>Por que não `sentence-transformers`, se o roadmap citava ele?</b>Mesma técnica, biblioteca diferente: <code>fastembed</code> usa ONNX Runtime em vez de PyTorch — o mesmo tipo de modelo, rodando sem trazer PyTorch (centenas de MB) como dependência. O <a href="../../docs/adr/0010-busca-hibrida-bm25-mais-densa-e-por-que-nao-sqlite-vec.md">ADR-0010</a> registra a troca e o porquê.</div>
+
+<h2>Por que embedding sozinho não basta: nome próprio</h2>
+
+<p>Um RPG é feito de nome próprio — NPC, local, item, todos inventados, nenhum deles no vocabulário de treino do modelo de embedding. Quando um nome não é uma palavra "conhecida", o modelo o decompõe em pedaços menores (subtokens) e o vetor final carrega pouca informação distintiva sobre <em>aquele nome específico</em> — ele ainda captura "isto é sobre uma pessoa/lugar", mas perde a identidade exata. Na prática: perguntar "o que aconteceu com o taverneiro Gundren?" pode trazer um evento sobre <em>outro</em> personagem numa taverna, só porque o "tema" bate.</p>
+
+<p>A solução clássica de busca por texto — <strong>BM25</strong>, o mesmo algoritmo por trás de motores de busca por palavra-chave — resolve exatamente esse ponto cego: ele não entende sentido nenhum, só conta quão raro e quão frequente cada palavra exata é. "Gundren" aparecendo em pouquíssimos eventos faz esse termo pesar muito quando aparece de novo — é <em>precisão</em>, não <em>generalização</em>. As duas técnicas erram em direções opostas, e é por isso que <code>services/hybrid_search.py</code> usa as duas.</p>
+
+<h2>Fundindo dois rankings sem comparar maçã com laranja</h2>
+
+<p>BM25 devolve um score sem limite superior (pode ser 8.3, pode ser 0.2); cosseno fica sempre entre -1 e 1. Comparar os dois diretamente não faz sentido — um score de BM25=2.0 não é "melhor" que cosseno=0.9 nem "pior", são escalas diferentes. A técnica usada aqui é <strong>Reciprocal Rank Fusion (RRF)</strong>: em vez de comparar scores, compara-se <em>posições</em>. Cada busca produz um ranking (1º lugar, 2º lugar, ...); a fusão soma <code>1 / (k + posição)</code> de cada lista para cada documento:</p>
+
+<pre><code>def fusao_rrf(ranqueamentos: list[list[int]], k: int = 10) -> dict[int, float]:
+    scores: dict[int, float] = {}
+    for ranking in ranqueamentos:
+        for posicao, id_ in enumerate(ranking):
+            scores[id_] = scores.get(id_, 0.0) + 1.0 / (k + posicao + 1)
+    return scores</code></pre>
+
+<p>Um documento que fica bem colocado nas <em>duas</em> buscas acumula mais pontuação que um que só aparece bem numa delas — sem nunca precisar decidir "BM25 vale quanto, cosseno vale quanto".</p>
+
+<div class="warn"><b>Achado 1 — o `k` "clássico" do RRF (60) quebrou o resultado neste corpus</b>O paper original do RRF usa <code>k=60</code>, pensado para milhares de resultados por lista (busca na web). Rodando <code>scripts/memory_recall.py</code> pela primeira vez, a busca híbrida devolvia sempre os 3 eventos mais recentes, não importava a pergunta — o decaimento por recência (explicado abaixo) estava dominando tudo sozinho. A causa: com só 15-20 documentos por busca, <code>k=60</code> deixa a diferença de score entre a 1ª e a 3ª posição pequena demais — o decaimento (que multiplica o score) passava a ser o único fator que realmente diferenciava os documentos. Baixar <code>k</code> para 10 resolveu: a diferença entre posições voltou a ser grande o bastante para a relevância genuína competir de igual para igual com a recência.</div>
+
+<h2>Recência: um desempate, não um veto</h2>
+
+<p>Memória de RPG precisa lembrar que "o que aconteceu há 3 turnos pesa mais que há 80" — mas sem <em>esquecer</em> o antigo por completo. <code>decaimento_recencia</code> multiplica o score por um fator que cai pela metade a cada <code>meia_vida</code> turnos, mas nunca abaixo de um <code>piso</code> (50%, por padrão):</p>
+
+<pre><code>fator = piso + (1 - piso) * 0.5 ** (distancia / meia_vida)</code></pre>
+
+<p>Sem o piso, um evento muito antigo mas exatamente relevante — a única memória que de fato responde à pergunta — perdia de um evento recente e irrelevante só por ser recente. É o oposto do que "memória" deveria fazer, e foi exatamente o sintoma do Achado 1 antes da correção.</p>
+
+<h2>Achado 2 — quando a busca por palavra não encontra nada, ela ainda "ranqueia"</h2>
+
+<p>Este só apareceu testando o RAG sobre a bíblia (a próxima seção). A pergunta "Está chovendo, eu me abrigo embaixo da árvore" não compartilha nenhuma palavra literal com a seção <code>[GESTÃO DE TEMPO E CLIMA]</code> da bíblia (que fala em "chuva", não "chovendo"). Quando nenhum termo da consulta aparece em nenhum documento, <code>BM25Okapi.get_scores</code> devolve zero para todos — e ordenar uma lista de zeros produz uma ordem baseada só na posição de entrada da lista, não em relevância nenhuma. Essa ordem falsa entrava na fusão RRF como se fosse um sinal de verdade, e vencia o ranking <em>genuíno</em> da busca densa (que reconhecia corretamente a seção de clima como mais relevante). A correção foi pequena — <code>busca_lexica</code> devolve <code>[]</code>, não uma ordem, quando o score máximo é zero:</p>
+
+<pre><code>scores = bm25.get_scores(_tokenizar(query))
+if max(scores, default=0) <= 0:
+    return []</code></pre>
+
+<div class="win"><b>O padrão nos dois achados</b>Nenhum dos dois bugs aparece olhando o código isoladamente — <code>fusao_rrf</code> e <code>busca_lexica</code> "funcionam" em teste unitário com poucos documentos artificiais. Só apareceram rodando um cenário realista (<code>scripts/memory_recall.py</code>, ou uma pergunta real sobre a bíblia) e comparando o resultado esperado contra o resultado real. É o mesmo padrão da Etapa 4 ("testar ao vivo antes de confiar no teste automatizado") — só que aqui o "ao vivo" é rodar a busca com dado sintético mas realista, sem precisar de rede nem de LLM.</div>
+
+<h2>RAG sobre a bíblia: a mesma busca, outro corpus</h2>
+
+<p><code>services/rag_regras.py</code> reaproveita exatamente o mesmo <code>hybrid_search.buscar</code> — só que em vez de eventos de memória, o corpus são as seções da bíblia do mestre. Até esta etapa, <code>narrator.montar_contexto</code> despejava a bíblia inteira em todo turno; agora só as seções <em>situacionais</em> (combate, consequência social, clima) passam por busca — as diretrizes de <em>como narrar</em> (verossimilhança, motor sensorial, protocolo de arbitragem) continuam sempre presentes, porque valem para qualquer cena, não são uma "regra consultável" de uma situação específica.</p>
+
+<h2>Recall@k: como medir se a memória está funcionando</h2>
+
+<p><strong>Recall@k</strong> responde uma pergunta simples: de um conjunto de consultas com resposta certa conhecida, em quantas o documento certo apareceu entre os <code>k</code> primeiros resultados? <code>scripts/memory_recall.py</code> monta 17 eventos sintéticos (incluindo um par adversarial — um nome próprio raro contra um distrator sem nome, para forçar exatamente o caso que motivou este ADR) e 6 consultas com o id certo já anotado. Rodando com <code>k=1</code> (só o primeiro resultado precisa estar certo — o teste mais rigoroso possível):</p>
+
+<pre><code>recall@1 denso apenas : 50%
+recall@1 híbrido       : 83%</code></pre>
+
+<p>A busca densa sozinha erra metade das perguntas neste conjunto pequeno — principalmente as que dependem de identificar <em>qual</em> evento, entre vários parecidos, cita o NPC certo. A híbrida recupera a maioria. Não é um número "grande" em termos absolutos, mas é honesto: um conjunto de 6 consultas não prova nada sobre escala, só que a técnica se comporta como o esperado no caso de teste que ela foi desenhada para resolver.</p>
+
+<h2>Teste rápido</h2>
+<p>Sem olhar para cima. O objetivo aqui é lembrar, não acertar de primeira.</p>
+
+<div id="quiz"></div>
+<p class="score" id="score"></p>
+
+<div class="next">
+  <h4>Fonte primária desta lição</h4>
+  <ul>
+    <li><a href="https://plg.uwaterloo.ca/~gvcormac/cormacksigir09-rrf.pdf">Cormack, Clarke, Büttcher (2009) — Reciprocal Rank Fusion</a> — o paper original do RRF, origem do <code>k=60</code> que se mostrou grande demais para este corpus.</li>
+    <li><a href="https://github.com/qdrant/fastembed">fastembed</a> — embeddings via ONNX Runtime, sem PyTorch.</li>
+    <li><a href="https://github.com/dorianbrown/rank_bm25">rank-bm25</a> — a implementação de BM25Okapi usada aqui.</li>
+  </ul>
+  <h4>Próximas lições possíveis</h4>
+  <ul>
+    <li><strong>Lição 7 —</strong> quando a Etapa 6 chegar: como se testa um sistema que não é determinístico — golden dataset, LLM-as-judge, gate de regressão no CI.</li>
+  </ul>
+  <div class="ask">Travou em algo, ou uma explicação ficou pela metade? Me pergunta — eu sou o seu professor aqui, e é melhor desentortar agora do que seguir com um modelo mental torto.</div>
+</div>
+
+</main>
+
+<script>
+const QUESTIONS = [
+ {q:"O que a similaridade de cosseno entre dois embeddings mede, na prática?",
+  o:["O quão parecido é o SENTIDO de dois textos — próximo de 1.0 significa mesma direção no espaço vetorial","O número de palavras em comum entre dois textos","O tempo de processamento gasto para gerar cada embedding","A ordem alfabética relativa dos dois textos"], a:0,
+  fb:"Cosseno mede o ângulo entre dois vetores, não conta palavras. Frases parafraseadas (sem nenhuma palavra em comum) ainda ficam com cosseno alto, porque o modelo foi treinado pra aproximar sentido, não texto literal."},
+
+ {q:"Por que busca densa (embedding) sozinha erra em nomes próprios de NPC/local inventados?",
+  o:["O nome inventado não está no vocabulário de treino do modelo — vira subtokens genéricos, perdendo a identidade exata do nome no vetor final","Embeddings só funcionam para texto em inglês","O modelo de embedding tem um limite de 10 caracteres por palavra","Nomes próprios são automaticamente removidos antes de gerar o embedding"], a:0,
+  fb:"O vetor ainda capta 'isto é sobre uma pessoa/lugar', mas perde a identidade específica do nome — é exatamente o ponto forte do BM25 (correspondência exata de token), o motivo de combinar os dois."},
+
+ {q:"Por que RRF soma `1/(k+posição)` em vez de comparar os scores brutos de BM25 e cosseno diretamente?",
+  o:["BM25 não tem limite superior de score e cosseno fica entre -1 e 1 — escalas incompatíveis; comparar POSIÇÕES no ranking evita esse problema","Porque somar scores brutos é mais lento computacionalmente","Porque a API da Groq exige esse formato específico","Porque BM25 sempre retorna valores negativos"], a:0,
+  fb:"RRF ignora o valor do score e olha só a posição no ranking de cada lista — assim nunca precisa decidir 'BM25 vale quanto, cosseno vale quanto' em unidades incompatíveis."},
+
+ {q:"O que aconteceu quando `k=60` (o valor clássico do paper do RRF) foi usado neste projeto, com poucas dezenas de documentos por busca?",
+  o:["A diferença de score entre 1ª e 3ª posição ficou pequena demais, e o decaimento por recência passou a dominar sozinho — a busca sempre devolvia os eventos mais recentes, ignorando a pergunta","O sistema travou com um erro de divisão por zero","BM25 parou de funcionar completamente","A busca ficou mais lenta"], a:0,
+  fb:"k=60 foi pensado para milhares de resultados (busca web). Num corpus de 15-20 documentos, ele achata as diferenças de score a ponto do decaimento por recência virar o único fator relevante — baixar k para 10 resolveu."},
+
+ {q:"Por que `busca_lexica` devolve `[]` (lista vazia) em vez de uma ordem, quando nenhum termo da consulta bate em nenhum documento?",
+  o:["Porque BM25 devolveria zero para todos os documentos, e ordenar zeros produz uma ordem falsa baseada só na posição de entrada — essa ordem entraria na fusão RRF como se fosse um sinal de relevância real","Porque uma lista vazia é mais rápida de processar","Porque a API do rank_bm25 exige isso","Porque documentos sem match nunca deveriam existir no banco"], a:0,
+  fb:"Sem essa checagem, uma pergunta sobre 'chovendo' que não compartilha nenhuma palavra literal com a seção de clima da bíblia fazia OUTRA seção vencer, só por estar em primeiro na lista de entrada — um bug real, encontrado testando o RAG sobre a bíblia."}
+];
+
+let answered=0, right=0;
+const host=document.getElementById('quiz');
+QUESTIONS.forEach((item,i)=>{
+  const order=item.o.map((t,k)=>k);
+  for(let k=order.length-1;k>0;k--){const j=Math.floor(Math.random()*(k+1));[order[k],order[j]]=[order[j],order[k]];}
+  const el=document.createElement('div');
+  el.className='quiz';
+  el.innerHTML=`<p class="q">${i+1}. ${item.q}</p>
+    <div class="opts">${order.map(k=>`<button data-k="${k}">${item.o[k]}</button>`).join('')}</div>
+    <p class="fb">${item.fb}</p>`;
+  el.querySelectorAll('button').forEach(b=>{
+    b.addEventListener('click',()=>{
+      if(el.dataset.done) return;
+      el.dataset.done='1'; answered++;
+      const ok = Number(b.dataset.k)===item.a;
+      if(ok) right++;
+      el.querySelectorAll('button').forEach(x=>{
+        x.disabled=true;
+        if(Number(x.dataset.k)===item.a) x.classList.add('right');
+      });
+      if(!ok) b.classList.add('wrong');
+      el.querySelector('.fb').classList.add('on');
+      document.getElementById('score').textContent =
+        `${right} de ${answered} respondidas corretamente` +
+        (answered===QUESTIONS.length ? (right===QUESTIONS.length
+          ? " — você sabe defender essa fronteira." : " — reveja as perguntas que escaparam.") : "");
+    });
+  });
+  host.appendChild(el);
+});
+</script>
+
+</body>
+</html>
