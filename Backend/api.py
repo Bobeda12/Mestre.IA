@@ -1,6 +1,7 @@
 import os
 import json
 import random
+import re
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Depends
 from pydantic import BaseModel
@@ -12,19 +13,19 @@ from data_manager import regras
 from database import HeroModel, get_db, criar_banco
 
 load_dotenv()
-# Tenta recriar o banco se ele não existir
 criar_banco()
 
 MINHA_CHAVE = os.getenv("GROQ_API_KEY")
 client = Groq(api_key=MINHA_CHAVE) if MINHA_CHAVE else None
-MODEL_NAME = "llama-3.3-70b-versatile"
+MODEL_NAME = "openai/gpt-oss-120b"
 
 app = FastAPI()
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 # --- MODELS ---
 class CharacterCreationRequest(BaseModel):
-    nome: str; raca: str; classe: str; historia: str = ""
+    nome: str; raca: str; classe: str; 
+    alinhamento: str; background: str; objetivo: str; historia_texto: str = ""
 
 class UserAction(BaseModel):
     session_id: str; action: str
@@ -32,48 +33,67 @@ class UserAction(BaseModel):
 class LoadRequest(BaseModel):
     session_id: str
 
-# --- LÓGICA DE JOGO ---
-def calcular_modificador(valor): 
-    return (valor - 10) // 2
+# --- UTILITÁRIOS ---
+def rolar_dado(expressao):
+    try:
+        dados, mod = expressao.split('+') if '+' in expressao else (expressao, 0)
+        qtd, faces = map(int, dados.split('d'))
+        return sum(random.randint(1, faces) for _ in range(qtd)) + int(mod)
+    except: return 0
 
-# --- CORREÇÃO AQUI: INSTRUÇÃO DE FORMATO EXPLÍCITA ---
-def montar_contexto_mestre(heroi, estado_mundo):
-    # Recupera atributos do JSON
-    attrs = heroi.atributos if heroi.atributos else {"forca": 10, "destreza": 10}
+def calcular_modificador(valor): return (valor - 10) // 2
+
+# --- AGENTE ROTEIRISTA (Restaura o início com história) ---
+def gerar_prologo_missao(char):
+    if not client: 
+        return {
+            "local_inicial": "Estrada Real", "clima_inicial": "Nublado", 
+            "nome_missao": "Jornada Inicial", "objetivo_missao": "Chegar à cidade.",
+            "intro_narrativa": f"{char.nome} inicia sua jornada na estrada."
+        }
+
+    prompt = f"""
+    Crie um prólogo de RPG Dark Fantasy para:
+    Nome: {char.nome} ({char.raca} {char.classe})
+    Passado: {char.background} | Objetivo: {char.objetivo} | Alinhamento: {char.alinhamento}
     
-    mod_for = calcular_modificador(attrs.get("forca", 10))
-    mod_des = calcular_modificador(attrs.get("destreza", 10))
-    
-    biblia = regras.get_biblia()
-    # Pega o bestiário para a IA saber os status dos inimigos
-    bestiario_json = json.dumps(regras.monsters, ensure_ascii=False)
+    O prólogo deve começar 'in media res' (já na ação), conectado ao passado dele.
+    Responda APENAS JSON:
+    {{
+        "local_inicial": "Nome do Local",
+        "clima_inicial": "Clima atmosférico",
+        "nome_missao": "Título da Missão Atual",
+        "objetivo_missao": "O que ele deve fazer agora (curto)",
+        "intro_narrativa": "Texto narrativo de 3 parágrafos imersivos."
+    }}
+    """
+    try:
+        resp = client.chat.completions.create(model=MODEL_NAME, messages=[{"role": "user", "content": prompt}], response_format={"type": "json_object"})
+        return json.loads(resp.choices[0].message.content)
+    except Exception as e:
+        print("ERRO NO PRÓLOGO:", repr(e))
+        return {"local_inicial": "Taverna", "clima_inicial": "Chuvoso",
+                "nome_missao": "Desconhecido", "objetivo_missao": "Sobreviver",
+                "intro_narrativa": "Você acorda..."}
+
+def montar_contexto(heroi, w_state, c_state, q_state):
+    combate_txt = ""
+    if c_state.get("ativo"):
+        vivos = [i for i in c_state.get("inimigos", []) if i['hp'] > 0]
+        combate_txt = f"[COMBATE ATIVO] Inimigos: {json.dumps(vivos, ensure_ascii=False)}"
     
     return f"""
-    {biblia}
+    {regras.get_biblia()}
+    [HEROI] {heroi.nome} ({heroi.classe}) | HP: {heroi.hp_atual}/{heroi.hp_max}
+    [MISSÃO ATUAL] {q_state.get('nome_missao')}: {q_state.get('objetivo_missao')}
+    [CENA] {w_state.get('local')} | {w_state.get('clima')}
+    {combate_txt}
     
-    [ESTADO DO MUNDO]
-    Local: {estado_mundo.get('local')} | Horário: {estado_mundo.get('horario')} | Clima: {estado_mundo.get('clima')}
-    
-    [JOGADOR ATUAL]
-    Nome: {heroi.nome} ({heroi.raca} {heroi.classe})
-    HP: {heroi.hp_atual}/{heroi.hp_max}
-    Atributos: FOR {attrs.get('forca')} ({mod_for:+}) | DES {attrs.get('destreza')} ({mod_des:+})
-    Inventário: {heroi.inventario}
-    
-    [DADOS DE REGRAS (Bestiário)]
-    {bestiario_json}
-
-    [INSTRUÇÃO DE RESPOSTA OBRIGATÓRIA]
-    Você DEVE responder APENAS um objeto JSON válido.
-    Não escreva nenhum texto fora do JSON.
-    O formato deve ser exatamente este:
-    {{
-        "narrativa": "Sua descrição da cena e do resultado das ações aqui...",
-        "dano_recebido": 0,
-        "novo_item": null,
-        "hp_atual": {heroi.hp_atual},
-        "iniciar_combate": false,
-        "novos_inimigos": []
+    Responda JSON: 
+    {{ 
+        "narrativa": "...", 
+        "spawn_battle": false, 
+        "hp_atual": {heroi.hp_atual} 
     }}
     """
 
@@ -89,52 +109,33 @@ def get_class_info(name: str): return regras.get_class_details(name)
 
 @app.post("/create_character")
 def create_character(char: CharacterCreationRequest, db: Session = Depends(get_db)):
-    # Gera ID único para o save
     session_id = f"{char.nome.lower()}_{random.randint(1000,9999)}"
     
-    # 1. Pega dados base
+    # 1. Gera Prólogo Personalizado
+    roteiro = gerar_prologo_missao(char)
+    
     d_classe = regras.get_class_details(char.classe)
     d_raca = regras.get_race_details(char.raca)
     
-    # 2. Calcula Atributos
-    # Aqui está a correção: Criamos um dicionário, não variáveis soltas
-    atributos_finais = {
+    attr = {
         "forca": 15 + d_raca.get('bonus_atributos', {}).get('forca', 0),
         "destreza": 14 + d_raca.get('bonus_atributos', {}).get('destreza', 0),
         "constituicao": 13 + d_raca.get('bonus_atributos', {}).get('constituicao', 0),
-        "inteligencia": 12 + d_raca.get('bonus_atributos', {}).get('inteligencia', 0),
-        "sabedoria": 10,
-        "carisma": 10
+        "inteligencia": 12, "sabedoria": 10, "carisma": 10
     }
+    hp = d_classe.get('dado_vida', 8) + calcular_modificador(attr["constituicao"])
     
-    mod_con = calcular_modificador(atributos_finais["constituicao"])
-    hp_inicial = d_classe.get('dado_vida', 8) + mod_con
-    
-    # 3. Define Estados Iniciais
-    world_state = {"local": "Estrada Real", "clima": "Céu Limpo", "turno": 1}
-    combat_state = {"ativo": False, "inimigos": []}
-    inventario = d_classe.get('equipamento_inicial', ["Adaga", "Rações"])
-
-    intro_prompt = f"O jogo começou. O herói {char.nome} está em {world_state['local']}. Descreva o cenário."
-
-    # 4. Salva no Banco (Usando o campo 'atributos' corretamente)
-    novo_heroi = HeroModel(
-        session_id=session_id,
-        nome=char.nome, 
-        raca=char.raca, 
-        classe=char.classe,
-        hp_atual=hp_inicial, 
-        hp_max=hp_inicial,
-        atributos=atributos_finais, # CORREÇÃO: Passando o dicionário inteiro
-        inventario=inventario,
-        world_state=world_state,
-        combat_state=combat_state,
-        historico_chat=[{"role": "system", "content": intro_prompt}]
+    novo = HeroModel(
+        session_id=session_id, nome=char.nome, raca=char.raca, classe=char.classe,
+        alinhamento=char.alinhamento, background=char.background, objetivo=char.objetivo,
+        hp_atual=hp, hp_max=hp, atributos=attr,
+        inventario=d_classe.get('equipamento_inicial', ["Mochila", "Tocha"]), # Garante inventário
+        world_state={"local": roteiro["local_inicial"], "clima": roteiro["clima_inicial"], "turno": 1},
+        combat_state={"ativo": False, "inimigos": []},
+        quest_log={"nome_missao": roteiro["nome_missao"], "objetivo_missao": roteiro["objetivo_missao"]},
+        historico_chat=[{"role": "assistant", "content": roteiro["intro_narrativa"]}]
     )
-    
-    db.add(novo_heroi)
-    db.commit()
-    
+    db.add(novo); db.commit()
     return {"status": "Criado", "session_id": session_id}
 
 @app.post("/load_game")
@@ -142,60 +143,61 @@ def load_game(req: LoadRequest, db: Session = Depends(get_db)):
     heroi = db.query(HeroModel).filter(HeroModel.session_id == req.session_id).first()
     if not heroi: raise HTTPException(status_code=404, detail="Save não encontrado")
     
+    # Restaura o envio completo de dados para o Frontend
     return {
         "nome": heroi.nome, "raca": heroi.raca, "classe": heroi.classe,
         "hp_atual": heroi.hp_atual, "hp_max": heroi.hp_max,
-        "inventario": heroi.inventario,
-        "local": heroi.world_state.get("local", "Desconhecido")
+        "inventory": heroi.inventario, 
+        "atributos": heroi.atributos,
+        "local": heroi.world_state.get("local"), 
+        "combat_active": heroi.combat_state.get("ativo", False),
+        "inimigos": heroi.combat_state.get("inimigos", []),
+        "missao": heroi.quest_log
     }
 
 @app.post("/chat")
 async def chat_endpoint(user_input: UserAction, db: Session = Depends(get_db)):
     heroi = db.query(HeroModel).filter(HeroModel.session_id == user_input.session_id).first()
-    if not heroi: return {"narrativa": "Erro: Sessão perdida.", "game_over": True}
+    if not heroi: return {"narrativa": "Erro...", "game_over": True}
 
-    # Atualiza turno
-    w_state = dict(heroi.world_state or {})
-    w_state["turno"] = w_state.get("turno", 0) + 1
-    heroi.world_state = w_state
+    w_state = dict(heroi.world_state or {}); c_state = dict(heroi.combat_state or {})
+    q_state = dict(heroi.quest_log or {})
 
-    # Prompt
-    prompt_sistema = montar_contexto_mestre(heroi)
+    # Lógica simplificada de Chat e Combate (mantendo a funcionalidade)
+    prompt = montar_contexto(heroi, w_state, c_state, q_state)
+    hist = list(heroi.historico_chat)[-4:]
+    msgs = [{"role": "system", "content": prompt}] + hist + [{"role": "user", "content": user_input.action}]
     
-    historico = list(heroi.historico_chat)
-    msgs = [{"role": "system", "content": prompt_sistema}] + historico[-5:] + [{"role": "user", "content": user_input.action}]
-
     try:
-        completion = client.chat.completions.create(
-            model=MODEL_NAME,
-            messages=msgs,
-            temperature=0.6,
-            response_format={"type": "json_object"}
-        )
-        
-        resp_text = completion.choices[0].message.content
-        try:
-            dados = json.loads(resp_text)
-        except:
-            # Fallback se a IA não mandar JSON
-            dados = {"narrativa": resp_text, "dano_recebido": 0}
+        resp = client.chat.completions.create(model=MODEL_NAME, messages=msgs, response_format={"type": "json_object"})
+        dados = json.loads(resp.choices[0].message.content)
+    except: dados = {"narrativa": "..."}
+    
+    narrativa = dados.get("narrativa", "")
+    
+    # Combate Básico
+    if dados.get("spawn_battle") and not c_state.get("ativo"):
+        c_state["ativo"] = True
+        c_state["inimigos"] = [{"nome": "Inimigo", "hp": 10, "max_hp": 10, "ca": 10}]
+        narrativa += "\n\n⚔️ Inimigos surgem!"
 
-        if dados.get("dano_recebido", 0) > 0:
-            heroi.hp_atual -= dados["dano_recebido"]
-        
-        # Salva histórico
-        historico.append({"role": "user", "content": user_input.action})
-        historico.append({"role": "assistant", "content": dados.get("narrativa", "...")})
-        heroi.historico_chat = historico
-        db.commit()
+    # Salva
+    novo_hist = list(heroi.historico_chat)
+    novo_hist.append({"role": "user", "content": user_input.action})
+    novo_hist.append({"role": "assistant", "content": narrativa})
+    heroi.historico_chat = novo_hist
+    heroi.combat_state = c_state
+    db.commit()
 
-        return {
-            "narrativa": dados.get("narrativa"),
-            "hp_atual": heroi.hp_atual,
-            "hp_max": heroi.hp_max,
-            "inventory": heroi.inventario
-        }
+    return {
+        "narrativa": narrativa, "hp_atual": heroi.hp_atual, "hp_max": heroi.hp_max,
+        "inventory": heroi.inventario, "atributos": heroi.atributos,
+        "combat_active": c_state.get("ativo", False),
+        "inimigos": c_state.get("inimigos", []),
+        "missao": q_state
+    }
 
-    except Exception as e:
-        print(f"Erro: {e}")
-        return {"narrativa": "Erro na IA.", "hp_atual": heroi.hp_atual}
+# Para rodar com 'python api.py' se preferir:
+import uvicorn
+if __name__ == "__main__":
+    uvicorn.run(app, host="127.0.0.1", port=8000)

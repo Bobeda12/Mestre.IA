@@ -15,21 +15,23 @@ class HeroModel(Base):
     raca = Column(String)
     classe = Column(String)
 
-    # Status Vitais
+    # --- NOVO: Profundidade Narrativa ---
+    alinhamento = Column(String) # Ex: Caótico Bom
+    background = Column(String)  # Ex: Soldado, Eremita
+    objetivo = Column(String)    # Ex: Vingar o pai, Ficar rico
+
     hp_atual = Column(Integer)
     hp_max = Column(Integer)
-    nivel = Column(Integer, default=1)
-    xp = Column(Integer, default=0)
 
-    # Atributos (AGORA É UM JSON)
-    # Guarda: {"forca": 10, "destreza": 12, "inteligencia": 8...}
     atributos = Column(JSON)
-
-    # Estados do Mundo (JSONs para flexibilidade)
     inventario = Column(JSON, default=[])
-    world_state = Column(JSON, default={})    # Guarda: Clima, Hora, Local
-    combat_state = Column(JSON, default={})   # Guarda: Inimigos vivos, Turno
 
+    # --- NOVO: O "Diretor" da Sessão ---
+    # Guarda: { "titulo_missao": "...", "objetivo_atual": "...", "npc_chave": "..." }
+    quest_log = Column(JSON, default={})
+
+    world_state = Column(JSON, default={})
+    combat_state = Column(JSON, default={})
     historico_chat = Column(JSON)
 
 def criar_banco():

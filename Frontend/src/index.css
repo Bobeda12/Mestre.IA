@@ -38,3 +38,38 @@ body {
 .btn-epic {
   animation: pulse-glow 3s infinite;
 }
+
+/* Animação de Dano (Tremor) */
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  10%, 30%, 50%, 70%, 90% { transform: translateX(-4px); }
+  20%, 40%, 60%, 80% { transform: translateX(4px); }
+}
+
+.animate-shake {
+  animation: shake 0.4s cubic-bezier(.36,.07,.19,.97) both;
+}
+
+/* Scrollbar Personalizada (Estilo RPG) */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 8px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: #0a0a0a; 
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #333; 
+  border-radius: 4px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #c5a059; /* RPG Gold */
+}
+
+/* Fade In Suave */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-fade-in {
+  animation: fadeIn 0.3s ease-out forwards;
+}
