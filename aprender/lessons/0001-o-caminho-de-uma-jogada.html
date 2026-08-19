@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Lição 1 — O caminho de uma jogada</title>
+<link rel="stylesheet" href="../assets/curso.css">
+</head>
+<body>
+<main class="page">
+
+<p class="kicker">Lição 01 · Mestre.IA</p>
+<h1>O caminho de uma jogada</h1>
+<p class="standfirst">Você digita “ataco o goblin” e aperta Enter. Seis peças de software entram em ação, em ordem. Esta lição segue essa jogada do começo ao fim — e dá nome a cada peça.</p>
+<div class="tagline">
+  <span>~12 minutos</span>
+  <span>Arquivos: <code>GameChat.tsx</code> · <code>api.py</code> · <code>database.py</code></span>
+  <span><a href="../reference/0001-glossario-do-stack.html">Glossário do stack ↗</a></span>
+</div>
+
+<p>Antes de mudar qualquer coisa no Mestre.IA, você precisa conseguir contar essa história de cabeça. Não porque é bonito — mas porque <strong>toda pergunta de entrevista sobre o seu projeto é alguma variação de “o que acontece quando o usuário faz X?”</strong>. Quem sabe traçar o caminho consegue responder qualquer uma delas.</p>
+
+<p>A jogada tem seis paradas. Em cada uma, uma biblioteca diferente é dona do problema.</p>
+
+<h2>As seis paradas</h2>
+
+<div class="stop">
+  <div class="n">1</div>
+  <div class="body">
+    <h3>O clique</h3>
+    <p class="lib">Dono: <em>React</em> — <code>Frontend/src/components/GameChat.tsx</code></p>
+    <p>React não é um framework de aplicação, é uma biblioteca de <em>interface</em>. A ideia central dele é: você não manda a tela mudar, você muda um <strong>estado</strong> e o React recalcula a tela sozinho.</p>
+<pre><code>const [messages, setMessages] = useState&lt;Message[]&gt;([]);
+<span class="cm">// ...</span>
+setMessages(prev =&gt; [...prev, { role: 'user', content: text }]);</code></pre>
+    <p>Você nunca escreveu “adicione um balão de texto na tela”. Você só acrescentou um item numa lista. O React comparou a lista nova com a antiga e desenhou a diferença. Esse é o modelo mental inteiro (<a href="https://react.dev/learn/state-a-components-memory">react.dev, “State: A Component's Memory”</a>).</p>
+  </div>
+</div>
+
+<div class="stop">
+  <div class="n">2</div>
+  <div class="body">
+    <h3>A viagem</h3>
+    <p class="lib">Dono: <em>axios</em> — <code>GameChat.tsx</code>, função <code>sendAction</code></p>
+<pre><code>const res = await axios.post("http://127.0.0.1:8000/chat",
+                             { session_id: currentSessionId, action: text });</code></pre>
+    <p>Aqui o navegador e o Python deixam de compartilhar memória. Tudo que atravessa essa linha vira <strong>texto</strong>. O axios pega o seu objeto JavaScript, serializa em JSON, põe o cabeçalho <code>Content-Type: application/json</code> e dispara um POST (<a href="https://axios-http.com/docs/post_example">docs do axios</a>).</p>
+    <div class="note"><b>Por que isso importa</b>Essa fronteira é a razão de existir o <code>session_id</code>. O backend não tem ideia de quem você é entre uma requisição e outra — HTTP não guarda memória. O <code>session_id</code> é a etiqueta que permite reencontrar o seu herói no banco.</div>
+  </div>
+</div>
+
+<div class="stop">
+  <div class="n">3</div>
+  <div class="body">
+    <h3>A porta</h3>
+    <p class="lib">Dono: <em>FastAPI</em> + <em>Pydantic</em>, servidos por <em>Uvicorn</em> — <code>Backend/api.py</code></p>
+<pre><code>class UserAction(BaseModel):
+    session_id: str; action: str
+
+@app.post("/chat")
+async def chat_endpoint(user_input: UserAction, db: Session = Depends(get_db)):</code></pre>
+    <p>Três bibliotecas dividem esse trabalho, e confundi-las é o erro mais comum:</p>
+    <ul>
+      <li><strong>Uvicorn</strong> é o servidor. É ele que fica escutando na porta 8000 e fala HTTP.</li>
+      <li><strong>FastAPI</strong> é o roteador. Olha o caminho <code>/chat</code> e decide qual função sua chamar.</li>
+      <li><strong>Pydantic</strong> é o porteiro. Aquela classe <code>UserAction</code> não é decoração: se chegar um corpo sem <code>action</code>, ou com <code>action</code> sendo um número, o Pydantic devolve 422 e a sua função <em>nunca roda</em> (<a href="https://fastapi.tiangolo.com/tutorial/body/">FastAPI, “Request Body”</a>).</li>
+    </ul>
+    <p>O <code>Depends(get_db)</code> é o sistema de <strong>injeção de dependência</strong> do FastAPI: antes de chamar a sua função, ele executa <code>get_db()</code>, abre uma sessão de banco, entrega para você — e, quando a resposta termina, roda o <code>finally: db.close()</code>. Você nunca esquece de fechar a conexão porque não é você quem fecha.</p>
+  </div>
+</div>
+
+<div class="stop">
+  <div class="n">4</div>
+  <div class="body">
+    <h3>A memória</h3>
+    <p class="lib">Dono: <em>SQLAlchemy</em> sobre <em>SQLite</em> — <code>Backend/database.py</code></p>
+<pre><code>heroi = db.query(HeroModel).filter(HeroModel.session_id == user_input.session_id).first()</code></pre>
+    <p>SQLAlchemy é um <strong>ORM</strong>: ele traduz classes Python em tabelas SQL e de volta. Essa linha vira, por baixo, um <code>SELECT * FROM herois WHERE session_id = ? LIMIT 1</code> — e o resultado volta como um objeto Python com atributos.</p>
+    <p>SQLite é o banco em si: um arquivo único, <code>rpg_save.db</code>, sem servidor separado. Ótimo para desenvolver, e é a peça que vai ter que mudar quando você for para a nuvem.</p>
+    <div class="warn"><b>Detalhe que confunde muita gente</b>As colunas <code>world_state</code>, <code>combat_state</code> e <code>historico_chat</code> são do tipo <code>JSON</code>. O SQLAlchemy só percebe que elas mudaram se você atribuir um objeto <em>novo</em>. É exatamente por isso que o código faz <code>c_state = dict(heroi.combat_state)</code>, mexe na cópia, e depois <code>heroi.combat_state = c_state</code>. Se você editasse o dicionário no lugar, a alteração se perderia silenciosamente no <code>commit</code>.</div>
+  </div>
+</div>
+
+<div class="stop">
+  <div class="n">5</div>
+  <div class="body">
+    <h3>O cérebro</h3>
+    <p class="lib">Dono: <em>groq</em> (SDK) + o modelo <em>llama-3.3-70b-versatile</em> — <code>api.py</code></p>
+<pre><code>prompt = montar_contexto(heroi, w_state, c_state, q_state)   <span class="cm"># a bíblia + o estado</span>
+hist   = list(heroi.historico_chat)[<span class="hl">-4:</span>]                   <span class="cm"># só as 4 últimas!</span>
+msgs   = [{"role": "system", "content": prompt}] + hist + [{"role": "user", ...}]
+
+resp = client.chat.completions.create(model=MODEL_NAME, messages=msgs,
+                                      response_format={"type": "json_object"})</code></pre>
+    <p>Três coisas acontecem aqui, e vale separá-las:</p>
+    <ol>
+      <li><strong>O contexto é remontado do zero a cada turno.</strong> O modelo não “lembra” de nada entre chamadas — é uma função sem memória. Toda a memória do jogo vem do banco e é reinjetada como texto.</li>
+      <li><strong>A <code>biblia_mestre.txt</code> vira a mensagem <code>system</code>.</strong> Ela é lida uma vez quando o servidor sobe (a classe <code>DataManager</code>, em <code>data_manager.py</code>, carrega tudo no <code>__init__</code>) e colada em todo turno.</li>
+      <li><strong>O <code>response_format</code> força saída em JSON.</strong> É um recurso do provedor, não uma promessa do prompt — o Groq garante sintaxe JSON válida nesse modo (<a href="https://console.groq.com/docs/structured-outputs">Groq, “Structured Outputs”</a>). Note que ele garante <em>sintaxe</em>, não os campos que você pediu.</li>
+    </ol>
+    <div class="note"><b>Guarde este número</b><code>[-4:]</code>. Quatro mensagens. É por isso que o mestre esquece o que você fez dez turnos atrás — não é limitação do modelo, é uma linha do seu código.</div>
+  </div>
+</div>
+
+<div class="stop">
+  <div class="n">6</div>
+  <div class="body">
+    <h3>A volta</h3>
+    <p class="lib">Dono: SQLAlchemy grava, FastAPI serializa, React redesenha</p>
+<pre><code>heroi.historico_chat = novo_hist
+heroi.combat_state = c_state
+db.commit()
+return { "narrativa": narrativa, "hp_atual": heroi.hp_atual, ... }</code></pre>
+    <p>O <code>db.commit()</code> é o ponto em que a jogada vira permanente. Depois disso, o FastAPI transforma o dicionário em JSON, o axios recebe, e o React chama vários <code>setState</code> — o que dispara um novo desenho da tela. Fim da volta.</p>
+  </div>
+</div>
+
+<h2>Duas coisas que você já sabe agora</h2>
+
+<div class="win"><b>Achado 1</b>A amnésia do mestre tem endereço: <code>api.py</code>, o fatiamento <code>[-4:]</code>. Não é “o modelo é ruim”. É uma decisão de código que você pode mudar.</div>
+
+<div class="win"><b>Achado 2</b>O prompt em <code>montar_contexto</code> pede <code>"hp_atual"</code> ao modelo — mas olhe o <code>return</code>: o código devolve <code>heroi.hp_atual</code>, o valor que já estava no banco. <strong>O valor que o modelo escreve é jogado fora.</strong> Ou seja: hoje o HP nunca muda. Nem o modelo nem o motor governam o dano — ninguém governa.</div>
+
+<p>Esse segundo achado é a semente da fase mais importante do seu roadmap. O consenso hoje é justamente esse: um LLM serve para <em>decidir qual ferramenta chamar</em> e <em>narrar o resultado</em>, não para ser a fonte da verdade do estado (<a href="https://www.anthropic.com/engineering/building-effective-agents">Anthropic, “Building effective agents”</a>).</p>
+
+<h2>Teste rápido</h2>
+<p>Sem olhar para cima. O objetivo aqui é lembrar, não acertar de primeira.</p>
+
+<div id="quiz"></div>
+<p class="score" id="score"></p>
+
+<div class="next">
+  <h4>Fonte primária desta lição</h4>
+  <ul>
+    <li><a href="https://fastapi.tiangolo.com/tutorial/">Tutorial oficial do FastAPI</a> — escrito pelo próprio autor do framework, é a melhor introdução que existe ao caminho de uma requisição. Leia as seções <em>First Steps</em>, <em>Request Body</em> e <em>Dependencies</em>. Umas duas horas, e cobre as paradas 3 e 4 inteiras.</li>
+  </ul>
+  <h4>Próximas lições possíveis</h4>
+  <ul>
+    <li><strong>Lição 2 —</strong> o que é, de fato, um “prompt”: as três mensagens (<code>system</code>, <code>user</code>, <code>assistant</code>), tokens e por que o contexto custa dinheiro</li>
+    <li><strong>Lição 3 —</strong> o ORM por dentro: sessão, <code>commit</code>, e por que colunas JSON são uma armadilha</li>
+    <li><strong>Lição 4 —</strong> React sem mistério: estado, efeito e o <code>useEffect</code> vazio que roda uma vez no <code>GameChat</code></li>
+  </ul>
+  <div class="ask">Travou em algo, ou uma explicação ficou pela metade? Me pergunta — eu sou o seu professor aqui, e é melhor desentortar agora do que seguir com um modelo mental torto.</div>
+</div>
+
+</main>
+
+<script>
+const QUESTIONS = [
+ {q:"Qual biblioteca transforma o objeto JavaScript em JSON e dispara o POST?",
+  o:["axios","uvicorn","pydantic","tailwind"], a:0,
+  fb:"axios. Ele serializa, põe o cabeçalho e faz a chamada HTTP. Uvicorn e Pydantic vivem do outro lado da fronteira; Tailwind só cuida de aparência."},
+
+ {q:"Qual biblioteca rejeita a requisição, com erro 422, se faltar o campo <code>action</code>?",
+  o:["Pydantic","Uvicorn","SQLAlchemy","Groq"], a:0,
+  fb:"Pydantic. A classe <code>UserAction</code> é o contrato; o FastAPI apenas delega a validação a ela. Sua função nem chega a ser chamada."},
+
+ {q:"Em que momento a <code>biblia_mestre.txt</code> entra na conversa com o modelo?",
+  o:["A cada turno, dentro do system","Uma vez, quando o servidor sobe","Só quando o combate é ativado","Apenas na criação inicial do herói"], a:0,
+  fb:"A cada turno. O arquivo é <em>lido do disco</em> uma vez só (no <code>DataManager.__init__</code>), mas o texto é colado como mensagem <code>system</code> em toda chamada — e você paga tokens por ele todas as vezes."},
+
+ {q:"Quantas mensagens do histórico o modelo recebe a cada turno?",
+  o:["As quatro últimas mensagens","As dez últimas mensagens","Todas as mensagens salvas","Somente a última mensagem"], a:0,
+  fb:"Quatro — <code>historico_chat[-4:]</code>. Como cada turno gera duas mensagens (sua e a do mestre), isso é memória de dois turnos."},
+
+ {q:"O prompt pede <code>hp_atual</code> ao modelo. O que o código faz com esse valor?",
+  o:["Ignora e devolve o valor antigo","Grava direto na coluna do banco","Soma ao total atual do herói","Envia para o front sem gravar"], a:0,
+  fb:"Ignora. O <code>return</code> usa <code>heroi.hp_atual</code>, lido do banco e nunca alterado. O campo existe no prompt, é gerado pelo modelo, e morre ali."}
+];
+
+let answered=0, right=0;
+const host=document.getElementById('quiz');
+QUESTIONS.forEach((item,i)=>{
+  const order=item.o.map((t,k)=>k);
+  for(let k=order.length-1;k>0;k--){const j=Math.floor(Math.random()*(k+1));[order[k],order[j]]=[order[j],order[k]];}
+  const el=document.createElement('div');
+  el.className='quiz';
+  el.innerHTML=`<p class="q">${i+1}. ${item.q}</p>
+    <div class="opts">${order.map(k=>`<button data-k="${k}">${item.o[k]}</button>`).join('')}</div>
+    <p class="fb">${item.fb}</p>`;
+  el.querySelectorAll('button').forEach(b=>{
+    b.addEventListener('click',()=>{
+      if(el.dataset.done) return;
+      el.dataset.done='1'; answered++;
+      const ok = Number(b.dataset.k)===item.a;
+      if(ok) right++;
+      el.querySelectorAll('button').forEach(x=>{
+        x.disabled=true;
+        if(Number(x.dataset.k)===item.a) x.classList.add('right');
+      });
+      if(!ok) b.classList.add('wrong');
+      el.querySelector('.fb').classList.add('on');
+      document.getElementById('score').textContent =
+        `${right} de ${answered} respondidas corretamente` +
+        (answered===QUESTIONS.length ? (right===QUESTIONS.length
+          ? " — você sabe traçar o caminho." : " — reveja as paradas que escaparam.") : "");
+    });
+  });
+  host.appendChild(el);
+});
+</script>
+</body>
+</html>

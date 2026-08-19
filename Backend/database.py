@@ -1,6 +1,5 @@
 from sqlalchemy import create_engine, Column, Integer, String, JSON
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import declarative_base, sessionmaker
 
 DATABASE_URL = "sqlite:///./rpg_save.db"
 
@@ -15,22 +14,22 @@ class HeroModel(Base):
     nome = Column(String)
     raca = Column(String)
     classe = Column(String)
-    
+
     # Status Vitais
     hp_atual = Column(Integer)
     hp_max = Column(Integer)
     nivel = Column(Integer, default=1)
     xp = Column(Integer, default=0)
-    
+
     # Atributos (AGORA É UM JSON)
     # Guarda: {"forca": 10, "destreza": 12, "inteligencia": 8...}
     atributos = Column(JSON)
-    
+
     # Estados do Mundo (JSONs para flexibilidade)
     inventario = Column(JSON, default=[])
     world_state = Column(JSON, default={})    # Guarda: Clima, Hora, Local
     combat_state = Column(JSON, default={})   # Guarda: Inimigos vivos, Turno
-    
+
     historico_chat = Column(JSON)
 
 def criar_banco():

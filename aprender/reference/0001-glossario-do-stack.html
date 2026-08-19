@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Referência 1 — Glossário do stack do Mestre.IA</title>
+<link rel="stylesheet" href="../assets/curso.css">
+</head>
+<body>
+<main class="page wide">
+
+<p class="kicker">Referência 01 · Mestre.IA</p>
+<h1>Glossário do stack</h1>
+<p class="standfirst">Cada biblioteca do projeto, o que ela faz, onde aparece no seu código — e quais você pode apagar. Feito para consulta rápida e para imprimir.</p>
+<div class="tagline">
+  <span>Atualizado: ago/2026</span>
+  <span><a href="../lessons/0001-o-caminho-de-uma-jogada.html">← Lição 1</a></span>
+</div>
+
+<h2>Backend — o que você realmente usa</h2>
+<p>Seis bibliotecas fazem o trabalho todo. Se alguém perguntar “qual é o seu stack de backend?”, a resposta é esta tabela.</p>
+
+<table>
+<thead><tr><th>Biblioteca</th><th>O que é</th><th>Onde aparece no seu código</th></tr></thead>
+<tbody>
+<tr><td><code>fastapi</code></td><td>Framework web. Define rotas, valida entrada, serializa saída, gera documentação automática em <code>/docs</code>.</td><td><code>app = FastAPI()</code>, todos os <code>@app.get</code> e <code>@app.post</code> em <code>api.py</code></td></tr>
+<tr><td><code>uvicorn</code></td><td>Servidor ASGI. É o processo que escuta a porta 8000 e fala HTTP. FastAPI sozinho não atende ninguém.</td><td><code>uvicorn.run(app, host="127.0.0.1", port=8000)</code>, no fim de <code>api.py</code></td></tr>
+<tr><td><code>pydantic</code></td><td>Validação de dados por tipo. Transforma anotações Python em contrato executável.</td><td><code>CharacterCreationRequest</code>, <code>UserAction</code>, <code>LoadRequest</code></td></tr>
+<tr><td><code>sqlalchemy</code></td><td>ORM. Traduz classes Python ↔ tabelas SQL, e gerencia sessões e transações.</td><td><code>database.py</code> inteiro; toda linha com <code>db.query(...)</code> ou <code>db.commit()</code></td></tr>
+<tr><td><code>groq</code></td><td>SDK do provedor de inferência. Cliente HTTP tipado para o endpoint de chat.</td><td><code>client = Groq(api_key=...)</code> e <code>client.chat.completions.create(...)</code></td></tr>
+<tr><td><code>python-dotenv</code></td><td>Lê o arquivo <code>.env</code> e injeta nas variáveis de ambiente, para a chave de API não ficar no código.</td><td><code>load_dotenv()</code> no topo de <code>api.py</code></td></tr>
+<tr><td><code>requests</code></td><td>Cliente HTTP clássico e síncrono.</td><td>Só em <code>g.py</code>, o script que baixou as artes dos personagens</td></tr>
+</tbody>
+</table>
+
+<div class="note"><b>SQLite não está na lista — e está certo</b>SQLite vem embutido no próprio Python (módulo <code>sqlite3</code>). Você não instala; ele já está lá. Por isso <code>"sqlite:///./rpg_save.db"</code> funciona sem nenhuma dependência extra.</div>
+
+<h2>Backend — as que vieram de carona</h2>
+<p>O seu <code>requirements.txt</code> tem ~44 linhas porque foi gerado por <code>pip freeze</code>, que lista <em>tudo</em> que está instalado, inclusive as dependências das suas dependências. Estas você nunca importa, mas elas precisam existir:</p>
+
+<table>
+<thead><tr><th>Pacote</th><th>Veio junto com</th><th>Papel</th></tr></thead>
+<tbody>
+<tr><td><code>starlette</code></td><td>fastapi</td><td>O framework ASGI de baixo nível sobre o qual o FastAPI é construído. É dele o <code>CORSMiddleware</code> que você usa.</td></tr>
+<tr><td><code>pydantic_core</code>, <code>annotated-types</code>, <code>typing_extensions</code></td><td>pydantic</td><td>O núcleo de validação (escrito em Rust) e o suporte a anotações de tipo.</td></tr>
+<tr><td><code>httpx</code>, <code>httpcore</code>, <code>h11</code>, <code>anyio</code>, <code>sniffio</code>, <code>distro</code></td><td>groq</td><td>A pilha HTTP assíncrona que o SDK usa por baixo.</td></tr>
+<tr><td><code>greenlet</code></td><td>sqlalchemy</td><td>Permite que o SQLAlchemy funcione em contexto assíncrono.</td></tr>
+<tr><td><code>click</code>, <code>colorama</code></td><td>uvicorn</td><td>Interface de linha de comando e cores no terminal.</td></tr>
+<tr><td><code>certifi</code>, <code>idna</code>, <code>urllib3</code>, <code>charset-normalizer</code></td><td>requests</td><td>Certificados TLS, domínios internacionais, pool de conexões, detecção de encoding.</td></tr>
+</tbody>
+</table>
+
+<h2>Backend — as que sobraram</h2>
+<p>Estas apontam para uma fase anterior do projeto, quando você usava a API do Google. Hoje nenhuma linha do código as importa.</p>
+
+<table>
+<thead><tr><th>Pacote</th><th>Situação</th></tr></thead>
+<tbody>
+<tr><td><code>google-ai-generativelanguage</code>, <code>google-api-python-client</code>, <code>google-auth</code>, <code>google-auth-httplib2</code>, <code>googleapis-common-protos</code></td><td><span class="tag morto">morto</span> SDK do Gemini. Resquício de antes da migração para o Groq.</td></tr>
+<tr><td><code>grpcio</code>, <code>grpcio-status</code>, <code>protobuf</code>, <code>proto-plus</code>, <code>cachetools</code>, <code>pyasn1</code>, <code>rsa</code>, <code>httplib2</code>, <code>uritemplate</code>, <code>pyparsing</code></td><td><span class="tag morto">morto</span> Dependências dos pacotes acima. Somem junto.</td></tr>
+<tr><td><code>tqdm</code></td><td><span class="tag morto">morto</span> Barra de progresso. Nenhum import no projeto.</td></tr>
+</tbody>
+</table>
+
+<div class="warn"><b>Dois problemas concretos no <code>requirements.txt</code></b>
+<strong>1. Está salvo em UTF-16.</strong> Foi gerado com <code>pip freeze &gt; requirements.txt</code> no PowerShell, que grava nesse encoding. Em outra máquina (ou num Docker), o <code>pip install -r</code> pode simplesmente não conseguir ler o arquivo. Regere com <code>pip freeze | Out-File -Encoding utf8 requirements.txt</code>.<br>
+<strong>2. É um <code>freeze</code>, não uma lista de intenção.</strong> Quem lê não distingue o que você escolheu do que veio de carona. O padrão profissional é declarar só as diretas (em <code>pyproject.toml</code> ou num <code>requirements.in</code>) e deixar a resolução para a ferramenta — <code>uv</code> ou <code>pip-tools</code>.</div>
+
+<h2>Frontend — o que você realmente usa</h2>
+
+<table>
+<thead><tr><th>Biblioteca</th><th>O que é</th><th>Onde aparece</th></tr></thead>
+<tbody>
+<tr><td><code>react</code> + <code>react-dom</code></td><td>Biblioteca de interface. Você descreve o que a tela deve ser dado um estado; ela cuida de atualizar o DOM. <code>react-dom</code> é a parte que fala com o navegador.</td><td>Todo componente; <code>createRoot</code> em <code>main.tsx</code></td></tr>
+<tr><td><code>react-router-dom</code></td><td>Roteador. Faz <code>/criar</code> e <code>/jogar</code> mostrarem componentes diferentes <em>sem recarregar a página</em>.</td><td><code>BrowserRouter</code>, <code>Routes</code>, <code>Route</code> em <code>App.tsx</code>; <code>useNavigate</code> e <code>useLocation</code> em <code>GameChat.tsx</code></td></tr>
+<tr><td><code>axios</code></td><td>Cliente HTTP. Converte objeto ↔ JSON e faz as chamadas ao backend.</td><td><code>axios.post(".../chat")</code> e <code>.../load_game</code></td></tr>
+<tr><td><code>lucide-react</code></td><td>Biblioteca de ícones em SVG, um componente React por ícone.</td><td><code>&lt;Send/&gt;</code>, <code>&lt;Scroll/&gt;</code>, <code>&lt;Dices/&gt;</code>, <code>&lt;Skull/&gt;</code>… em <code>GameChat.tsx</code></td></tr>
+</tbody>
+</table>
+
+<h2>Frontend — ferramentas de desenvolvimento</h2>
+<p>Nada aqui vai para o navegador do usuário. São ferramentas que rodam na sua máquina.</p>
+
+<table>
+<thead><tr><th>Ferramenta</th><th>Papel</th></tr></thead>
+<tbody>
+<tr><td><code>vite</code> + <code>@vitejs/plugin-react</code></td><td>Servidor de desenvolvimento e empacotador. Dá o <em>hot reload</em> (salvou, a tela atualiza) e, no <code>build</code>, junta e minifica tudo para produção.</td></tr>
+<tr><td><code>typescript</code></td><td>JavaScript com tipos. Roda no <code>build</code> (<code>tsc -b</code>) e no editor; o navegador nunca vê TypeScript.</td></tr>
+<tr><td><code>tailwindcss</code> + <code>postcss</code> + <code>autoprefixer</code></td><td>CSS por classes utilitárias — é a razão de <code>className="flex h-screen bg-black"</code>. O PostCSS processa e o Autoprefixer adiciona prefixos de navegador.</td></tr>
+<tr><td><code>eslint</code> + plugins + <code>typescript-eslint</code></td><td>Analisador estático: aponta erros e maus hábitos antes de rodar. Você tem configurado (<code>npm run lint</code>) mas provavelmente nunca rodou.</td></tr>
+<tr><td><code>@types/react</code>, <code>@types/node</code>…</td><td>Definições de tipo para bibliotecas escritas em JavaScript puro. Só existem para o TypeScript entender.</td></tr>
+</tbody>
+</table>
+
+<h2>Vocabulário</h2>
+<p>Os termos que aparecem nas lições. Use exatamente estes — inclusive em entrevista.</p>
+
+<table>
+<thead><tr><th>Termo</th><th>Definição</th></tr></thead>
+<tbody>
+<tr><td><strong>ASGI</strong></td><td>A interface padrão entre um servidor Python e uma aplicação web assíncrona. Uvicorn implementa o lado do servidor; FastAPI, o lado da aplicação.</td></tr>
+<tr><td><strong>ORM</strong></td><td><em>Object-Relational Mapper</em>. Camada que traduz entre objetos de uma linguagem e tabelas relacionais. No seu caso: <code>HeroModel</code> ↔ tabela <code>herois</code>.</td></tr>
+<tr><td><strong>Sessão (do ORM)</strong></td><td>A unidade de trabalho do SQLAlchemy. Acumula alterações em memória e as escreve no banco de uma vez, no <code>commit()</code>. Não confundir com “sessão do jogo”.</td></tr>
+<tr><td><strong>Endpoint / rota</strong></td><td>Um par método + caminho (<code>POST /chat</code>) ligado a uma função. É a unidade de API.</td></tr>
+<tr><td><strong>Injeção de dependência</strong></td><td>O framework constrói e entrega o que a sua função precisa, em vez de a função ir buscar. É o <code>Depends(get_db)</code>.</td></tr>
+<tr><td><strong>CORS</strong></td><td>Regra do navegador que bloqueia chamadas entre origens diferentes. Seu front (porta 5173) e seu back (8000) são origens distintas — daí o <code>CORSMiddleware</code>. <code>allow_origins=["*"]</code> desliga a proteção; serve para desenvolver, não para produção.</td></tr>
+<tr><td><strong>Prompt de sistema</strong></td><td>A mensagem de papel <code>system</code>, que estabelece o comportamento do modelo. No Mestre.IA é a <code>biblia_mestre.txt</code> mais o estado atual do jogo.</td></tr>
+<tr><td><strong>Token</strong></td><td>A unidade em que o modelo lê e escreve — mais ou menos um pedaço de palavra. É a unidade de cobrança e o que enche a janela de contexto.</td></tr>
+<tr><td><strong>Janela de contexto</strong></td><td>O máximo de tokens que o modelo aceita numa chamada. Tudo que você quer que ele considere precisa caber ali — daí a necessidade de escolher o que enviar.</td></tr>
+<tr><td><strong>Modo JSON</strong></td><td>Ajuste do provedor que restringe a geração a JSON sintaticamente válido. Garante que dá para fazer <code>json.loads</code>; <em>não</em> garante que os campos que você pediu vieram.</td></tr>
+<tr><td><strong>Estado (React)</strong></td><td>Dado que, ao mudar, faz o componente ser redesenhado. Criado com <code>useState</code>.</td></tr>
+<tr><td><strong>Efeito (React)</strong></td><td>Código que roda <em>depois</em> do desenho, para falar com o mundo externo — uma chamada de API, por exemplo. É o <code>useEffect</code>.</td></tr>
+<tr><td><strong>SPA</strong></td><td><em>Single Page Application</em>. Uma página HTML só; a navegação troca componentes em JavaScript sem recarregar. É o que o react-router faz.</td></tr>
+</tbody>
+</table>
+
+<div class="next">
+  <h4>Fontes</h4>
+  <ul>
+    <li><a href="https://fastapi.tiangolo.com/tutorial/">Tutorial do FastAPI</a> — rotas, corpo de requisição, dependências</li>
+    <li><a href="https://docs.sqlalchemy.org/en/20/orm/quickstart.html">SQLAlchemy 2.0 — ORM Quick Start</a></li>
+    <li><a href="https://react.dev/learn">react.dev — Learn React</a>, a documentação oficial reescrita em 2023</li>
+    <li><a href="https://console.groq.com/docs/structured-outputs">Groq — Structured Outputs</a></li>
+    <li><a href="https://vite.dev/guide/">Guia do Vite</a></li>
+  </ul>
+</div>
+
+</main>
+</body>
+</html>

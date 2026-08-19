@@ -1,0 +1,151 @@
+/* curso.css — folha de estilo compartilhada das lições do Mestre.IA
+   Componente reutilizável: toda lição e todo documento de referência linka este arquivo.
+   Desenhado para ler na tela e imprimir bem. */
+
+:root{
+  --paper:#fffcf7;
+  --ink:#1c1b18;
+  --ink2:#55524c;
+  --ink3:#8a857c;
+  --rule:#e4ded2;
+  --accent:#8a5a2b;
+  --accent-bg:#fdf4e7;
+  --code-bg:#f6f2ea;
+  --ok:#2f6b46;
+  --warn:#a3541f;
+  --measure:37rem;
+}
+
+*{box-sizing:border-box}
+
+html{font-size:17px}
+
+body{
+  margin:0;
+  background:var(--paper);
+  color:var(--ink);
+  font-family:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
+  line-height:1.62;
+  -webkit-font-smoothing:antialiased;
+}
+
+.page{max-width:var(--measure);margin:0 auto;padding:4rem 1.4rem 7rem}
+.wide{max-width:52rem}
+
+/* --- cabeçalho --- */
+.kicker{
+  font-family:ui-sans-serif,-apple-system,"Segoe UI",sans-serif;
+  font-size:.72rem;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--ink3);margin:0 0 .5rem;font-weight:600;
+}
+h1{font-size:2rem;line-height:1.18;letter-spacing:-.015em;margin:0 0 .6rem;font-weight:600}
+.standfirst{font-size:1.08rem;color:var(--ink2);margin:0 0 1.2rem;font-style:italic}
+.tagline{
+  font-family:ui-sans-serif,-apple-system,"Segoe UI",sans-serif;
+  font-size:.78rem;color:var(--ink3);border-top:1px solid var(--rule);
+  border-bottom:1px solid var(--rule);padding:.6rem 0;margin:0 0 2.4rem;
+  display:flex;gap:1.2rem;flex-wrap:wrap;
+}
+
+h2{
+  font-size:1.28rem;margin:2.8rem 0 .8rem;font-weight:600;letter-spacing:-.01em;
+  padding-bottom:.35rem;border-bottom:1px solid var(--rule);
+}
+h3{font-size:1.02rem;margin:1.8rem 0 .4rem;font-weight:600}
+p{margin:0 0 1rem}
+a{color:var(--accent);text-decoration:none;border-bottom:1px solid #d9c4a6}
+a:hover{border-bottom-color:var(--accent)}
+
+code{
+  font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  font-size:.86em;background:var(--code-bg);border:1px solid var(--rule);
+  border-radius:3px;padding:.06em .32em;
+}
+pre{
+  background:var(--code-bg);border:1px solid var(--rule);border-left:3px solid var(--accent);
+  border-radius:0 4px 4px 0;padding:.85rem 1rem;overflow-x:auto;
+  font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  font-size:.8rem;line-height:1.55;margin:0 0 1rem;
+}
+pre code{background:none;border:0;padding:0;font-size:1em}
+pre .cm{color:var(--ink3)}
+pre .hl{background:#fdeccd;border-radius:2px;padding:0 2px}
+
+/* --- caixas --- */
+.note,.warn,.win{
+  border-radius:0 5px 5px 0;padding:.8rem 1rem;margin:1.3rem 0;font-size:.94rem;
+}
+.note{background:var(--accent-bg);border-left:3px solid var(--accent)}
+.warn{background:#fdf0e6;border-left:3px solid var(--warn)}
+.win{background:#eef6f0;border-left:3px solid var(--ok)}
+.note b,.warn b,.win b{font-family:ui-sans-serif,sans-serif;font-size:.76rem;
+  letter-spacing:.1em;text-transform:uppercase;display:block;margin-bottom:.25rem}
+.note b{color:var(--accent)} .warn b{color:var(--warn)} .win b{color:var(--ok)}
+
+/* --- paradas numeradas --- */
+.stop{display:flex;gap:1rem;margin:0 0 1.6rem;align-items:flex-start}
+.stop .n{
+  flex:none;width:1.9rem;height:1.9rem;border-radius:50%;
+  background:var(--ink);color:var(--paper);display:grid;place-items:center;
+  font-family:ui-sans-serif,sans-serif;font-size:.82rem;font-weight:700;margin-top:.15rem;
+}
+.stop .body{flex:1;min-width:0}
+.stop h3{margin-top:.05rem}
+.lib{
+  font-family:ui-sans-serif,sans-serif;font-size:.72rem;letter-spacing:.06em;
+  text-transform:uppercase;color:var(--ink3);margin:0 0 .4rem;
+}
+.lib em{color:var(--accent);font-style:normal;font-weight:600}
+
+/* --- tabela --- */
+table{width:100%;border-collapse:collapse;font-size:.86rem;margin:0 0 1.2rem;
+  font-family:ui-sans-serif,-apple-system,"Segoe UI",sans-serif}
+th{text-align:left;font-size:.7rem;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--ink3);padding:.5rem .6rem;border-bottom:1.5px solid var(--ink)}
+td{padding:.55rem .6rem;border-bottom:1px solid var(--rule);vertical-align:top}
+td code{font-size:.82em}
+.tag{font-size:.68rem;letter-spacing:.06em;text-transform:uppercase;font-weight:600;
+  padding:.12rem .45rem;border-radius:3px;white-space:nowrap}
+.tag.usa{background:#e6f0e9;color:var(--ok)}
+.tag.morto{background:#f3eee6;color:var(--ink3)}
+.tag.indireto{background:#eef1f6;color:#4a5a75}
+
+/* --- quiz --- */
+.quiz{border:1px solid var(--rule);border-radius:6px;padding:1.1rem 1.2rem;margin:1.1rem 0;
+  background:#fffdfa;font-family:ui-sans-serif,-apple-system,"Segoe UI",sans-serif}
+.quiz .q{font-size:.96rem;font-weight:600;margin:0 0 .7rem}
+.quiz .opts{display:flex;flex-direction:column;gap:.4rem}
+.quiz button{
+  text-align:left;font:inherit;font-size:.88rem;background:var(--paper);
+  border:1px solid var(--rule);border-radius:4px;padding:.5rem .7rem;cursor:pointer;
+  transition:background .12s,border-color .12s;color:var(--ink)}
+.quiz button:hover:not(:disabled){background:var(--code-bg);border-color:var(--ink3)}
+.quiz button:disabled{cursor:default;opacity:.55}
+.quiz button.right{background:#e8f3ec;border-color:var(--ok);color:var(--ok);opacity:1;font-weight:600}
+.quiz button.wrong{background:#fbeae6;border-color:#b04a35;color:#b04a35;opacity:1}
+.quiz .fb{margin:.7rem 0 0;font-size:.86rem;color:var(--ink2);display:none;
+  padding-top:.6rem;border-top:1px solid var(--rule)}
+.quiz .fb.on{display:block}
+.score{font-family:ui-sans-serif,sans-serif;font-size:.85rem;color:var(--ink3);
+  text-align:right;margin:.4rem 0 0}
+
+/* --- rodapé --- */
+.next{border-top:1px solid var(--rule);margin-top:3rem;padding-top:1.2rem;
+  font-family:ui-sans-serif,sans-serif;font-size:.88rem}
+.next h4{font-size:.72rem;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--ink3);margin:0 0 .5rem;font-weight:600}
+.next ul{margin:0;padding-left:1.1rem;color:var(--ink2)}
+.next li{margin-bottom:.35rem}
+.ask{background:var(--accent-bg);border-radius:5px;padding:.75rem .9rem;margin-top:1.4rem;
+  font-family:ui-sans-serif,sans-serif;font-size:.85rem;color:var(--ink2)}
+
+@media print{
+  html{font-size:11.5pt}
+  body{background:#fff}
+  .page{padding:0;max-width:none}
+  .quiz button{border:1px solid #ccc}
+  .stop .n{background:#fff;color:#000;border:1.5px solid #000}
+  a{color:var(--ink);border:0}
+  h2{break-after:avoid}
+  .stop,.quiz,.note,.warn,.win{break-inside:avoid}
+}

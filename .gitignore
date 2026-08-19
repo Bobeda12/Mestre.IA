@@ -4,8 +4,11 @@ Thumbs.db
 
 # --- PYTHON (Backend) ---
 Backend/venv/
+Backend/.venv/
 Backend/__pycache__/
+Backend/**/__pycache__/
 Backend/*.pyc
+Backend/.pytest_cache/
 *.db
 *.sqlite3
 
