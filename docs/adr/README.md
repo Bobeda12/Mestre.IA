@@ -7,7 +7,7 @@ Template: [`0000-template.md`](0000-template.md) · Sistema completo: [`../READM
 | # | Decisão | Etapa | Status | Data |
 |---|---|---|---|---|
 | [0001](0001-uv-para-dependencias.md) | Gerenciar dependências com `uv` em vez de pip + venv | 0 | ✅ aceito | 19/08/2026 |
-| 0002 | Revalidar as regras de criação de personagem no servidor | 1 | 🕓 previsto | — |
+| [0002](0002-revalidacao-servidor.md) | Revalidar as regras de criação de personagem no servidor | 1 | ✅ aceito | 19/08/2026 |
 | 0003 | Separar o backend em router / service / domain / infra | 2 | 🕓 previsto | — |
 | 0004 | Adotar Alembic para migrations | 2 | 🕓 previsto | — |
 | 0005 | Modelo de dados usuário × personagem, antes da tela de login | 2 | 🕓 previsto | — |

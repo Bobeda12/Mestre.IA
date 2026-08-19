@@ -22,6 +22,7 @@ class HeroModel(Base):
 
     hp_atual = Column(Integer)
     hp_max = Column(Integer)
+    defesa = Column(Integer)
 
     atributos = Column(JSON)
     inventario = Column(JSON, default=[])

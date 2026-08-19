@@ -32,7 +32,7 @@ npm run dev
 
 Abra `http://localhost:5173`.
 
-**Sem chave da Groq:** o jogo ainda sobe e a criação de personagem funciona — ela cai num prólogo de fallback pré-escrito (`api.py:48`) em vez de gerar um com IA. O chat responde com narrativa vazia. É suficiente para navegar a interface; não é suficiente para jogar de verdade.
+**Sem chave da Groq:** o jogo ainda sobe e a criação de personagem funciona — ela cai num prólogo de fallback pré-escrito (`api.py:48`) em vez de gerar um com IA. O chat responde com uma mensagem explicando que falta a chave, em vez de tentar narrar. É suficiente para navegar a interface; não é suficiente para jogar de verdade.
 
 Se tiver [`just`](https://github.com/casey/just) instalado, os dois comandos acima viram `just backend-dev` e `just frontend-dev` (veja o [`justfile`](justfile) para a lista completa).
 

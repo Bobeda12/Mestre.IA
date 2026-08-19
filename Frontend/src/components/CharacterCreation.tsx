@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
-import { 
-  Sword, Shield, Crown, ChevronRight, CheckCircle, ArrowLeft, Sparkles, 
-  Minus, Plus, Heart, Dna, Scroll, User, Zap, Edit2
+import {
+  Sword, Crown, ChevronRight, ArrowLeft, Sparkles,
+  Minus, Plus, Heart, Scroll, User, Zap, Edit2
 } from 'lucide-react';
 
 interface CharacterCreationProps {
@@ -116,39 +116,45 @@ export default function CharacterCreation({ onCharacterCreated }: CharacterCreat
   const handleFinish = async () => {
     setLoading(true);
     try {
+      // Manda os atributos "crus" (antes do bônus racial) e a lista de
+      // atributos escolhidos para o ponto livre da raça — o servidor
+      // recalcula tudo e é ele quem decide o valor final. Ver ADR-0002.
+      const atributosLivreEscolhidos = Object.keys(freePointsAllocation).filter(attr => freePointsAllocation[attr] === 1);
+
       const res = await axios.post("http://127.0.0.1:8000/create_character", {
-        nome: name, raca: selectedRace, classe: selectedClass, 
-        alinhamento: alignment, background: background, objetivo: goal, // Enviando novos dados
-        historia_texto: history
+        nome: name, raca: selectedRace, classe: selectedClass,
+        alinhamento: alignment, background: background, objetivo: goal,
+        historia_texto: history,
+        atributos: attributes,
+        atributos_livre: atributosLivreEscolhidos,
       });
-      
+
       const sessionId = res.data.session_id;
       if (onCharacterCreated) onCharacterCreated(sessionId);
-      
+
       const imageToSend = finalImageUrl || getLocalImage('classes', selectedClass);
-      
-      // Salva no LocalStorage
+
+      // Salva no LocalStorage só como índice para a tela inicial listar os
+      // heróis — HP, defesa e atributos de verdade vivem no servidor.
       const saveInfo = {
           id: sessionId,
           name: name,
           race: selectedRace,
           class: selectedClass,
           image: imageToSend,
-          maxHp: (classData?.dado_vida || 10) + getModifierValue(getFinalAttribute('constituicao')),
-          defense: 10 + getModifierValue(getFinalAttribute('destreza')),
+          maxHp: res.data.hp_max,
+          defense: res.data.defesa,
           date: new Date().toLocaleDateString()
       };
 
       const existingSaves = JSON.parse(localStorage.getItem('mestre_ia_saves') || '[]');
       localStorage.setItem('mestre_ia_saves', JSON.stringify([saveInfo, ...existingSaves]));
 
-      navigate('/jogar', { state: { 
-            charImage: imageToSend, charName: name, charRace: selectedRace, charClass: selectedClass,
-            charDefense: saveInfo.defense, charMaxHp: saveInfo.maxHp
-      }});
+      navigate(`/jogar/${sessionId}`, { state: { charImage: imageToSend } });
 
-    } catch {
-      alert("Erro ao conectar.");
+    } catch (err: any) {
+      const detalhe = err?.response?.data?.detail;
+      alert(detalhe ? `Não deu para criar o personagem: ${detalhe}` : "Erro ao conectar com o servidor.");
     } finally {
       setLoading(false);
     }

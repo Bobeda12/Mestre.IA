@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Lição 2 — O contrato entre front e back</title>
+<link rel="stylesheet" href="../assets/curso.css">
+</head>
+<body>
+<main class="page">
+
+<p class="kicker">Lição 02 · Mestre.IA</p>
+<h1>O contrato entre front e back</h1>
+<p class="standfirst">O front pode mandar qualquer coisa. Literalmente — não é força de expressão. Esta lição usa o bug real que a Etapa 1 consertou (o servidor ignorava os atributos que você escolhia no wizard) para explicar por que "validar no front" nunca é suficiente, e o que o Pydantic faz de verdade quando barra uma requisição.</p>
+<div class="tagline">
+  <span>~12 minutos</span>
+  <span>Arquivos: <code>api.py</code> · <code>CharacterCreation.tsx</code></span>
+  <span><a href="0001-o-caminho-de-uma-jogada.html">Lição 1 — o caminho de uma jogada ↗</a></span>
+</div>
+
+<p>Antes da Etapa 1, o passo 4 do wizard de criação (<code>CharacterCreation.tsx</code>) fazia você gastar 27 pontos de point-buy entre seis atributos, com barra, contador e tudo. Parecia uma regra de verdade. Mas olhe o que o <code>handleFinish</code> mandava para o servidor:</p>
+
+<pre><code>const res = await axios.post("http://127.0.0.1:8000/create_character", {
+  nome: name, raca: selectedRace, classe: selectedClass,
+  alinhamento: alignment, background: background, objetivo: goal,
+  historia_texto: history
+  <span class="cm">// os atributos que você acabou de gastar 27 pontos escolhendo? não vão.</span>
+});</code></pre>
+
+<p>E do outro lado, <code>Backend/api.py</code> nem tinha onde recebê-los: a função simplesmente escrevia <code>15/14/13/12/10/10</code> fixo para todo personagem. O wizard inteiro era teatro — uma interface bonita conectada a um servidor que não escutava.</p>
+
+<h2>Por que "validar no front" nunca resolve sozinho</h2>
+
+<p>A tentação óbvia seria: "então bota uma checagem no React antes de mandar". Mas pense em <em>onde</em> esse código roda. O JavaScript da sua aplicação executa no navegador do usuário — numa máquina que você não controla. Nada impede alguém de abrir o DevTools, ou usar <code>curl</code> direto, e mandar isto:</p>
+
+<pre><code>curl -X POST http://127.0.0.1:8000/create_character \
+  -H "Content-Type: application/json" \
+  -d '{"nome":"Trapaceiro","raca":"Humano","classe":"Guerreiro",
+       "atributos":{"forca":99,"destreza":99,"constituicao":99,
+                     "inteligencia":99,"sabedoria":99,"carisma":99},
+       "atributos_livre":[], "alinhamento":"Neutro",
+       "background":"x","objetivo":"x"}'</code></pre>
+
+<p>Esse <code>curl</code> nunca passa pelo React. Não existe wizard, não existe barra de pontos, não existe nenhum código JavaScript no caminho. Se a única validação estivesse no front, essa requisição chegaria intacta. <strong>Validação de front é experiência do usuário — evita que ele erre sem querer. Validação de back é segurança — impede que alguém erre de propósito.</strong> São dois problemas diferentes, e um não substitui o outro.</p>
+
+<div class="note"><b>A regra de bolso</b>Nunca confie em nada que atravessou a fronteira entre navegador e servidor sem checar de novo do lado de cá. A fronteira em si (ver Lição 1, parada 2) é o ponto onde qualquer garantia do front deixa de valer.</div>
+
+<h2>O que o Pydantic faz, de fato</h2>
+
+<p>É aqui que entra o "porteiro" que a Lição 1 já tinha nomeado. Depois da Etapa 1, <code>CharacterCreationRequest</code> em <code>api.py</code> ganhou um validador de verdade:</p>
+
+<pre><code>class CharacterCreationRequest(BaseModel):
+    atributos: dict[str, int]
+    atributos_livre: list[str] = []
+
+    @field_validator("atributos")
+    @classmethod
+    def valida_point_buy(cls, valores: dict[str, int]) -> dict[str, int]:
+        if set(valores.keys()) != ATRIBUTOS_VALIDOS:
+            raise ValueError(...)
+        custo_total = sum(CUSTO_PONTOS[v] for v in valores.values())
+        if custo_total > PONTOS_DISPONIVEIS:
+            raise ValueError(...)
+        return valores</code></pre>
+
+<p>Um <code>field_validator</code> é uma função que o Pydantic roda <em>depois</em> de confirmar o tipo do campo (aqui, "isso é um dicionário de string para inteiro") e <em>antes</em> de deixar o valor entrar no objeto final. Se a função levantar <code>ValueError</code>, a requisição inteira é recusada — sua função <code>create_character</code> nunca chega a rodar. É por isso que o <code>curl</code> do exemplo acima, hoje, recebe <code>422 Unprocessable Entity</code> em vez de criar um personagem com 99 de força (<a href="https://docs.pydantic.dev/latest/concepts/validators/">docs do Pydantic, "Validators"</a>).</p>
+
+<div class="warn"><b>O que o Pydantic não consegue sozinho</b>O <code>field_validator</code> de <code>atributos_livre</code> confere formato (nomes válidos, sem repetição) — mas não confere se a raça escolhida realmente <em>dá</em> aquele ponto livre. Essa checagem (<code>api.py:186</code>, dentro de <code>create_character</code>) precisa saber quantos pontos livres a raça concede, e essa informação vive em <code>data_manager.regras</code>, um arquivo JSON — não em nada que o Pydantic enxergue a partir do corpo da requisição sozinho. Por isso a validação da Etapa 1 ficou em <strong>duas</strong> camadas: uma no modelo (formato), outra na função (regra que depende de outro dado). O <a href="../../docs/adr/0002-revalidacao-servidor.md">ADR-0002</a> registra essa divisão e por quê.</div>
+
+<h2>E o lado do front, agora?</h2>
+
+<p>O React continua calculando o point-buy para dar feedback imediato (a barra de pontos restantes, o botão "Próximo" que só libera com 0 pontos sobrando) — isso não vai embora, porque é o que torna o wizard usável. A diferença é que agora ninguém <em>confia</em> nesse cálculo: ele é só uma sugestão amigável. O servidor refaz a conta do zero.</p>
+
+<p>O <code>ROADMAP_PORTFOLIO.md</code> e o <code>PLANO_MESTRE.md</code> citam <strong>Zod</strong> como a peça que fecha esse contrato pelo lado do front — validando as respostas que <em>chegam</em> do backend antes de confiar nelas, o par simétrico do Pydantic. Vale registrar com honestidade: até esta etapa, o front ainda não usa Zod — ele chama <code>axios</code> puro e confia na forma da resposta. Isso é trabalho da Etapa 7 (<code>PLANO_MESTRE.md</code> §6). O motivo de mencionar aqui é o conceito, não a biblioteca: o mesmo problema (não confiar em dado que atravessou a fronteira) existe nos dois sentidos, e hoje só um lado está coberto.</p>
+
+<h2>Duas coisas que você já sabe agora</h2>
+
+<div class="win"><b>Achado 1</b>Antes da Etapa 1, o wizard de criação inteiro — as barras, os botões +/-, o contador de pontos — não tinha nenhum efeito no personagem criado. Era uma interface completa conectada a um servidor que descartava tudo. O bug não estava em nenhuma lógica quebrada; estava num campo que simplesmente nunca foi adicionado ao corpo da requisição.</div>
+
+<div class="win"><b>Achado 2</b>"Validar no front" e "validar no back" não são a mesma tarefa feita em dois lugares — são duas tarefas diferentes. Uma existe para guiar quem usa a interface; a outra existe para resistir a quem não usa. Um projeto com API pública (e toda API HTTP é, tecnicamente, pública) precisa das duas, mas só pode <em>confiar</em> numa delas.</div>
+
+<h2>Teste rápido</h2>
+<p>Sem olhar para cima. O objetivo aqui é lembrar, não acertar de primeira.</p>
+
+<div id="quiz"></div>
+<p class="score" id="score"></p>
+
+<div class="next">
+  <h4>Fonte primária desta lição</h4>
+  <ul>
+    <li><a href="https://docs.pydantic.dev/latest/concepts/validators/">Pydantic — Validators</a>, seção <em>Field validators</em>. Leia também <em>Model validators</em> — é o que a Etapa 2 provavelmente vai precisar quando uma regra depender de mais de um campo ao mesmo tempo (ex.: "a soma de todos os atributos não pode passar de X").</li>
+  </ul>
+  <h4>Próximas lições possíveis</h4>
+  <ul>
+    <li><strong>Lição 3 —</strong> o ORM por dentro: sessão, <code>commit</code>, e por que colunas JSON são uma armadilha (adiada da Lição 1)</li>
+    <li><strong>Lição 4 —</strong> quando a Etapa 3 chegar: por que "o servidor decide" também vale para uma rolagem de dado, não só para a criação de personagem</li>
+  </ul>
+  <div class="ask">Travou em algo, ou uma explicação ficou pela metade? Me pergunta — eu sou o seu professor aqui, e é melhor desentortar agora do que seguir com um modelo mental torto.</div>
+</div>
+
+</main>
+
+<script>
+const QUESTIONS = [
+ {q:"Por que uma checagem só no React não impede um atributo fora do point-buy?",
+  o:["Porque um curl direto ao endpoint nunca passa pelo código React","Porque o React não sabe somar números","Porque o Pydantic desliga a checagem do React","Porque o navegador ignora JavaScript às vezes"], a:0,
+  fb:"O React só roda dentro do navegador, quando o usuário usa a sua interface. Qualquer requisição HTTP direta ao servidor (curl, Postman, outro programa) nunca executa esse código — logo nunca é barrada por ele."},
+
+ {q:"O que acontece quando um field_validator do Pydantic levanta ValueError?",
+  o:["A requisição é recusada com 422, e a função da rota nunca roda","O valor é substituído por um padrão silenciosamente","O erro é registrado em log, mas a função roda normalmente","O FastAPI tenta converter o valor automaticamente"], a:0,
+  fb:"422 Unprocessable Entity. O Pydantic barra a requisição antes dela chegar na sua função — é por isso que create_character pode assumir que atributos já é válido quando começa a rodar."},
+
+ {q:"Por que a checagem de atributos_livre contra a raça NÃO pode ser um field_validator?",
+  o:["Porque depende de data_manager.regras, dado externo ao corpo da requisição","Porque listas não podem ser validadas pelo Pydantic","Porque field_validator só aceita um argumento","Porque a raça já vem validada pelo FastAPI"], a:0,
+  fb:"Um field_validator só enxerga o valor do próprio campo. Saber quantos pontos livres uma raça concede exige consultar data_manager.regras — por isso essa checagem mora dentro da função create_character, não no modelo Pydantic."},
+
+ {q:"Segundo esta lição, o que falta hoje para o contrato front-back ficar simétrico?",
+  o:["O front ainda não valida as respostas do backend com Zod","O backend ainda não usa Pydantic","O front ainda não usa TypeScript","O backend ainda não tem testes"], a:0,
+  fb:"O Pydantic cobre o lado do backend (valida o que chega). O par simétrico do lado do front — Zod validando o que chega do backend — é trabalho planejado para a Etapa 7, ainda não implementado."}
+];
+
+let answered=0, right=0;
+const host=document.getElementById('quiz');
+QUESTIONS.forEach((item,i)=>{
+  const order=item.o.map((t,k)=>k);
+  for(let k=order.length-1;k>0;k--){const j=Math.floor(Math.random()*(k+1));[order[k],order[j]]=[order[j],order[k]];}
+  const el=document.createElement('div');
+  el.className='quiz';
+  el.innerHTML=`<p class="q">${i+1}. ${item.q}</p>
+    <div class="opts">${order.map(k=>`<button data-k="${k}">${item.o[k]}</button>`).join('')}</div>
+    <p class="fb">${item.fb}</p>`;
+  el.querySelectorAll('button').forEach(b=>{
+    b.addEventListener('click',()=>{
+      if(el.dataset.done) return;
+      el.dataset.done='1'; answered++;
+      const ok = Number(b.dataset.k)===item.a;
+      if(ok) right++;
+      el.querySelectorAll('button').forEach(x=>{
+        x.disabled=true;
+        if(Number(x.dataset.k)===item.a) x.classList.add('right');
+      });
+      if(!ok) b.classList.add('wrong');
+      el.querySelector('.fb').classList.add('on');
+      document.getElementById('score').textContent =
+        `${right} de ${answered} respondidas corretamente` +
+        (answered===QUESTIONS.length ? (right===QUESTIONS.length
+          ? " — você sabe defender essa fronteira." : " — reveja as perguntas que escaparam.") : "");
+    });
+  });
+  host.appendChild(el);
+});
+</script>
+
+</body>
+</html>
