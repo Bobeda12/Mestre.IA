@@ -4,6 +4,10 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Etapa 6: permite disparar o job `avaliacao` manualmente (aba Actions do
+  # GitHub → "Run workflow") — nunca dispara sozinho em push/PR. Ver o
+  # comentário no job `avaliacao` abaixo.
+  workflow_dispatch:
 
 jobs:
   backend:
@@ -24,10 +28,44 @@ jobs:
         run: uv run ruff check .
 
       - name: Tipos (mypy)
-        run: uv run mypy app
+        run: uv run mypy app evals
 
-      - name: Testes (pytest, com gate de cobertura em domain/services)
+      - name: Testes (pytest, com gate de cobertura em domain/services/evals)
         run: |
           uv run pytest -v \
-            --cov=app/domain --cov=app/services \
+            --cov=app/domain --cov=app/services --cov=evals \
             --cov-report=term-missing --cov-fail-under=60
+
+  avaliacao:
+    # Etapa 6 (ADR-0011): gate de avaliação real contra a Groq — manual, não
+    # em todo PR/push. A chave da Groq é compartilhada com os jogadores
+    # (ROADMAP_PORTFOLIO.md já alerta sobre cota); rodar a suíte inteira a
+    # cada commit queimaria essa cota rápido demais, e é o oposto do que o
+    # próprio roadmap recomenda. Pré-requisito: um secret `GROQ_API_KEY`
+    # configurado em Settings → Secrets do repositório (ação do usuário no
+    # GitHub, fora do que este workflow consegue fazer sozinho).
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch'
+    defaults:
+      run:
+        working-directory: Backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Instalar uv
+        uses: astral-sh/setup-uv@v3
+
+      - name: Instalar dependências
+        run: uv sync
+
+      - name: Rodar a suíte de avaliação contra o baseline salvo
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+        run: uv run python -m evals.run_eval --comparar-baseline --salvar-relatorio relatorio.json
+
+      - name: Publicar o relatório da rodada
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: relatorio-avaliacao
+          path: Backend/relatorio.json

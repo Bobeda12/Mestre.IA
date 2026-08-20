@@ -31,7 +31,18 @@ class ErroMestre(Exception):
 def _build_client() -> groq.Groq | None:
     if not settings.groq_api_key:
         return None
-    return groq.Groq(api_key=settings.groq_api_key)
+    # max_retries=0 (Etapa 6, evals/): o SDK da Groq retenta 429/5xx sozinho
+    # por padrão (max_retries=2), honrando o header Retry-After do servidor
+    # ANTES de qualquer exceção chegar ao nosso código — descoberto rodando
+    # evals/run_eval.py --bake-off de verdade: uma chamada devolveu com
+    # ~3869s de latência (o SDK ficou preso num retry interno enquanto a
+    # cota estava esgotada). Isso também neutralizava a cadeia de fallback
+    # do ADR-0008 na prática: `chamar_com_fallback` só troca de modelo
+    # quando VÊ um `RateLimitError`, mas o SDK engolia esse erro por até
+    # ~64 minutos antes de deixá-lo passar. Com max_retries=0, o `tenacity`
+    # (rápido, no máx. ~4s) + a troca de modelo é a única política de
+    # retry — a que já está documentada e testada.
+    return groq.Groq(api_key=settings.groq_api_key, max_retries=0)
 
 
 client = _build_client()
@@ -59,18 +70,29 @@ def _chamar_modelo(
     return client.chat.completions.create(**kwargs)  # type: ignore[union-attr]
 
 
-def chamar_modelo_unico(modelo: str, msgs: list[dict], response_format: dict | None = None) -> Any:
-    """Chama um único modelo específico, sem a cadeia de fallback —
-    usado pelo resumo rolante (Etapa 5, services/memory.py), que aceita
-    usar sempre o modelo mais barato e falhar sem alternativa: comprimir
-    memória não vale o custo de escalar para um modelo caro, e uma falha
-    aqui não derruba o turno (o resumo antigo continua valendo)."""
+def chamar_modelo_unico(
+    modelo: str,
+    msgs: list[dict],
+    tools: list[dict] | None = None,
+    tool_choice: str = "auto",
+    response_format: dict | None = None,
+) -> Any:
+    """Chama um único modelo específico, sem a cadeia de fallback — usado
+    pelo resumo rolante (Etapa 5, services/memory.py), que aceita usar
+    sempre o modelo mais barato e falhar sem alternativa: comprimir memória
+    não vale o custo de escalar para um modelo caro, e uma falha aqui não
+    derruba o turno (o resumo antigo continua valendo).
+
+    `tools`/`tool_choice` foram adicionados na Etapa 6 (evals/) para o
+    bake-off de modelos poder rodar o turno inteiro (com ferramentas) contra
+    um modelo específico, em vez de só a cadeia de fallback — que esconde
+    qual modelo respondeu de fato."""
     if not client:
         raise ErroMestre(
             "O mestre está sem acesso à IA — falta configurar a chave da Groq no servidor (GROQ_API_KEY)."
         )
     try:
-        return _chamar_modelo(modelo, msgs, None, "auto", response_format)
+        return _chamar_modelo(modelo, msgs, tools, tool_choice, response_format)
     except _ERROS_TRANSITORIOS as e:
         raise ErroMestre("A cota de uso da IA acabou por agora, ou o serviço demorou demais.") from e
     except groq.APIStatusError as e:

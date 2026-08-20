@@ -1,0 +1,161 @@
+# Golden dataset — categoria "acao_impossivel" (Etapa 6). O jogador tenta
+# algo que o estado do jogo não permite. O comportamento correto quase
+# sempre é NÃO chamar nenhuma ferramenta de mudança de estado (ou chamar uma
+# que retorna erro, ver `app/services/tools.py::executar`) e narrar a
+# recusa/impossibilidade dentro da ficção — nunca fingir que funcionou.
+
+heroi_padrao: &heroi_padrao
+  nome: "Kael"
+  classe: "Guerreiro"
+  hp_atual: 10
+  hp_max: 10
+  defesa: 15
+  ouro: 5
+  atributos: {forca: 14, destreza: 12, constituicao: 13, inteligencia: 10, sabedoria: 10, carisma: 8}
+  inventario: ["Cimitarra"]
+  reputacao_npcs: {}
+
+cenarios:
+  - id: impossivel_atacar_sem_combate_ativo
+    categoria: acao_impossivel
+    descricao: "Jogador tenta atacar fora de combate."
+    estado_inicial:
+      heroi: {<<: *heroi_padrao}
+      combate: {ativo: false, inimigos: []}
+      mundo: {local: "Vila de Phandalin", clima: "Ensolarado", turno: 1}
+      missao: {nome_missao: "Chegar à vila", objetivo_missao: "Encontrar um lugar para descansar."}
+    acao_jogador: "Eu saco minha cimitarra e ataco o taverneiro do nada, sem motivo."
+    ferramenta_esperada: null
+    args_esperados: {}
+    resultado_mecanico_esperado: "Se chamar 'atacar' sem combate ativo, a ferramenta devolve erro (não há alvo válido); o correto é o narrador reagir na ficção (ex: iniciar_combate se a agressão for séria) em vez de aplicar dano direto."
+    notas_rubrica: "Não deve narrar o taverneiro ferido sem que nenhuma ferramenta tenha resolvido dano."
+
+  - id: impossivel_mover_local_inexistente
+    categoria: acao_impossivel
+    descricao: "Jogador pede para ir a um lugar que não existe em data/locations.json."
+    estado_inicial:
+      heroi: {<<: *heroi_padrao}
+      combate: {ativo: false, inimigos: []}
+      mundo: {local: "Vila de Phandalin", clima: "Ensolarado", turno: 3}
+      missao: {nome_missao: "Explorar a região", objetivo_missao: "Decidir para onde ir a seguir."}
+    acao_jogador: "Eu viajo até a Cidadela Flutuante de Cristal."
+    ferramenta_esperada: "mover"
+    args_esperados: {}
+    resultado_mecanico_esperado: "mover('Cidadela Flutuante de Cristal') devolve erro: local desconhecido, com a lista de locais válidos."
+    notas_rubrica: "Não deve narrar a chegada a um lugar que a ferramenta rejeitou."
+
+  - id: impossivel_usar_item_que_nao_possui
+    categoria: acao_impossivel
+    descricao: "Jogador tenta usar um item que não está no inventário."
+    estado_inicial:
+      heroi: {<<: *heroi_padrao, inventario: ["Cimitarra"]}
+      combate: {ativo: false, inimigos: []}
+      mundo: {local: "Vila de Phandalin", clima: "Ensolarado", turno: 5}
+      missao: {nome_missao: "Preparar equipamento", objetivo_missao: "Descansar antes da jornada."}
+    acao_jogador: "Eu bebo minha poção de cura para relaxar."
+    ferramenta_esperada: "usar_item"
+    args_esperados: {item: "Poção de Cura"}
+    resultado_mecanico_esperado: "usar_item('Poção de Cura') devolve erro: item não está no inventário."
+    notas_rubrica: "Não deve narrar o herói curado ou relaxado por um item que ele não tem."
+
+  - id: impossivel_gastar_ouro_alem_do_saldo
+    categoria: acao_impossivel
+    descricao: "Jogador tenta comprar algo mais caro do que o ouro que tem."
+    estado_inicial:
+      heroi: {<<: *heroi_padrao, ouro: 5}
+      combate: {ativo: false, inimigos: []}
+      mundo: {local: "Vila de Phandalin", clima: "Ensolarado", turno: 2}
+      missao: {nome_missao: "Preparar equipamento", objetivo_missao: "Comprar uma armadura melhor."}
+    acao_jogador: "Eu compro a armadura de placas mais cara da loja, por 50 moedas de ouro."
+    ferramenta_esperada: "gastar_ouro"
+    args_esperados: {qtd: 50}
+    resultado_mecanico_esperado: "gastar_ouro(50) devolve erro: ouro insuficiente (tem 5)."
+    notas_rubrica: "Não deve narrar a compra concluída, nem o inventário ganhando a armadura."
+
+  - id: impossivel_atacar_inimigo_ja_morto
+    categoria: acao_impossivel
+    descricao: "Jogador tenta atacar um inimigo que já está com HP 0 no mesmo combate."
+    estado_inicial:
+      heroi: {<<: *heroi_padrao}
+      combate:
+        ativo: true
+        inimigos:
+          - {nome: "Goblin", hp: 0, max_hp: 7, ca: 15, bonus_ataque: 4, dano_dado: "1d6+2", nome_ataque: "Cimitarra"}
+          - {nome: "Goblin", hp: 6, max_hp: 7, ca: 15, bonus_ataque: 4, dano_dado: "1d6+2", nome_ataque: "Cimitarra"}
+      mundo: {local: "Masmorra Esquecida", clima: "Frio e úmido", turno: 9}
+      missao: {nome_missao: "Limpar a masmorra", objetivo_missao: "Derrotar os dois goblins."}
+    acao_jogador: "Eu desço minha cimitarra de novo no goblin que já caiu, só para ter certeza."
+    ferramenta_esperada: null
+    args_esperados: {}
+    resultado_mecanico_esperado: "Um alvo com hp:0 não deveria ser atacável de novo — a narrativa não deve tratar o goblin morto como recebendo dano de novo."
+    notas_rubrica: "Espera-se que o narrador redirecione a ação (ex: nada acontece, ou sugere focar no goblin vivo)."
+
+  - id: impossivel_voar_sem_meios
+    categoria: acao_impossivel
+    descricao: "Ação fisicamente impossível para o personagem (sem asas, sem magia de voo)."
+    estado_inicial:
+      heroi: {<<: *heroi_padrao}
+      combate: {ativo: false, inimigos: []}
+      mundo: {local: "Floresta das Sombras", clima: "Neblina densa", turno: 16}
+      missao: {nome_missao: "Atravessar a floresta", objetivo_missao: "Cruzar o desfiladeiro."}
+    acao_jogador: "Eu abro os braços e simplesmente voo por cima do desfiladeiro."
+    ferramenta_esperada: null
+    args_esperados: {}
+    resultado_mecanico_esperado: "Nenhuma ferramenta deveria conceder voo; o herói não tem meio nenhum de voar."
+    notas_rubrica: "A bíblia exige verossimilhança física — o herói cai, ou o narrador recusa a ação com um teste de queda, não uma travessia mágica gratuita."
+
+  - id: impossivel_teleportar_outra_cidade
+    categoria: acao_impossivel
+    descricao: "Jogador pede um deslocamento instantâneo para fora do alcance narrativo."
+    estado_inicial:
+      heroi: {<<: *heroi_padrao}
+      combate: {ativo: false, inimigos: []}
+      mundo: {local: "Vila de Phandalin", clima: "Ensolarado", turno: 1}
+      missao: {nome_missao: "Chegar à vila", objetivo_missao: "Descansar na taverna."}
+    acao_jogador: "Eu me teleporto instantaneamente para a capital do reino, a centenas de quilômetros daqui."
+    ferramenta_esperada: null
+    args_esperados: {}
+    resultado_mecanico_esperado: "'mover' só aceita locais conhecidos do mundo atual; teleporte para fora do mapa não deveria ser concedido."
+    notas_rubrica: "Não deve narrar a chegada à capital."
+
+  - id: impossivel_comprar_sem_ouro_algum
+    categoria: acao_impossivel
+    descricao: "Herói sem ouro tentando comprar qualquer coisa."
+    estado_inicial:
+      heroi: {<<: *heroi_padrao, ouro: 0}
+      combate: {ativo: false, inimigos: []}
+      mundo: {local: "Vila de Phandalin", clima: "Ensolarado", turno: 4}
+      missao: {nome_missao: "Preparar equipamento", objetivo_missao: "Comprar uma corda para a masmorra."}
+    acao_jogador: "Eu compro uma corda de 15 metros da mercadora Halia, por 2 moedas de ouro."
+    ferramenta_esperada: "gastar_ouro"
+    args_esperados: {qtd: 2}
+    resultado_mecanico_esperado: "gastar_ouro(2) devolve erro: ouro insuficiente (tem 0)."
+    notas_rubrica: ""
+
+  - id: impossivel_persuadir_objeto_inanimado
+    categoria: acao_impossivel
+    descricao: "Ação absurda — tentar convencer uma pedra a falar."
+    estado_inicial:
+      heroi: {<<: *heroi_padrao}
+      combate: {ativo: false, inimigos: []}
+      mundo: {local: "Masmorra Esquecida", clima: "Frio e úmido", turno: 28}
+      missao: {nome_missao: "Limpar a masmorra", objetivo_missao: "Decifrar o enigma da câmara de pedra."}
+    acao_jogador: "Eu tento persuadir a estátua de pedra a se mover e me deixar passar."
+    ferramenta_esperada: null
+    args_esperados: {}
+    resultado_mecanico_esperado: "Um objeto inanimado sem indicação mágica não deveria ceder a persuasão nenhuma."
+    notas_rubrica: "Se o narrador decidir que a estátua é mágica, isso é uma escolha criativa válida — mas não pode simplesmente 'funcionar' sem justificativa nenhuma na cena."
+
+  - id: impossivel_reviver_companheiro_sem_recurso
+    categoria: acao_impossivel
+    descricao: "Pedido de recurso mágico que não existe no inventário nem na cena."
+    estado_inicial:
+      heroi: {<<: *heroi_padrao}
+      combate: {ativo: false, inimigos: []}
+      mundo: {local: "Masmorra Esquecida", clima: "Frio e úmido", turno: 40}
+      missao: {nome_missao: "Limpar a masmorra", objetivo_missao: "Encontrar uma saída, sozinho."}
+    acao_jogador: "Eu lanço um feitiço de ressurreição no meu companheiro caído, trazendo-o de volta à vida."
+    ferramenta_esperada: null
+    args_esperados: {}
+    resultado_mecanico_esperado: "O herói (Guerreiro) não tem magia nenhuma no inventário/ficha — nada deveria conceder ressurreição."
+    notas_rubrica: "Não deve narrar o companheiro revivido."

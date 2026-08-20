@@ -1,0 +1,156 @@
+# Golden dataset — categoria "regra_ambigua" (Etapa 6). Ações fora de
+# combate, arriscadas e incertas, sem resultado óbvio — o comportamento
+# correto é sempre `rolar_teste` (nunca decidir sozinho se deu certo), ou
+# `consultar_regra` quando a pergunta é sobre a mecânica, não uma ação.
+
+heroi_padrao: &heroi_padrao
+  nome: "Kael"
+  classe: "Guerreiro"
+  hp_atual: 10
+  hp_max: 10
+  defesa: 15
+  ouro: 15
+  atributos: {forca: 14, destreza: 12, constituicao: 13, inteligencia: 10, sabedoria: 10, carisma: 8}
+  inventario: ["Cimitarra"]
+  reputacao_npcs: {}
+
+cenarios:
+  - id: regra_escalar_muro_alto
+    categoria: regra_ambigua
+    descricao: "Ação de força incerta, sem combate."
+    estado_inicial:
+      heroi: {<<: *heroi_padrao}
+      combate: {ativo: false, inimigos: []}
+      mundo: {local: "Masmorra Esquecida", clima: "Frio e úmido", turno: 4}
+      missao: {nome_missao: "Limpar a masmorra", objetivo_missao: "Encontrar outra rota, o corredor está bloqueado."}
+    acao_jogador: "Eu tento escalar o muro alto de pedra que bloqueia a passagem."
+    ferramenta_esperada: "rolar_teste"
+    args_esperados: {atributo: "forca"}
+    resultado_mecanico_esperado: "rolar_teste(forca, CD razoável ~12-15) decide se o herói sobe."
+    notas_rubrica: "Não deve narrar sucesso ou falha antes do resultado da ferramenta."
+
+  - id: regra_esconder_das_sombras
+    categoria: regra_ambigua
+    descricao: "Teste de furtividade, atributo destreza."
+    estado_inicial:
+      heroi: {<<: *heroi_padrao}
+      combate: {ativo: false, inimigos: []}
+      mundo: {local: "Floresta das Sombras", clima: "Neblina densa", turno: 7}
+      missao: {nome_missao: "Atravessar a floresta", objetivo_missao: "Passar sem ser visto pelos bandidos à frente."}
+    acao_jogador: "Eu me escondo atrás de uma árvore torta, tentando não fazer barulho nenhum."
+    ferramenta_esperada: "rolar_teste"
+    args_esperados: {atributo: "destreza"}
+    resultado_mecanico_esperado: "rolar_teste(destreza, CD) decide se o herói passa despercebido."
+    notas_rubrica: ""
+
+  - id: regra_persuadir_guarda
+    categoria: regra_ambigua
+    descricao: "Teste social — a bíblia é explícita que Persuasão bem-sucedida não controla a mente do NPC."
+    estado_inicial:
+      heroi: {<<: *heroi_padrao}
+      combate: {ativo: false, inimigos: []}
+      mundo: {local: "Vila de Phandalin", clima: "Ensolarado", turno: 9}
+      missao: {nome_missao: "Entrar na prefeitura", objetivo_missao: "Conseguir falar com a prefeita, mesmo fora do horário."}
+    acao_jogador: "Eu tento convencer o guarda da prefeitura a me deixar entrar, mesmo estando fechado."
+    ferramenta_esperada: "rolar_teste"
+    args_esperados: {atributo: "carisma"}
+    resultado_mecanico_esperado: "rolar_teste(carisma, CD) — sucesso deixa o guarda mais favorável, não obediente."
+    notas_rubrica: "Sucesso não deve fazer o guarda abandonar o posto (bíblia: 'Carisma não é controle mental')."
+
+  - id: regra_perceber_armadilha
+    categoria: regra_ambigua
+    descricao: "Teste de percepção antes de entrar numa área perigosa conhecida."
+    estado_inicial:
+      heroi: {<<: *heroi_padrao}
+      combate: {ativo: false, inimigos: []}
+      mundo: {local: "Masmorra Esquecida", clima: "Frio e úmido", turno: 2}
+      missao: {nome_missao: "Limpar a masmorra", objetivo_missao: "Atravessar o corredor de entrada com cuidado."}
+    acao_jogador: "Antes de avançar, eu examino o chão do corredor com cuidado, procurando por algo fora do lugar."
+    ferramenta_esperada: "rolar_teste"
+    args_esperados: {atributo: "sabedoria"}
+    resultado_mecanico_esperado: "rolar_teste(sabedoria, CD) decide se o herói nota a armadilha de fosso conhecida do local."
+    notas_rubrica: ""
+
+  - id: regra_resistir_veneno
+    categoria: regra_ambigua
+    descricao: "Teste de resistência física a um efeito, atributo constituição."
+    estado_inicial:
+      heroi: {<<: *heroi_padrao, hp_atual: 8}
+      combate: {ativo: false, inimigos: []}
+      mundo: {local: "Masmorra Esquecida", clima: "Frio e úmido", turno: 22}
+      missao: {nome_missao: "Limpar a masmorra", objetivo_missao: "Sobreviver ao gás dos esporos das aranhas gigantes."}
+    acao_jogador: "Uma nuvem de esporos venenosos explode perto de mim — eu prendo a respiração e tento resistir."
+    ferramenta_esperada: "rolar_teste"
+    args_esperados: {atributo: "constituicao"}
+    resultado_mecanico_esperado: "rolar_teste(constituicao, CD) decide o efeito do veneno."
+    notas_rubrica: ""
+
+  - id: regra_negociar_preco_na_loja
+    categoria: regra_ambigua
+    descricao: "Tentativa de pechinchar — social, não uma compra direta."
+    estado_inicial:
+      heroi: {<<: *heroi_padrao}
+      combate: {ativo: false, inimigos: []}
+      mundo: {local: "Vila de Phandalin", clima: "Ensolarado", turno: 1}
+      missao: {nome_missao: "Preparar equipamento", objetivo_missao: "Comprar suprimentos antes da jornada."}
+    acao_jogador: "Eu tento convencer a mercadora Halia a me dar um desconto na corda que ela está vendendo."
+    ferramenta_esperada: "rolar_teste"
+    args_esperados: {atributo: "carisma"}
+    resultado_mecanico_esperado: "rolar_teste(carisma, CD) decide se consegue desconto; gastar_ouro só viria depois, se o jogador confirmar a compra."
+    notas_rubrica: "Não deve debitar ouro sozinho sem o jogador confirmar a compra."
+
+  - id: regra_equilibrar_ponte_estreita
+    categoria: regra_ambigua
+    descricao: "Teste físico de equilíbrio, atributo destreza."
+    estado_inicial:
+      heroi: {<<: *heroi_padrao}
+      combate: {ativo: false, inimigos: []}
+      mundo: {local: "Floresta das Sombras", clima: "Chuva forte", turno: 14}
+      missao: {nome_missao: "Atravessar a floresta", objetivo_missao: "Cruzar o desfiladeiro pela ponte de corda."}
+    acao_jogador: "A ponte de corda balança forte com a chuva — eu tento atravessar mesmo assim, com cuidado."
+    ferramenta_esperada: "rolar_teste"
+    args_esperados: {atributo: "destreza"}
+    resultado_mecanico_esperado: "rolar_teste(destreza, CD) — a bíblia pede desvantagem em percepção com chuva forte, mas isso não altera este teste de destreza diretamente."
+    notas_rubrica: "A narrativa deveria mencionar a chuva atrapalhando, mesmo que a mecânica de desvantagem não esteja implementada."
+
+  - id: regra_identificar_runas_antigas
+    categoria: regra_ambigua
+    descricao: "Teste de conhecimento, atributo inteligência."
+    estado_inicial:
+      heroi: {<<: *heroi_padrao}
+      combate: {ativo: false, inimigos: []}
+      mundo: {local: "Masmorra Esquecida", clima: "Frio e úmido", turno: 26}
+      missao: {nome_missao: "Limpar a masmorra", objetivo_missao: "Decifrar as runas na porta selada."}
+    acao_jogador: "Eu examino as runas entalhadas na porta de pedra, tentando entender o que dizem."
+    ferramenta_esperada: "rolar_teste"
+    args_esperados: {atributo: "inteligencia"}
+    resultado_mecanico_esperado: "rolar_teste(inteligencia, CD) decide se o herói entende as runas."
+    notas_rubrica: ""
+
+  - id: regra_intimidar_bandido_atributo_ambiguo
+    categoria: regra_ambigua
+    descricao: "Intimidação pode ser lida como força (ameaça física) ou carisma (presença) — o dataset não fixa qual é 'certo', só espera algum teste coerente."
+    estado_inicial:
+      heroi: {<<: *heroi_padrao}
+      combate: {ativo: false, inimigos: []}
+      mundo: {local: "Floresta das Sombras", clima: "Neblina densa", turno: 30}
+      missao: {nome_missao: "Atravessar a floresta", objetivo_missao: "Fazer o bandido solitário recuar sem lutar."}
+    acao_jogador: "Eu ergo minha cimitarra e encaro o bandido, ameaçando com tudo que tenho na voz."
+    ferramenta_esperada: "rolar_teste"
+    args_esperados: {}
+    resultado_mecanico_esperado: "Qualquer atributo defensável (força ou carisma) conta como acerto de ferramenta; o que importa é chamar rolar_teste, não decidir sozinho."
+    notas_rubrica: "Julgar coerência do atributo escolhido, não exigir um único atributo 'certo'."
+
+  - id: regra_furtividade_em_grupo_nao_documentada
+    categoria: regra_ambigua
+    descricao: "Pergunta de regra sobre um caso que a bíblia não cobre explicitamente — testa honestidade em vez de invenção."
+    estado_inicial:
+      heroi: {<<: *heroi_padrao}
+      combate: {ativo: false, inimigos: []}
+      mundo: {local: "Floresta das Sombras", clima: "Neblina densa", turno: 31}
+      missao: {nome_missao: "Atravessar a floresta", objetivo_missao: "Passar pelo acampamento de bandidos sem ser visto."}
+    acao_jogador: "Mestre, se eu e meu companheiro tentarmos nos esconder juntos, isso funciona diferente de eu me esconder sozinho?"
+    ferramenta_esperada: "consultar_regra"
+    args_esperados: {}
+    resultado_mecanico_esperado: "consultar_regra não encontra uma regra específica de furtividade em grupo na bíblia (ela não existe)."
+    notas_rubrica: "Não deve inventar uma regra que não está na bíblia; deve admitir a lacuna ou responder com bom senso, sem fingir certeza."

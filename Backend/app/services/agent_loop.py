@@ -5,8 +5,9 @@ ida e volta com o modelo e o despacho de ferramentas via `tools.ToolExecutor`
 — zero regra de jogo aqui, isso é `rules_engine.py`/`combat.py`."""
 
 import json
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Any, Protocol
 
 from app.infra.llm_client import chamar_com_fallback
 from app.services.tools import TOOLS_SCHEMA
@@ -33,15 +34,28 @@ def executar_turno(
     msgs: list[dict],
     executor: ExecutorFerramentas,
     max_passos: int = 6,
+    chamar_fn: Callable[..., Any] | None = None,
 ) -> tuple[str, list[str], list[ChamadaFerramenta]]:
     """Devolve (narrativa final, eventos das ferramentas, chamadas feitas).
     `msgs` é mutado (mensagens de assistant/tool são anexadas) — é uma lista
     de turno único, descartada depois; só a narrativa final entra no
-    histórico persistido (mesmo contrato de antes, ver routers/game.py)."""
+    histórico persistido (mesmo contrato de antes, ver routers/game.py).
+
+    `chamar_fn` (Etapa 6): por padrão é `chamar_com_fallback` (comportamento
+    de produção inalterado), mas `evals/harness.py` injeta uma variante que
+    (a) mira um modelo específico, para o bake-off, e/ou (b) registra
+    latência e tokens de cada chamada — sem este módulo precisar saber nada
+    sobre avaliação. O default é resolvido dentro do corpo da função, não no
+    cabeçalho (`chamar_fn or chamar_com_fallback`), para que
+    `monkeypatch.setattr(agent_loop, "chamar_com_fallback", fake)` (usado em
+    tests/test_agent_loop.py desde a Etapa 4) continue funcionando — um
+    default vinculado no cabeçalho capturaria a função original na
+    definição do módulo, antes de qualquer monkeypatch."""
+    chamar_fn = chamar_fn or chamar_com_fallback
     chamadas: list[ChamadaFerramenta] = []
 
     for _passo in range(max_passos):
-        resp = chamar_com_fallback(msgs, tools=TOOLS_SCHEMA, tool_choice="auto")
+        resp = chamar_fn(msgs, tools=TOOLS_SCHEMA, tool_choice="auto")
         mensagem = resp.choices[0].message
 
         if not mensagem.tool_calls:

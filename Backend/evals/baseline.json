@@ -1,0 +1,6 @@
+{
+  "pontuacao_agregada": 0.8166666666666667,
+  "margem_tolerada": 0.05,
+  "n_cenarios": 6,
+  "nota": "Etapa 6, primeira rodada de baseline (20/08/2026), amostra de 6 cenarios (1/categoria) via cadeia_de_fallback - amostra pequena por causa de cota Groq exaurida durante a sessao; refinar com uma rodada completa quando a cota resetar."
+}

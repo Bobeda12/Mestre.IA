@@ -14,9 +14,9 @@ Template: [`0000-template.md`](0000-template.md) · Sistema completo: [`../READM
 | [0006](0006-llm-nao-e-motor-de-regras.md) | **O LLM não é o motor de regras** | 3 | ✅ aceito | 19/08/2026 |
 | [0007](0007-tool-calling-em-vez-de-json-solto.md) | Tool calling em vez de JSON solto | 4 | ✅ aceito | 19/08/2026 |
 | [0008](0008-cadeia-de-fallback-de-modelo.md) | Cadeia de fallback entre modelos da Groq | 4 | ✅ aceito | 19/08/2026 |
-| 0009 | Memória hierárquica em três camadas | 5 | 🕓 previsto | — |
-| 0010 | Busca híbrida BM25 + densa com fusão RRF | 5 | 🕓 previsto | — |
-| 0011 | Estratégia de avaliação: determinístico + julgado | 6 | 🕓 previsto | — |
+| [0009](0009-memoria-hierarquica-em-tres-camadas.md) | Memória hierárquica em três camadas | 5 | ✅ aceito | 19/08/2026 |
+| [0010](0010-busca-hibrida-bm25-mais-densa-e-por-que-nao-sqlite-vec.md) | Busca híbrida BM25 + densa com fusão RRF | 5 | ✅ aceito | 19/08/2026 |
+| [0011](0011-estrategia-de-avaliacao.md) | Estratégia de avaliação: determinístico + julgado, gate manual | 6 | ✅ aceito | 20/08/2026 |
 | 0012 | SSE em vez de WebSocket ou polling | 7 | 🕓 previsto | — |
 | 0013 | TanStack Query para estado de servidor | 7 | 🕓 previsto | — |
 | 0014 | Autenticação por e-mail mágico, implementada à mão | 8 | 🕓 previsto | — |

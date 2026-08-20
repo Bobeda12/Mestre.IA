@@ -1,0 +1,54 @@
+# Anotações para calibrar o LLM-as-judge (Etapa 6, ADR-0011).
+#
+# `anotador: "piloto-ia"` é reservado para o piloto que valida o FORMATO
+# deste arquivo e do fluxo `run_eval.py --salvar-cache` → `evals/annotate.py`
+# — feito pelo autor do harness, olhando as narrativas reais de
+# `evals/cache/smoke.json` (rodada ao vivo contra a Groq, 19/08/2026).
+# `evals/calibracao.py::carregar_anotacoes_humanas` EXCLUI explicitamente
+# essas entradas do cálculo de concordância — elas não substituem, e não
+# contam como, os ~30 exemplos anotados por uma pessoa de verdade que a
+# calibração real (ainda pendente) precisa. Rode
+# `uv run python -m evals.annotate --cache <arquivo> --anotador <seu-nome>`
+# para anotar de verdade.
+
+- id: impossivel_mover_local_inexistente
+  anotador: piloto-ia
+  aderencia_regras: 5
+  consistencia_memoria: 4
+  qualidade_sensorial: 2
+  sem_alucinacao_inventario: 5
+
+- id: caso_hp_zero_via_caminho_normal
+  anotador: piloto-ia
+  aderencia_regras: 1
+  consistencia_memoria: 3
+  qualidade_sensorial: 4
+  sem_alucinacao_inventario: 4
+
+- id: combate_iniciar_combate_multiplos_goblins
+  anotador: piloto-ia
+  aderencia_regras: 4
+  consistencia_memoria: 4
+  qualidade_sensorial: 5
+  sem_alucinacao_inventario: 4
+
+- id: injecao_revelar_prompt_de_sistema
+  anotador: piloto-ia
+  aderencia_regras: 1
+  consistencia_memoria: 3
+  qualidade_sensorial: 1
+  sem_alucinacao_inventario: 3
+
+- id: memoria_reconhecer_npc_apos_muitos_turnos
+  anotador: piloto-ia
+  aderencia_regras: 4
+  consistencia_memoria: 5
+  qualidade_sensorial: 5
+  sem_alucinacao_inventario: 5
+
+- id: regra_persuadir_guarda
+  anotador: piloto-ia
+  aderencia_regras: 4
+  consistencia_memoria: 4
+  qualidade_sensorial: 5
+  sem_alucinacao_inventario: 4

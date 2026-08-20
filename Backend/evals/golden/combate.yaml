@@ -1,0 +1,187 @@
+# Golden dataset — categoria "combate" (PLANO_MESTRE.md, Etapa 6).
+# Cobre: ataque com/sem arma nomeada, ataque desarmado, criação de combate
+# (iniciar_combate), item usado em combate, consulta de regra em combate,
+# chefe com HP alto, grupo de inimigos, alvo citado por apelido em vez do
+# nome exato do bestiário.
+#
+# `heroi_padrao` é a mesma ficha de tests/test_tools.py::_heroi (Etapa 4) —
+# reaproveitar o mesmo personagem entre cenários deixa as diferenças de
+# resultado atribuíveis à ação, não a uma ficha diferente.
+
+heroi_padrao: &heroi_padrao
+  nome: "Kael"
+  classe: "Guerreiro"
+  hp_atual: 10
+  hp_max: 10
+  defesa: 15
+  ouro: 10
+  atributos: {forca: 14, destreza: 12, constituicao: 13, inteligencia: 10, sabedoria: 10, carisma: 8}
+  inventario: ["Cimitarra"]
+  reputacao_npcs: {}
+
+cenarios:
+  - id: combate_ataque_arma_nomeada
+    categoria: combate
+    descricao: "Jogador ataca um goblin já em combate, nomeando a arma."
+    estado_inicial:
+      heroi: {<<: *heroi_padrao}
+      combate:
+        ativo: true
+        inimigos:
+          - {nome: "Goblin", hp: 7, max_hp: 7, ca: 15, bonus_ataque: 4, dano_dado: "1d6+2", nome_ataque: "Cimitarra"}
+      mundo: {local: "Masmorra Esquecida", clima: "Frio e úmido", turno: 5}
+      missao: {nome_missao: "Limpar a masmorra", objetivo_missao: "Derrotar os goblins que guardam a entrada."}
+    acao_jogador: "Eu ataco o goblin com minha cimitarra!"
+    ferramenta_esperada: "atacar"
+    args_esperados: {alvo: "Goblin"}
+    resultado_mecanico_esperado: "A ferramenta 'atacar' resolve o golpe contra o Goblin; HP muda conforme o dado."
+    notas_rubrica: "Não deve escrever número de dano/HP na prosa — isso é o evento da ferramenta, narrado depois."
+
+  - id: combate_ataque_sem_arma_citada
+    categoria: combate
+    descricao: "Jogador ataca sem nomear a arma; o inventário tem uma arma reconhecida."
+    estado_inicial:
+      heroi: {<<: *heroi_padrao, inventario: ["Espada Curta"]}
+      combate:
+        ativo: true
+        inimigos:
+          - {nome: "Esqueleto", hp: 13, max_hp: 13, ca: 13, bonus_ataque: 4, dano_dado: "1d6+2", nome_ataque: "Espada Curta"}
+      mundo: {local: "Masmorra Esquecida", clima: "Frio e úmido", turno: 8}
+      missao: {nome_missao: "Limpar a masmorra", objetivo_missao: "Chegar à câmara final."}
+    acao_jogador: "Eu tento acertar o esqueleto com tudo que tenho!"
+    ferramenta_esperada: "atacar"
+    args_esperados: {alvo: "Esqueleto"}
+    resultado_mecanico_esperado: "A ferramenta usa a Espada Curta do inventário automaticamente."
+    notas_rubrica: ""
+
+  - id: combate_ataque_desarmado
+    categoria: combate
+    descricao: "Herói sem nenhuma arma no inventário ataca mesmo assim."
+    estado_inicial:
+      heroi: {<<: *heroi_padrao, inventario: []}
+      combate:
+        ativo: true
+        inimigos:
+          - {nome: "Lobo", hp: 11, max_hp: 11, ca: 13, bonus_ataque: 4, dano_dado: "2d4+2", nome_ataque: "Mordida"}
+      mundo: {local: "Floresta das Sombras", clima: "Neblina densa", turno: 3}
+      missao: {nome_missao: "Atravessar a floresta", objetivo_missao: "Chegar ao outro lado antes do anoitecer."}
+    acao_jogador: "Sem arma nenhuma, eu parto pra cima do lobo com os punhos!"
+    ferramenta_esperada: "atacar"
+    args_esperados: {alvo: "Lobo"}
+    resultado_mecanico_esperado: "A ferramenta resolve um ataque desarmado (sem arma reconhecida no inventário)."
+    notas_rubrica: "Não deve inventar uma arma que o herói não tem."
+
+  - id: combate_iniciar_combate_ameaca_emergente
+    categoria: combate
+    descricao: "Sem combate ativo, a cena descreve uma ameaça hostil surgindo — deve iniciar combate."
+    estado_inicial:
+      heroi: {<<: *heroi_padrao}
+      combate: {ativo: false, inimigos: []}
+      mundo: {local: "Floresta das Sombras", clima: "Neblina densa", turno: 2}
+      missao: {nome_missao: "Atravessar a floresta", objetivo_missao: "Chegar ao outro lado antes do anoitecer."}
+    acao_jogador: "Um lobo emerge da neblina rosnando, pronto para atacar. Eu me preparo para o confronto."
+    ferramenta_esperada: "iniciar_combate"
+    args_esperados: {}
+    resultado_mecanico_esperado: "iniciar_combate cria o combate com um Lobo do bestiário (data/monsters.json)."
+    notas_rubrica: "Nomes de monstro devem bater com data/monsters.json ('Lobo'), não um nome inventado."
+
+  - id: combate_iniciar_combate_multiplos_goblins
+    categoria: combate
+    descricao: "Dois goblins avistados ao mesmo tempo, sem combate ativo ainda."
+    estado_inicial:
+      heroi: {<<: *heroi_padrao}
+      combate: {ativo: false, inimigos: []}
+      mundo: {local: "Masmorra Esquecida", clima: "Frio e úmido", turno: 1}
+      missao: {nome_missao: "Limpar a masmorra", objetivo_missao: "Encontrar o tesouro no fundo das ruínas."}
+    acao_jogador: "Dois goblins saltam das sombras, cimitarras em punho. Eu levanto minha guarda."
+    ferramenta_esperada: "iniciar_combate"
+    args_esperados: {}
+    resultado_mecanico_esperado: "iniciar_combate com 2 Goblins do bestiário."
+    notas_rubrica: "Deve chamar iniciar_combate com uma lista de 2 inimigos, não 1."
+
+  - id: combate_usar_pocao_em_combate
+    categoria: combate
+    descricao: "HP baixo em combate ativo; herói tem poção de cura no inventário."
+    estado_inicial:
+      heroi: {<<: *heroi_padrao, hp_atual: 3, inventario: ["Cimitarra", "Poção de Cura"]}
+      combate:
+        ativo: true
+        inimigos:
+          - {nome: "Goblin", hp: 4, max_hp: 7, ca: 15, bonus_ataque: 4, dano_dado: "1d6+2", nome_ataque: "Cimitarra"}
+      mundo: {local: "Masmorra Esquecida", clima: "Frio e úmido", turno: 12}
+      missao: {nome_missao: "Limpar a masmorra", objetivo_missao: "Sobreviver ao ataque do goblin ferido."}
+    acao_jogador: "Estou quase morrendo — eu bebo minha poção de cura antes de continuar lutando!"
+    ferramenta_esperada: "usar_item"
+    args_esperados: {item: "Poção de Cura"}
+    resultado_mecanico_esperado: "usar_item cura o herói (2d4+2) e remove a poção do inventário."
+    notas_rubrica: "Não deve narrar a cura como se já tivesse acontecido antes de chamar a ferramenta."
+
+  - id: combate_consultar_regra_teste_de_morte
+    categoria: combate
+    descricao: "Em combate, o jogador faz uma pergunta de regra em vez de agir."
+    estado_inicial:
+      heroi: {<<: *heroi_padrao, hp_atual: 6}
+      combate:
+        ativo: true
+        inimigos:
+          - {nome: "Esqueleto", hp: 9, max_hp: 13, ca: 13, bonus_ataque: 4, dano_dado: "1d6+2", nome_ataque: "Espada Curta"}
+      mundo: {local: "Masmorra Esquecida", clima: "Frio e úmido", turno: 15}
+      missao: {nome_missao: "Limpar a masmorra", objetivo_missao: "Vencer o esqueleto guardião."}
+    acao_jogador: "Espera, mestre — só uma dúvida: o que acontece exatamente se eu chegar a 0 de HP aqui?"
+    ferramenta_esperada: "consultar_regra"
+    args_esperados: {}
+    resultado_mecanico_esperado: "consultar_regra busca 'teste de morte'/'0 de HP' na bíblia e devolve trechos reais."
+    notas_rubrica: "Deve responder com a regra real da bíblia, não inventar uma regra."
+
+  - id: combate_ataque_contra_chefe_bugbear
+    categoria: combate
+    descricao: "Combate contra o único chefe do bestiário, com HP bem mais alto que os inimigos comuns."
+    estado_inicial:
+      heroi: {<<: *heroi_padrao}
+      combate:
+        ativo: true
+        inimigos:
+          - {nome: "Bugbear", hp: 27, max_hp: 27, ca: 16, bonus_ataque: 4, dano_dado: "2d8+2", nome_ataque: "Maça Estrela"}
+      mundo: {local: "Masmorra Esquecida", clima: "Frio e úmido", turno: 20}
+      missao: {nome_missao: "Limpar a masmorra", objetivo_missao: "Derrotar o Bugbear que lidera os goblins."}
+    acao_jogador: "Eu avanço contra o Bugbear com minha cimitarra, mirando no pescoço dele."
+    ferramenta_esperada: "atacar"
+    args_esperados: {alvo: "Bugbear"}
+    resultado_mecanico_esperado: "Um único golpe não derruba um Bugbear (27 HP) — a narrativa não deve implicar vitória imediata."
+    notas_rubrica: "Não deve narrar o Bugbear morto se o HP dele continuar acima de 0 depois da ferramenta."
+
+  - id: combate_ataque_kobolds_em_grupo
+    categoria: combate
+    descricao: "Três kobolds em combate — o jogador escolhe atacar um específico."
+    estado_inicial:
+      heroi: {<<: *heroi_padrao}
+      combate:
+        ativo: true
+        inimigos:
+          - {nome: "Kobold", hp: 5, max_hp: 5, ca: 12, bonus_ataque: 4, dano_dado: "1d4+2", nome_ataque: "Adaga"}
+          - {nome: "Kobold", hp: 5, max_hp: 5, ca: 12, bonus_ataque: 4, dano_dado: "1d4+2", nome_ataque: "Adaga"}
+          - {nome: "Kobold", hp: 1, max_hp: 5, ca: 12, bonus_ataque: 4, dano_dado: "1d4+2", nome_ataque: "Adaga"}
+      mundo: {local: "Masmorra Esquecida", clima: "Frio e úmido", turno: 18}
+      missao: {nome_missao: "Limpar a masmorra", objetivo_missao: "Dispersar o bando de kobolds."}
+    acao_jogador: "Eu foco no kobold mais ferido, o que já está mancando."
+    ferramenta_esperada: "atacar"
+    args_esperados: {}
+    resultado_mecanico_esperado: "Deve mirar no kobold com hp:1 — o único claramente 'mais ferido'."
+    notas_rubrica: "Se acertar o kobold com hp:1 e o dano for >=1, ele deveria morrer — narrativa deve refletir isso."
+
+  - id: combate_ataque_alvo_por_apelido
+    categoria: combate
+    descricao: "Jogador se refere ao inimigo por uma descrição, não pelo nome exato do bestiário."
+    estado_inicial:
+      heroi: {<<: *heroi_padrao}
+      combate:
+        ativo: true
+        inimigos:
+          - {nome: "Goblin", hp: 7, max_hp: 7, ca: 15, bonus_ataque: 4, dano_dado: "1d6+2", nome_ataque: "Cimitarra"}
+      mundo: {local: "Masmorra Esquecida", clima: "Frio e úmido", turno: 6}
+      missao: {nome_missao: "Limpar a masmorra", objetivo_missao: "Derrotar o goblin remanescente."}
+    acao_jogador: "Eu ataco o bichinho verde de orelhas pontudas com a minha cimitarra!"
+    ferramenta_esperada: "atacar"
+    args_esperados: {}
+    resultado_mecanico_esperado: "O único inimigo vivo é 'Goblin' — o modelo precisa resolver a referência para o nome exato."
+    notas_rubrica: "Testa robustez de resolução de nome; 'ferramenta certa' importa mais que o argumento exato aqui."

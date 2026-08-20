@@ -15,6 +15,12 @@ Backend/.coverage
 *.db
 *.sqlite3
 
+# --- AVALIAÇÃO (Etapa 6) ---
+# Saída de rodadas de evals/run_eval.py (--salvar-cache/--salvar-relatorio) —
+# efêmera, específica da máquina/rodada; os números que importam vão para
+# docs/relatorios/ e docs/diario/, versionados de propósito.
+Backend/evals/cache/
+
 # --- NODE (Frontend) ---
 Frontend/node_modules/
 Frontend/dist/

@@ -1,0 +1,179 @@
+# Golden dataset — categoria "memoria_longo_prazo" (Etapa 6, ADR-0009/0010).
+# `estado_inicial.eventos_memoria` semeia a memória de longo prazo (o harness
+# transforma cada um num hybrid_search.Documento e injeta o resultado da
+# busca híbrida no prompt, como routers/game.py faz de verdade). O eixo do
+# juiz que mais importa aqui é "consistência com a memória" — a narrativa
+# precisa referenciar o fato certo, não inventar um genérico.
+
+heroi_padrao: &heroi_padrao
+  nome: "Kael"
+  classe: "Guerreiro"
+  hp_atual: 10
+  hp_max: 10
+  defesa: 15
+  ouro: 10
+  atributos: {forca: 14, destreza: 12, constituicao: 13, inteligencia: 10, sabedoria: 10, carisma: 8}
+  inventario: ["Cimitarra"]
+  reputacao_npcs: {}
+
+cenarios:
+  - id: memoria_promessa_antiga_ferreiro
+    categoria: memoria_longo_prazo
+    descricao: "O jogador prometeu algo a um NPC dezenas de turnos atrás; a promessa deve ser lembrada."
+    estado_inicial:
+      heroi: {<<: *heroi_padrao}
+      combate: {ativo: false, inimigos: []}
+      mundo: {local: "Vila de Phandalin", clima: "Ensolarado", turno: 58}
+      missao: {nome_missao: "Voltar à vila", objetivo_missao: "Reencontrar o ferreiro Halia."}
+      eventos_memoria:
+        - {turno: 12, texto: "O herói promete ao ferreiro Halia trazer minério raro da Masmorra Esquecida em troca de uma espada nova."}
+        - {turno: 15, texto: "Chuva forte cai sobre o telhado da estalagem durante a noite."}
+        - {turno: 22, texto: "Um lobo solitário uiva ao longe, na Floresta das Sombras."}
+    acao_jogador: "Eu procuro o ferreiro Halia na oficina dele, de volta à vila."
+    ferramenta_esperada: null
+    args_esperados: {}
+    resultado_mecanico_esperado: "A narrativa deveria mencionar a promessa do minério, feita 46 turnos atrás."
+    notas_rubrica: "Eixo 'consistência com a memória': deve citar a promessa do minério, não inventar outro assunto com o ferreiro."
+
+  - id: memoria_insulto_a_taverneiro
+    categoria: memoria_longo_prazo
+    descricao: "NPC ofendido deveria continuar frio/hostil com o herói."
+    estado_inicial:
+      heroi: {<<: *heroi_padrao}
+      combate: {ativo: false, inimigos: []}
+      mundo: {local: "Vila de Phandalin", clima: "Ensolarado", turno: 35}
+      missao: {nome_missao: "Descansar", objetivo_missao: "Passar a noite na taverna."}
+      eventos_memoria:
+        - {turno: 5, texto: "O herói insulta o taverneiro Gundren na frente de todos, chamando-o de covarde."}
+        - {turno: 8, texto: "Um goblin ataca da sombra com uma adaga enferrujada."}
+      resumo_rolante: {npcs_conhecidos: ["Gundren, taverneiro insultado no turno 5"]}
+    acao_jogador: "Eu entro na taverna e peço uma cerveja ao Gundren, como se nada tivesse acontecido."
+    ferramenta_esperada: null
+    args_esperados: {}
+    resultado_mecanico_esperado: "Gundren deveria reagir frio/relutante, lembrando do insulto — não tratar o herói como um cliente qualquer."
+    notas_rubrica: "Se a narrativa mostrar o taverneiro cordial e sem nenhuma referência ao insulto, é falha de consistência."
+
+  - id: memoria_localizacao_mapa_masmorra
+    categoria: memoria_longo_prazo
+    descricao: "Um item/pista encontrado há muitos turnos deveria seguir relevante quando perguntado."
+    estado_inicial:
+      heroi: {<<: *heroi_padrao, inventario: ["Cimitarra", "Mapa Rasgado"]}
+      combate: {ativo: false, inimigos: []}
+      mundo: {local: "Vila de Phandalin", clima: "Ensolarado", turno: 50}
+      missao: {nome_missao: "Decidir o próximo passo", objetivo_missao: "Escolher para onde ir com o mapa."}
+      eventos_memoria:
+        - {turno: 27, texto: "O herói encontra um mapa rasgado apontando para uma masmorra a leste da vila."}
+    acao_jogador: "Eu olho de novo para o mapa rasgado — para onde ele apontava mesmo?"
+    ferramenta_esperada: null
+    args_esperados: {}
+    resultado_mecanico_esperado: "Deveria referenciar a masmorra a leste, coerente com o evento do turno 27."
+    notas_rubrica: "Não deve inventar um destino novo/diferente do já estabelecido."
+
+  - id: memoria_reconhecer_npc_apos_muitos_turnos
+    categoria: memoria_longo_prazo
+    descricao: "Um NPC secundário reaparece muito depois da última interação."
+    estado_inicial:
+      heroi: {<<: *heroi_padrao}
+      combate: {ativo: false, inimigos: []}
+      mundo: {local: "Vila de Phandalin", clima: "Ensolarado", turno: 60}
+      missao: {nome_missao: "Explorar a vila", objetivo_missao: "Conversar com quem encontrar na praça."}
+      eventos_memoria:
+        - {turno: 16, texto: "O bardo Xanthrel canta uma balada sombria sobre dragões na taverna de Phandalin."}
+    acao_jogador: "Eu vejo o bardo Xanthrel sentado na praça e me aproximo para cumprimentá-lo."
+    ferramenta_esperada: null
+    args_esperados: {}
+    resultado_mecanico_esperado: "A narrativa deveria tratá-lo como alguém já conhecido (a balada sobre dragões), não como um estranho."
+    notas_rubrica: ""
+
+  - id: memoria_reputacao_negativa_afeta_preco
+    categoria: memoria_longo_prazo
+    descricao: "Reputação negativa registrada deveria influenciar o tom/preço na loja (bíblia: preço sobe 20% com jogador rude)."
+    estado_inicial:
+      heroi: {<<: *heroi_padrao, reputacao_npcs: {"Halia": -8}}
+      combate: {ativo: false, inimigos: []}
+      mundo: {local: "Vila de Phandalin", clima: "Ensolarado", turno: 20}
+      missao: {nome_missao: "Comprar suprimentos", objetivo_missao: "Negociar com a mercadora Halia."}
+    acao_jogador: "Eu entro na loja Escudo de Leão e peço para comprar uma corda de 15 metros com a Halia."
+    ferramenta_esperada: null
+    args_esperados: {}
+    resultado_mecanico_esperado: "A reputação -8 deveria transparecer no tom de Halia (fria, relutante), coerente com a bíblia."
+    notas_rubrica: "Eixo 'consistência com a memória': tom hostil/frio esperado, não cordial e neutro."
+
+  - id: memoria_reputacao_positiva_npc_favoravel
+    categoria: memoria_longo_prazo
+    descricao: "Reputação alta com um NPC deveria refletir em um tom mais aberto/amigável."
+    estado_inicial:
+      heroi: {<<: *heroi_padrao, reputacao_npcs: {"Toblen": 7}}
+      combate: {ativo: false, inimigos: []}
+      mundo: {local: "Vila de Phandalin", clima: "Ensolarado", turno: 33}
+      missao: {nome_missao: "Descansar", objetivo_missao: "Passar a noite na Taverna Rocha Colina."}
+    acao_jogador: "Eu entro na Taverna Rocha Colina e cumprimento o taverneiro Toblen."
+    ferramenta_esperada: null
+    args_esperados: {}
+    resultado_mecanico_esperado: "Reputação +7 deveria render um tom caloroso/amigável de Toblen."
+    notas_rubrica: ""
+
+  - id: memoria_evento_de_combate_anterior
+    categoria: memoria_longo_prazo
+    descricao: "Uma vitória de combate específica, de muitos turnos atrás, é referenciada."
+    estado_inicial:
+      heroi: {<<: *heroi_padrao}
+      combate: {ativo: false, inimigos: []}
+      mundo: {local: "Masmorra Esquecida", clima: "Frio e úmido", turno: 62}
+      missao: {nome_missao: "Voltar à masmorra", objetivo_missao: "Verificar se algo mudou desde a última visita."}
+      eventos_memoria:
+        - {turno: 55, texto: "O herói mata o goblin da sombra com um golpe certeiro, perto da entrada da masmorra."}
+    acao_jogador: "Eu volto ao corredor de entrada da masmorra, onde travei aquela luta contra o goblin."
+    ferramenta_esperada: null
+    args_esperados: {}
+    resultado_mecanico_esperado: "Deveria referenciar a luta anterior contra o goblin da sombra, coerente com o evento do turno 55."
+    notas_rubrica: ""
+
+  - id: memoria_npc_morto_nao_reaparece
+    categoria: memoria_longo_prazo
+    descricao: "Um NPC morto registrado na memória não deveria 'voltar' quando perguntado sobre ele."
+    estado_inicial:
+      heroi: {<<: *heroi_padrao}
+      combate: {ativo: false, inimigos: []}
+      mundo: {local: "Vila de Phandalin", clima: "Ensolarado", turno: 45}
+      missao: {nome_missao: "Investigar rumores", objetivo_missao: "Perguntar sobre o destino do velho Gundren."}
+      eventos_memoria:
+        - {turno: 31, texto: "O taverneiro Gundren morre durante um assalto à vila, esfaqueado por um bandido."}
+    acao_jogador: "Eu pergunto a um morador da vila se o taverneiro Gundren está na taverna hoje."
+    ferramenta_esperada: null
+    args_esperados: {}
+    resultado_mecanico_esperado: "Gundren está morto (evento do turno 31) — a resposta não deveria tratá-lo como vivo."
+    notas_rubrica: "Falha grave se a narrativa reviver Gundren ou ignorar a morte registrada."
+
+  - id: memoria_resumo_rolante_promessa_nao_cumprida
+    categoria: memoria_longo_prazo
+    descricao: "O resumo rolante (médio prazo) tem uma promessa pendente, sem evento de longo prazo correspondente ainda."
+    estado_inicial:
+      heroi: {<<: *heroi_padrao}
+      combate: {ativo: false, inimigos: []}
+      mundo: {local: "Vila de Phandalin", clima: "Ensolarado", turno: 40}
+      missao: {nome_missao: "Cumprir promessas", objetivo_missao: "Decidir o que fazer a seguir."}
+      resumo_rolante:
+        fatos_estabelecidos: ["O herói está investigando desaparecimentos na região."]
+        promessas_feitas: ["Prometeu à prefeita investigar o desaparecimento do filho dela em até uma semana."]
+    acao_jogador: "O que eu ainda preciso fazer por aqui, mesmo? Alguma promessa pendente?"
+    ferramenta_esperada: null
+    args_esperados: {}
+    resultado_mecanico_esperado: "A narrativa deveria mencionar a promessa à prefeita sobre o filho desaparecido."
+    notas_rubrica: "Testa se o resumo rolante estruturado (não só eventos de longo prazo) é de fato consultado."
+
+  - id: memoria_clima_de_evento_passado
+    categoria: memoria_longo_prazo
+    descricao: "Detalhe ambiental menor, registrado como evento, referenciado bem depois — teste de recall de detalhe secundário."
+    estado_inicial:
+      heroi: {<<: *heroi_padrao}
+      combate: {ativo: false, inimigos: []}
+      mundo: {local: "Vila de Phandalin", clima: "Nublado", turno: 65}
+      missao: {nome_missao: "Conversar com moradores", objetivo_missao: "Perguntar sobre a noite da tempestade."}
+      eventos_memoria:
+        - {turno: 15, texto: "Chuva forte cai sobre o telhado da estalagem durante a noite, e um raio cai perto do celeiro da vila."}
+    acao_jogador: "Alguém aqui na vila comenta sobre aquela tempestade forte de semanas atrás, a que atingiu o celeiro?"
+    ferramenta_esperada: null
+    args_esperados: {}
+    resultado_mecanico_esperado: "Deveria confirmar/referenciar o evento da tempestade e do raio perto do celeiro."
+    notas_rubrica: "Eixo de recall — evento secundário, mais fácil de o modelo 'esquecer' que um evento central."

@@ -1,0 +1,177 @@
+# Golden dataset — categoria "caso_limite" (Etapa 6). Estados que o motor
+# precisa aguentar sem quebrar: HP 0, inventário vazio, alvo inexistente,
+# combate já resolvido, entrada vazia. Nota honesta: o harness roda o
+# caminho de tool-calling normal (narrator.montar_contexto + agent_loop),
+# não o desvio especial de HP<=0 de routers/game.py (que troca para um
+# prompt sem ferramentas) — o cenário `caso_hp_zero_via_caminho_normal`
+# existe para expor o que aconteceria SE esse estado chegasse ao caminho
+# normal, não para replicar o comportamento de produção 1:1. Ver
+# docs/adr/0011-estrategia-de-avaliacao.md.
+
+heroi_padrao: &heroi_padrao
+  nome: "Kael"
+  classe: "Guerreiro"
+  hp_atual: 10
+  hp_max: 10
+  defesa: 15
+  ouro: 10
+  atributos: {forca: 14, destreza: 12, constituicao: 13, inteligencia: 10, sabedoria: 10, carisma: 8}
+  inventario: ["Cimitarra"]
+  reputacao_npcs: {}
+
+cenarios:
+  - id: caso_hp_zero_via_caminho_normal
+    categoria: caso_limite
+    descricao: "HP 0 chegando ao caminho de tool-calling normal (não o desvio especial de routers/game.py)."
+    estado_inicial:
+      heroi: {<<: *heroi_padrao, hp_atual: 0}
+      combate:
+        ativo: true
+        inimigos:
+          - {nome: "Esqueleto", hp: 9, max_hp: 13, ca: 13, bonus_ataque: 4, dano_dado: "1d6+2", nome_ataque: "Espada Curta"}
+      mundo: {local: "Masmorra Esquecida", clima: "Frio e úmido", turno: 30}
+      missao: {nome_missao: "Limpar a masmorra", objetivo_missao: "Sobreviver."}
+    acao_jogador: "Eu tento me levantar e continuar lutando."
+    ferramenta_esperada: null
+    args_esperados: {}
+    resultado_mecanico_esperado: "Um herói a 0 HP não deveria agir normalmente — narrativa coerente com estar inconsciente/à beira da morte, não uma ação de combate plena."
+    notas_rubrica: "Sabidamente fora do caminho de produção real para HP<=0 (ver nota do arquivo) — julgar coerência narrativa, não tool-call accuracy."
+
+  - id: caso_inventario_vazio_usar_item
+    categoria: caso_limite
+    descricao: "Jogador tenta usar um item com o inventário totalmente vazio."
+    estado_inicial:
+      heroi: {<<: *heroi_padrao, inventario: []}
+      combate: {ativo: false, inimigos: []}
+      mundo: {local: "Vila de Phandalin", clima: "Ensolarado", turno: 1}
+      missao: {nome_missao: "Começar a jornada", objetivo_missao: "Se preparar."}
+    acao_jogador: "Eu procuro algo útil na minha bolsa para me ajudar agora."
+    ferramenta_esperada: null
+    args_esperados: {}
+    resultado_mecanico_esperado: "Inventário vazio — nenhum item deveria ser 'usado' ou inventado."
+    notas_rubrica: "Falha se a narrativa mencionar um item específico saindo do inventário vazio."
+
+  - id: caso_atacar_alvo_inexistente_no_combate
+    categoria: caso_limite
+    descricao: "Jogador nomeia um alvo que não existe na lista de inimigos do combate atual."
+    estado_inicial:
+      heroi: {<<: *heroi_padrao}
+      combate:
+        ativo: true
+        inimigos:
+          - {nome: "Goblin", hp: 7, max_hp: 7, ca: 15, bonus_ataque: 4, dano_dado: "1d6+2", nome_ataque: "Cimitarra"}
+      mundo: {local: "Masmorra Esquecida", clima: "Frio e úmido", turno: 6}
+      missao: {nome_missao: "Limpar a masmorra", objetivo_missao: "Derrotar o goblin."}
+    acao_jogador: "Eu ataco o dragão que está atrás do goblin!"
+    ferramenta_esperada: "atacar"
+    args_esperados: {}
+    resultado_mecanico_esperado: "atacar('Dragão', ...) devolve erro: não há esse alvo no combate atual (só existe o Goblin)."
+    notas_rubrica: "Não deve narrar um dragão que não existe no estado do combate."
+
+  - id: caso_gastar_ouro_valor_negativo
+    categoria: caso_limite
+    descricao: "Jogador propõe uma quantia de ouro sem sentido (negativa) para uma transação."
+    estado_inicial:
+      heroi: {<<: *heroi_padrao, ouro: 10}
+      combate: {ativo: false, inimigos: []}
+      mundo: {local: "Vila de Phandalin", clima: "Ensolarado", turno: 3}
+      missao: {nome_missao: "Comprar suprimentos", objetivo_missao: "Negociar na loja."}
+    acao_jogador: "Eu quero que a mercadora me pague para eu levar essa corda embora, tipo ouro negativo pra mim."
+    ferramenta_esperada: null
+    args_esperados: {}
+    resultado_mecanico_esperado: "gastar_ouro(qtd negativo) devolve erro explícito ('quantidade não pode ser negativa') se chamada; ouro do herói não deveria aumentar."
+    notas_rubrica: "Falha se heroi.ouro subir sem uma ferramenta legítima ter sido chamada."
+
+  - id: caso_mover_durante_combate_ativo
+    categoria: caso_limite
+    descricao: "Jogador tenta se mover para outro local enquanto o combate está ativo."
+    estado_inicial:
+      heroi: {<<: *heroi_padrao}
+      combate:
+        ativo: true
+        inimigos:
+          - {nome: "Lobo", hp: 11, max_hp: 11, ca: 13, bonus_ataque: 4, dano_dado: "2d4+2", nome_ataque: "Mordida"}
+      mundo: {local: "Floresta das Sombras", clima: "Neblina densa", turno: 8}
+      missao: {nome_missao: "Atravessar a floresta", objetivo_missao: "Sobreviver ao ataque do lobo."}
+    acao_jogador: "Eu desisto da luta e corro na direção da Vila de Phandalin."
+    ferramenta_esperada: "mover"
+    args_esperados: {destino: "Vila de Phandalin"}
+    resultado_mecanico_esperado: "mover() devolve erro: não é possível se mover durante um combate ativo."
+    notas_rubrica: "Não deve narrar o herói já fora da floresta enquanto o combate segue ativo no estado."
+
+  - id: caso_atacar_apos_combate_ja_vencido
+    categoria: caso_limite
+    descricao: "Combate já resolvido (vitória), jogador insiste em golpear o inimigo caído."
+    estado_inicial:
+      heroi: {<<: *heroi_padrao}
+      combate:
+        ativo: false
+        resultado: "vitoria"
+        inimigos:
+          - {nome: "Goblin", hp: 0, max_hp: 7, ca: 15, bonus_ataque: 4, dano_dado: "1d6+2", nome_ataque: "Cimitarra"}
+      mundo: {local: "Masmorra Esquecida", clima: "Frio e úmido", turno: 10}
+      missao: {nome_missao: "Limpar a masmorra", objetivo_missao: "Revistar os corpos."}
+    acao_jogador: "Só para garantir, eu dou mais um golpe no goblin que já está morto."
+    ferramenta_esperada: null
+    args_esperados: {}
+    resultado_mecanico_esperado: "'atacar' deveria falhar (combate não está mais ativo) — narrativa não deve tratar como um novo golpe de combate."
+    notas_rubrica: ""
+
+  - id: caso_acao_jogador_vazia
+    categoria: caso_limite
+    descricao: "Ação do jogador é uma string vazia/só espaços — robustez de entrada."
+    estado_inicial:
+      heroi: {<<: *heroi_padrao}
+      combate: {ativo: false, inimigos: []}
+      mundo: {local: "Vila de Phandalin", clima: "Ensolarado", turno: 1}
+      missao: {nome_missao: "Começar a jornada", objetivo_missao: "Decidir o que fazer."}
+    acao_jogador: "   "
+    ferramenta_esperada: null
+    args_esperados: {}
+    resultado_mecanico_esperado: "O sistema não deveria quebrar (exceção não tratada) nem inventar uma ação elaborada que o jogador não descreveu."
+    notas_rubrica: "Métrica principal aqui é 'não lançou exceção' — julgamento de qualidade sensorial é secundário."
+
+  - id: caso_usar_item_sem_efeito_mecanico
+    categoria: caso_limite
+    descricao: "Item existe no inventário, mas não tem efeito mecânico definido em app/services/tools.py::_EFEITOS_ITENS."
+    estado_inicial:
+      heroi: {<<: *heroi_padrao, inventario: ["Cimitarra", "Amuleto de Família"]}
+      combate: {ativo: false, inimigos: []}
+      mundo: {local: "Vila de Phandalin", clima: "Ensolarado", turno: 2}
+      missao: {nome_missao: "Descansar", objetivo_missao: "Refletir sobre a jornada."}
+    acao_jogador: "Eu seguro meu amuleto de família com força, pensando em casa."
+    ferramenta_esperada: "usar_item"
+    args_esperados: {item: "Amuleto de Família"}
+    resultado_mecanico_esperado: "usar_item devolve 'sem efeito mecânico definido' — o narrador deveria narrar livremente sem inventar um efeito de jogo (cura, bônus etc.)."
+    notas_rubrica: "Falha se a narrativa conceder um efeito mecânico (cura, bônus) que a ferramenta não retornou."
+
+  - id: caso_iniciar_combate_ja_ativo
+    categoria: caso_limite
+    descricao: "Reforços chegam a um combate já em andamento — gap conhecido: iniciar_combate não é pensado para 'somar' inimigos a um combate ativo."
+    estado_inicial:
+      heroi: {<<: *heroi_padrao}
+      combate:
+        ativo: true
+        inimigos:
+          - {nome: "Goblin", hp: 4, max_hp: 7, ca: 15, bonus_ataque: 4, dano_dado: "1d6+2", nome_ataque: "Cimitarra"}
+      mundo: {local: "Masmorra Esquecida", clima: "Frio e úmido", turno: 11}
+      missao: {nome_missao: "Limpar a masmorra", objetivo_missao: "Sobreviver à emboscada."}
+    acao_jogador: "Mais um goblin salta das sombras para ajudar o primeiro!"
+    ferramenta_esperada: null
+    args_esperados: {}
+    resultado_mecanico_esperado: "iniciar_combate() chamado aqui devolveria erro ('já há um combate ativo') — reforços no meio de um combate são um gap conhecido do motor, não implementado."
+    notas_rubrica: "Registrar no relatório como limitação conhecida, não penalizar pesadamente o narrador por não resolver um caso que o motor não suporta."
+
+  - id: caso_rolar_teste_atributo_fora_do_enum
+    categoria: caso_limite
+    descricao: "Ação que tenta induzir um atributo fora dos 6 válidos (ex: 'sorte'), testando se o enum da ferramenta segura o modelo."
+    estado_inicial:
+      heroi: {<<: *heroi_padrao}
+      combate: {ativo: false, inimigos: []}
+      mundo: {local: "Masmorra Esquecida", clima: "Frio e úmido", turno: 33}
+      missao: {nome_missao: "Limpar a masmorra", objetivo_missao: "Escolher a porta certa entre três idênticas."}
+    acao_jogador: "Não tenho nenhuma pista — eu simplesmente confio na sorte e escolho uma porta ao acaso."
+    ferramenta_esperada: "rolar_teste"
+    args_esperados: {}
+    resultado_mecanico_esperado: "O parâmetro 'atributo' só aceita os 6 valores do enum (forca/destreza/constituicao/inteligencia/sabedoria/carisma) — 'sorte' não é um deles."
+    notas_rubrica: "Testa se o modelo escolhe um atributo válido do enum em vez de inventar 'sorte'; se chamar com algo fora do enum, é falha de tool-call schema."
