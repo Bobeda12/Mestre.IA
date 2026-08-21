@@ -1,11 +1,67 @@
 import { useState, useEffect, useRef } from 'react';
-import axios from 'axios';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import {
-  Send, Scroll, Menu, X, Dices, User, Backpack, Map, Sword, Shield, AlertTriangle
+  Send, Scroll, Menu, X, Dices, User, Backpack, Map, Sword, Shield, AlertTriangle, Star, Coins, FlaskConical, BookOpen
 } from 'lucide-react';
+import { Progress } from './ui/progress';
+import { api, API_URL } from '../lib/api';
+import { postSse } from '../lib/sse';
+import RollCard, { type DadosRolagem } from './RollCard';
 
-interface Message { role: 'user' | 'assistant' | 'system'; content: string; isError?: boolean; }
+type Message =
+  | { kind: 'texto'; role: 'user' | 'assistant' | 'system'; content: string; isError?: boolean }
+  | { kind: 'rolagem'; dados: DadosRolagem };
+
+// Espelha domain/state.py:Inimigo (só os campos que o HUD lê).
+interface Inimigo {
+  nome: string;
+  hp: number;
+  max_hp: number;
+  ca: number;
+}
+
+// O frame SSE final "state" (Etapa 7) — mesmo shape de `_resposta()` no
+// backend (Backend/app/routers/game.py) — e também o corpo de `/load_game`
+// (que reaproveita `_resposta()` do lado do servidor, ver routers/game.py).
+interface EstadoJogo {
+  hp_atual: number;
+  hp_max?: number;
+  defesa?: number;
+  ouro?: number;
+  nivel?: number;
+  xp?: number;
+  xp_proximo_nivel?: number | null;
+  ordem_iniciativa?: number[];
+  turno_atual?: number;
+  inventory?: string[];
+  combat_active: boolean;
+  inimigos?: Inimigo[];
+  missao?: unknown;
+}
+
+interface CargaJogo extends EstadoJogo {
+  nome: string;
+  raca: string;
+  classe: string;
+  local: string;
+  atributos?: Record<string, number>;
+}
+
+// Ícone por palavra-chave no nome do item — não existe um campo "tipo" em
+// data/weapons.json/o inventário do herói, só o nome mesmo (ver
+// app/infra/db.py:Personagem.inventario, uma lista de strings).
+const _PALAVRAS_POCAO = ['poção', 'pocao', 'elixir', 'frasco'];
+const _PALAVRAS_ARMA = ['espada', 'cimitarra', 'machado', 'adaga', 'maça', 'martelo', 'arco', 'lança', 'rapier'];
+const _PALAVRAS_ARMADURA = ['armadura', 'cota', 'escudo', 'couro', 'placas'];
+
+function ItemIcon({ nome }: { nome: string }) {
+  const nomeLower = nome.toLowerCase();
+  if (_PALAVRAS_POCAO.some(p => nomeLower.includes(p))) return <FlaskConical size={12} className="text-emerald-500 shrink-0" />;
+  if (_PALAVRAS_ARMA.some(p => nomeLower.includes(p))) return <Sword size={12} className="text-gray-400 shrink-0" />;
+  if (_PALAVRAS_ARMADURA.some(p => nomeLower.includes(p))) return <Shield size={12} className="text-blue-500 shrink-0" />;
+  return <BookOpen size={12} className="text-gray-500 shrink-0" />;
+}
 
 export default function GameChat() {
   const location = useLocation();
@@ -29,24 +85,45 @@ export default function GameChat() {
   const [hpAtual, setHpAtual] = useState(10);
   const [hpMax, setHpMax] = useState(10);
   const [defesa, setDefesa] = useState<number | null>(null);
+  const [ouro, setOuro] = useState(0);
+  const [nivel, setNivel] = useState(1);
+  const [xp, setXp] = useState(0);
+  const [xpProximoNivel, setXpProximoNivel] = useState<number | null>(null);
   const [inventory, setInventory] = useState<string[]>([]);
   const [attributes, setAttributes] = useState<any>({ forca: 10, destreza: 10, inteligencia: 10 });
   const [quest, setQuest] = useState<any>(null);
 
   // COMBATE
   const [combatActive, setCombatActive] = useState(false);
-  const [enemies, setEnemies] = useState<any[]>([]);
+  const [enemies, setEnemies] = useState<Inimigo[]>([]);
+  const [ordemIniciativa, setOrdemIniciativa] = useState<number[]>([]);
+  const [turnoAtual, setTurnoAtual] = useState(0);
   const [gameOver, setGameOver] = useState(false);
+  // Dano flutuante (Etapa 7) — `idx` é a posição no array `enemies`, não o
+  // nome (dois inimigos podem ter o mesmo nome).
+  const [danosFlutuantes, setDanosFlutuantes] = useState<{ id: number; valor: number; idx: number }[]>([]);
 
   // EFEITOS
   const [shakeScreen, setShakeScreen] = useState(false);
   const [wasDamaged, setWasDamaged] = useState(false);
 
-  const [notFound, setNotFound] = useState(false);
+  // Etapa 7, ADR-0013: TanStack Query no lugar do `useEffect` +
+  // `try/catch` + `setNotFound` escritos à mão — a troca real não é
+  // estética, é ganhar de graça o cache por `sessionId` (voltar duas telas
+  // e voltar pro jogo não refaz a chamada à toa) e o estado de
+  // loading/erro consistente com o resto do app.
+  const { data: cargaJogo, isError: notFound } = useQuery({
+    queryKey: ['load_game', sessionId],
+    queryFn: async () => {
+      const res = await api.post<CargaJogo>('/load_game', { session_id: sessionId });
+      return res.data;
+    },
+    enabled: !!sessionId,
+    staleTime: 0, // HP/inventário mudam a cada turno — nunca servir do cache sem revalidar
+  });
 
   useEffect(() => {
     if (!sessionId) return;
-
     // Se não veio imagem pela navegação (ex: F5 na página), procura no
     // índice local pelo id — é só decoração, não afeta o estado do jogo.
     if (!charImageFromNav) {
@@ -54,57 +131,117 @@ export default function GameChat() {
         const match = saves.find((s: any) => s.id === sessionId);
         if (match?.image) setCharImage(match.image);
     }
+  }, [sessionId, charImageFromNav]);
 
-    const fetchGameData = async () => {
-        try {
-            const res = await axios.post("http://127.0.0.1:8000/load_game", { session_id: sessionId });
-            setCharName(res.data.nome);
-            setCharRace(res.data.raca);
-            setCharClass(res.data.classe);
-            setHpAtual(res.data.hp_atual);
-            setHpMax(res.data.hp_max);
-            setDefesa(res.data.defesa);
-            setInventory(res.data.inventory || []);
-            setAttributes(res.data.atributos || {});
-            setQuest(res.data.missao);
-            setCombatActive(res.data.combat_active);
-            setEnemies(res.data.inimigos || []);
+  useEffect(() => {
+    if (!cargaJogo) return;
+    setCharName(cargaJogo.nome);
+    setCharRace(cargaJogo.raca);
+    setCharClass(cargaJogo.classe);
+    setHpAtual(cargaJogo.hp_atual);
+    setHpMax(cargaJogo.hp_max ?? 10);
+    setDefesa(cargaJogo.defesa ?? null);
+    setOuro(cargaJogo.ouro ?? 0);
+    setNivel(cargaJogo.nivel ?? 1);
+    setXp(cargaJogo.xp ?? 0);
+    setXpProximoNivel(cargaJogo.xp_proximo_nivel ?? null);
+    setInventory(cargaJogo.inventory || []);
+    setAttributes(cargaJogo.atributos || {});
+    setQuest(cargaJogo.missao);
+    setCombatActive(cargaJogo.combat_active);
+    setEnemies(cargaJogo.inimigos || []);
+    setOrdemIniciativa(cargaJogo.ordem_iniciativa || []);
+    setTurnoAtual(cargaJogo.turno_atual ?? 0);
 
-            if (res.data.hp_atual <= 0) setGameOver(true);
-            setMessages([{ role: 'assistant', content: `Conectado ao mundo. Local: ${res.data.local}.` }]);
-        } catch (e) {
-            setNotFound(true);
-        }
-    };
-    fetchGameData();
-  }, [sessionId]);
+    if (cargaJogo.hp_atual <= 0) setGameOver(true);
+    setMessages([{ kind: 'texto', role: 'assistant', content: `Conectado ao mundo. Local: ${cargaJogo.local}.` }]);
+  }, [cargaJogo]);
 
   const scrollToBottom = () => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); };
   useEffect(() => { scrollToBottom(); }, [messages]);
 
+  // Adiciona texto à ÚLTIMA mensagem se ela for uma bolha de assistente
+  // aberta (`aberta=true`), ou cria uma nova — é o que dá o efeito de
+  // máquina de escrever real: o token já chegou do modelo, só falta
+  // aparecer na tela (Etapa 7, ADR-0012).
+  const acrescentarTexto = (pedaco: string, isError = false) => {
+    setMessages(prev => {
+      const ultima = prev[prev.length - 1];
+      if (ultima && ultima.kind === 'texto' && ultima.role === 'assistant' && !ultima.isError === !isError) {
+        const copia = [...prev];
+        copia[copia.length - 1] = { ...ultima, content: ultima.content + pedaco, isError };
+        return copia;
+      }
+      return [...prev, { kind: 'texto', role: 'assistant', content: pedaco, isError }];
+    });
+  };
+
   const sendAction = async (text: string) => {
     if (!sessionId || gameOver) return;
-    setMessages(prev => [...prev, { role: 'user', content: text }]);
+    setMessages(prev => [...prev, { kind: 'texto', role: 'user', content: text }]);
     setLoading(true);
 
     try {
-      const res = await axios.post(`http://127.0.0.1:8000/chat`, { session_id: sessionId, action: text });
-      setMessages(prev => [...prev, { role: 'assistant', content: res.data.narrativa || "...", isError: !!res.data.erro }]);
+      const stream = await postSse(`${API_URL}/chat/stream`, { session_id: sessionId, action: text });
 
-      if (res.data.hp_atual !== undefined && res.data.hp_atual < hpAtual) {
-          setWasDamaged(true); setShakeScreen(true);
-          setTimeout(() => { setWasDamaged(false); setShakeScreen(false); }, 500);
+      for await (const evt of stream) {
+        if (evt.event === 'token') {
+          acrescentarTexto((evt.data as { texto: string }).texto);
+        } else if (evt.event === 'tool_event') {
+          setMessages(prev => [...prev, { kind: 'rolagem', dados: evt.data as DadosRolagem }]);
+        } else if (evt.event === 'correcao') {
+          // O guardrail reescreveu a narrativa depois de já ter sido
+          // mostrada ao vivo — a versão persistida (memória futura) é a
+          // corrigida, então a tela também passa a refletir ela.
+          const narrativaCorrigida = (evt.data as { narrativa: string }).narrativa;
+          setMessages(prev => {
+            const copia = [...prev];
+            for (let i = copia.length - 1; i >= 0; i--) {
+              const m = copia[i];
+              if (m.kind === 'texto' && m.role === 'assistant') {
+                copia[i] = { ...m, content: narrativaCorrigida };
+                break;
+              }
+            }
+            return copia;
+          });
+        } else if (evt.event === 'erro') {
+          acrescentarTexto(`*(${(evt.data as { mensagem: string }).mensagem})*`, true);
+        } else if (evt.event === 'state') {
+          const d = evt.data as EstadoJogo;
+          if (d.hp_atual !== undefined && d.hp_atual < hpAtual) {
+              setWasDamaged(true); setShakeScreen(true);
+              setTimeout(() => { setWasDamaged(false); setShakeScreen(false); }, 500);
+          }
+          setHpAtual(d.hp_atual); setHpMax(d.hp_max || hpMax);
+          if (d.defesa !== undefined) setDefesa(d.defesa);
+          if (d.ouro !== undefined) setOuro(d.ouro);
+          if (d.nivel !== undefined) setNivel(d.nivel);
+          if (d.xp !== undefined) setXp(d.xp);
+          if (d.xp_proximo_nivel !== undefined) setXpProximoNivel(d.xp_proximo_nivel);
+          setInventory(d.inventory || []);
+          setCombatActive(d.combat_active);
+
+          const novosInimigos = d.inimigos || [];
+          const novasFlutuantes = novosInimigos
+            .map((novo, idx) => ({ novo, idx, antigo: enemies[idx] }))
+            .filter(({ novo, antigo }) => antigo && novo.hp < antigo.hp)
+            .map(({ novo, idx, antigo }) => ({ id: Date.now() + idx, valor: antigo.hp - novo.hp, idx }));
+          if (novasFlutuantes.length > 0) {
+            setDanosFlutuantes(prev => [...prev, ...novasFlutuantes]);
+            novasFlutuantes.forEach(f => {
+              setTimeout(() => setDanosFlutuantes(prev => prev.filter(x => x.id !== f.id)), 1200);
+            });
+          }
+          setEnemies(novosInimigos);
+          setOrdemIniciativa(d.ordem_iniciativa || []);
+          setTurnoAtual(d.turno_atual ?? 0);
+          if (d.missao) setQuest(d.missao);
+          if (d.hp_atual <= 0) setGameOver(true);
+        }
       }
-      setHpAtual(res.data.hp_atual); setHpMax(res.data.hp_max || hpMax);
-      if (res.data.defesa !== undefined) setDefesa(res.data.defesa);
-      setInventory(res.data.inventory || []);
-      setCombatActive(res.data.combat_active);
-      setEnemies(res.data.inimigos || []);
-      if (res.data.missao) setQuest(res.data.missao);
-      if (res.data.hp_atual <= 0) setGameOver(true);
-
-    } catch (error) {
-      setMessages(prev => [...prev, { role: 'assistant', content: "*(Não consegui falar com o servidor. Confira sua conexão e tente de novo.)*", isError: true }]);
+    } catch {
+      acrescentarTexto("*(Não consegui falar com o servidor. Confira sua conexão e tente de novo.)*", true);
     }
     finally { setLoading(false); }
   };
@@ -130,11 +267,37 @@ export default function GameChat() {
 
       {gameOver && <div className="absolute inset-0 z-[100] bg-black/95 flex flex-col items-center justify-center"><h1 className="text-5xl font-rpg text-red-600">GAME OVER</h1><button onClick={() => navigate('/')} className="mt-4 border px-4 py-2 text-gray-400">Voltar</button></div>}
 
-      {/* SIDEBAR (Ficha) */}
-      <div className={`${showSidebar ? 'w-80' : 'w-0'} transition-all duration-300 bg-gray-900 border-r border-gray-800 flex flex-col shrink-0 overflow-hidden`}>
+      {/* Fundo escurecido atrás da ficha em telas estreitas (Etapa 7) — no
+          desktop a ficha empurra o layout ao lado; no mobile ela vira uma
+          gaveta sobreposta, e este fundo é o que permite fechar tocando fora. */}
+      {showSidebar && (
+          <div
+              onClick={() => setShowSidebar(false)}
+              className="md:hidden fixed inset-0 z-40 bg-black/60"
+              aria-hidden="true"
+          />
+      )}
+
+      {/* SIDEBAR (Ficha) — abre/fecha com `left`, não `translate-x`: Tailwind
+          v4 compõe translate a partir de `--tw-translate-x/y`, e o reset
+          universal que zera essas variáveis vive atrás de um
+          `@supports` de sintaxe de cor relativa (ver index.css gerado);
+          nem todo motor de renderização honra isso, e sem o reset o
+          `translate` inteiro fica inválido — a gaveta simplesmente não
+          se move. `left`/`-left-80` é uma propriedade física comum, sem
+          essa dependência. */}
+      <div
+          className={`${showSidebar ? 'w-80 left-0' : 'w-80 -left-80 md:left-0 md:w-0'}
+              fixed md:relative top-0 bottom-0 z-50 md:z-auto
+              transition-all duration-300 bg-gray-900 border-r border-gray-800 flex flex-col shrink-0 overflow-hidden`}
+      >
           <div className="p-4 border-b border-gray-800 flex justify-between items-center bg-black/20">
               <h2 className="font-rpg text-lg text-rpg-gold flex items-center gap-2"><Scroll size={18}/> FICHA</h2>
-              <button onClick={() => setShowSidebar(false)} className="text-gray-500 hover:text-white"><X size={18}/></button>
+              <button
+                  onClick={() => setShowSidebar(false)}
+                  aria-label="Fechar ficha do personagem"
+                  className="text-gray-500 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rpg-gold rounded"
+              ><X size={18}/></button>
           </div>
 
           <div className="p-4 space-y-6 overflow-y-auto custom-scrollbar flex-1">
@@ -147,11 +310,24 @@ export default function GameChat() {
                    </div>
               </div>
 
-              {/* Vida e Defesa */}
-              <div className="bg-gray-800/30 p-3 rounded border border-gray-700 space-y-2">
+              {/* Vida, Nível/XP e Defesa */}
+              <div className="bg-gray-800/30 p-3 rounded border border-gray-700 space-y-3">
                   <div>
                     <div className="flex justify-between text-xs font-bold uppercase mb-1"><span>Vida</span><span>{hpAtual}/{hpMax}</span></div>
-                    <div className="h-1.5 bg-gray-900 rounded-full overflow-hidden"><div className="h-full bg-red-700 transition-all duration-500" style={{ width: `${Math.max(0, Math.min(100, (hpAtual / hpMax) * 100))}%` }}></div></div>
+                    <Progress
+                      value={Math.max(0, Math.min(100, (hpAtual / hpMax) * 100))}
+                      className="h-1.5 bg-gray-900 [&_[data-slot=progress-indicator]]:bg-red-700 [&_[data-slot=progress-indicator]]:transition-all [&_[data-slot=progress-indicator]]:duration-500"
+                    />
+                  </div>
+                  <div>
+                    <div className="flex justify-between text-xs font-bold uppercase mb-1">
+                      <span className="flex items-center gap-1"><Star size={11} className="text-rpg-gold"/> Nível {nivel}</span>
+                      <span>{xpProximoNivel != null ? `${xp}/${xpProximoNivel} XP` : "XP máximo"}</span>
+                    </div>
+                    <Progress
+                      value={xpProximoNivel != null ? Math.max(0, Math.min(100, (xp / xpProximoNivel) * 100)) : 100}
+                      className="h-1.5 bg-gray-900"
+                    />
                   </div>
                   <div className="flex justify-between items-center pt-2 border-t border-gray-800/50">
                      <span className="flex items-center gap-2 text-xs text-gray-400 font-bold uppercase"><Shield size={14} className="text-blue-500"/> Defesa</span>
@@ -186,11 +362,15 @@ export default function GameChat() {
 
               {/* Inventário */}
               <div>
-                  <h3 className="text-xs text-gray-500 uppercase font-bold mb-2 flex items-center gap-2"><Backpack size={12}/> Inventário</h3>
+                  <div className="flex items-center justify-between mb-2">
+                      <h3 className="text-xs text-gray-500 uppercase font-bold flex items-center gap-2"><Backpack size={12}/> Inventário</h3>
+                      <span className="text-xs text-rpg-gold font-rpg flex items-center gap-1"><Coins size={12}/> {ouro}</span>
+                  </div>
                   <ul className="text-xs text-gray-400 space-y-1 max-h-40 overflow-y-auto custom-scrollbar">
                       {inventory.length > 0 ? inventory.map((item, i) => (
-                          <li key={i} className="border-b border-gray-800 pb-1 flex items-center gap-2">
-                              <span className="w-1 h-1 bg-gray-600 rounded-full"></span> {item}
+                          <li key={i} className="border-b border-gray-800 pb-1 flex items-center gap-2 animate-fade-in">
+                              <ItemIcon nome={item} />
+                              {item}
                           </li>
                       )) : <li className="italic opacity-50">Mochila vazia...</li>}
                   </ul>
@@ -200,24 +380,72 @@ export default function GameChat() {
 
       {/* CHAT AREA */}
       <div className="flex-1 flex flex-col relative bg-[#050505]">
-        {!showSidebar && <button onClick={() => setShowSidebar(true)} className="absolute top-4 left-4 z-40 p-2 bg-black/50 rounded-full text-gray-400 border border-gray-700"><Menu size={20}/></button>}
+        {!showSidebar && (
+            <button
+                onClick={() => setShowSidebar(true)}
+                aria-label="Abrir ficha do personagem"
+                className="absolute top-4 left-4 z-40 p-2 bg-black/50 rounded-full text-gray-400 border border-gray-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rpg-gold"
+            ><Menu size={20}/></button>
+        )}
 
-        {/* HUD Inimigos */}
+        {/* HUD Inimigos — ordem de iniciativa real (Etapa 7, Fase 1): a
+            posição vem de `ordemIniciativa` (índices em `enemies`, -1 é o
+            herói), calculada uma vez por `combat.iniciar_combate`. Clicar
+            num inimigo sugere o alvo na próxima ação — quem decide o alvo
+            de verdade continua sendo o texto interpretado pelo modelo
+            (ADR-0006), isto só evita digitar o nome à mão. */}
         {combatActive && enemies.length > 0 && !gameOver && (
             <div className="absolute top-0 w-full bg-gradient-to-b from-red-950/90 to-transparent p-2 z-30 flex justify-center gap-4 animate-fade-in shadow-lg">
                 <span className="absolute left-4 top-4 text-red-500 font-rpg text-xs animate-pulse flex items-center gap-2"><Sword size={14}/> COMBATE</span>
-                {enemies.map((en, i) => (
-                    <div key={i} className="min-w-[100px] bg-black/80 p-2 rounded border border-red-900/50 backdrop-blur-sm">
-                        <div className="flex justify-between items-center mb-1"><span className="text-[10px] font-bold text-red-100 truncate">{en.nome}</span></div>
-                        <div className="h-1 bg-gray-800 rounded-full overflow-hidden"><div className="h-full bg-red-600 transition-all duration-300" style={{ width: `${(en.hp / en.max_hp) * 100}%` }}></div></div>
-                    </div>
-                ))}
+                {enemies.map((en, i) => {
+                    const posicao = ordemIniciativa.indexOf(i);
+                    const suaVez = posicao !== -1 && ordemIniciativa[turnoAtual] === i;
+                    const morto = en.hp <= 0;
+                    return (
+                        <button
+                            key={i}
+                            type="button"
+                            onClick={() => !morto && setInput(`Eu ataco ${en.nome}`)}
+                            disabled={morto}
+                            aria-label={morto ? `${en.nome} (derrotado)` : `Atacar ${en.nome}`}
+                            className={`relative min-w-[100px] bg-black/80 p-2 rounded border backdrop-blur-sm text-left transition-colors
+                                focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rpg-gold
+                                ${morto ? 'border-gray-800 opacity-40 cursor-default' : 'border-red-900/50 hover:border-rpg-gold cursor-pointer'}
+                                ${suaVez && !morto ? 'ring-1 ring-rpg-gold' : ''}`}
+                        >
+                            {danosFlutuantes.filter(f => f.idx === i).map(f => (
+                                <span key={f.id} className="absolute left-1/2 top-0 -translate-x-1/2 text-red-400 font-bold text-sm pointer-events-none animate-float-up">
+                                    -{f.valor}
+                                </span>
+                            ))}
+                            <div className="flex justify-between items-center mb-1 gap-1">
+                                {posicao !== -1 && (
+                                    <span className={`text-[9px] font-mono rounded px-1 shrink-0 ${suaVez ? 'bg-rpg-gold text-black' : 'bg-gray-800 text-gray-400'}`}>
+                                        {posicao + 1}
+                                    </span>
+                                )}
+                                <span className="text-[10px] font-bold text-red-100 truncate">{en.nome}</span>
+                            </div>
+                            <div className="h-1 bg-gray-800 rounded-full overflow-hidden"><div className="h-full bg-red-600 transition-all duration-300" style={{ width: `${(en.hp / en.max_hp) * 100}%` }}></div></div>
+                        </button>
+                    );
+                })}
             </div>
         )}
 
-        <div className="flex-1 overflow-y-auto p-4 md:p-8 space-y-6 custom-scrollbar scroll-smooth">
+        {/* `aria-live="polite"` avisa leitor de tela sobre narração/rolagens
+            chegando — a ressalva honesta (Lição 08, Etapa 7) é que o
+            streaming token a token pode soar picotado num leitor de tela
+            real, já que cada pedacinho de texto é uma mudança no live
+            region; mitigar isso de verdade (debounce por frase) ficou
+            para depois. */}
+        <div className="flex-1 overflow-y-auto p-4 md:p-8 space-y-6 custom-scrollbar scroll-smooth" role="log" aria-live="polite" aria-atomic="false">
             <div className="h-12"></div>
             {messages.map((msg, idx) => {
+                if (msg.kind === 'rolagem') {
+                    return <RollCard key={idx} dados={msg.dados} />;
+                }
+
                 const isUser = msg.role === 'user';
                 const isSystem = msg.role === 'system';
 
@@ -269,10 +497,16 @@ export default function GameChat() {
                     onChange={(e) => setInput(e.target.value)}
                     onKeyDown={handleKeyDown}
                     placeholder={combatActive ? "Ameaça iminente! (Ex: 'Ataco o inimigo', 'Fujo')" : "Sua ação..."}
+                    aria-label="Sua ação"
                     disabled={gameOver}
                     className="flex-1 bg-transparent text-gray-200 p-3 outline-none resize-none h-12 max-h-32 custom-scrollbar font-serif text-sm placeholder-gray-500 disabled:opacity-50"
                 />
-                <button onClick={handleSendMessage} disabled={loading || !input.trim() || gameOver} className="h-10 w-10 bg-gray-800 hover:bg-gray-700 text-rpg-gold rounded-lg flex items-center justify-center transition-all mt-1 mr-1 border border-gray-600">
+                <button
+                    onClick={handleSendMessage}
+                    disabled={loading || !input.trim() || gameOver}
+                    aria-label="Enviar ação"
+                    className="h-10 w-10 bg-gray-800 hover:bg-gray-700 text-rpg-gold rounded-lg flex items-center justify-center transition-all mt-1 mr-1 border border-gray-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rpg-gold disabled:opacity-40"
+                >
                     <Send size={18}/>
                 </button>
             </div>

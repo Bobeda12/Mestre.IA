@@ -17,8 +17,8 @@ Template: [`0000-template.md`](0000-template.md) · Sistema completo: [`../READM
 | [0009](0009-memoria-hierarquica-em-tres-camadas.md) | Memória hierárquica em três camadas | 5 | ✅ aceito | 19/08/2026 |
 | [0010](0010-busca-hibrida-bm25-mais-densa-e-por-que-nao-sqlite-vec.md) | Busca híbrida BM25 + densa com fusão RRF | 5 | ✅ aceito | 19/08/2026 |
 | [0011](0011-estrategia-de-avaliacao.md) | Estratégia de avaliação: determinístico + julgado, gate manual | 6 | ✅ aceito | 20/08/2026 |
-| 0012 | SSE em vez de WebSocket ou polling | 7 | 🕓 previsto | — |
-| 0013 | TanStack Query para estado de servidor | 7 | 🕓 previsto | — |
+| [0012](0012-sse-em-vez-de-websocket-ou-polling.md) | SSE em vez de WebSocket ou polling, fallback só antes do 1º chunk | 7 | ✅ aceito | 21/08/2026 |
+| [0013](0013-tanstack-query-em-vez-de-redux.md) | TanStack Query para estado de servidor | 7 | ✅ aceito | 21/08/2026 |
 | 0014 | Autenticação por e-mail mágico, implementada à mão | 8 | 🕓 previsto | — |
 | 0015 | Escolha de hospedagem | 9 | 🕓 previsto | — |
 

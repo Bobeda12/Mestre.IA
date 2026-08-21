@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import axios from 'axios';
+import { useMutation } from '@tanstack/react-query';
 // CORREÇÃO: Adicionei ChevronRight aqui na lista
 import { Sword, Scroll, Crown, ArrowRight, Loader2, Trash2, Play, ChevronRight } from 'lucide-react';
+import { api } from '../lib/api';
 
 interface SavedGame {
     id: string;
@@ -18,40 +19,40 @@ interface SavedGame {
 export default function Home() {
   const navigate = useNavigate();
   const [loadId, setLoadId] = useState("");
-  const [loading, setLoading] = useState(false);
 
-  // Lista de Saves Locais
-  const [localSaves, setLocalSaves] = useState<SavedGame[]>([]);
-
-  useEffect(() => {
+  // Lista de Saves Locais — inicializador preguiçoso em vez de ler no
+  // `useEffect` (o `localStorage` não é uma fonte externa que muda embaixo
+  // do componente, então não precisa de efeito pra sincronizar com ela).
+  const [localSaves, setLocalSaves] = useState<SavedGame[]>(() => {
       const saved = localStorage.getItem('mestre_ia_saves');
-      if (saved) {
-          try {
-              setLocalSaves(JSON.parse(saved));
-          } catch(e) {
-              console.error("Erro ao ler saves", e);
-          }
+      if (!saved) return [];
+      try {
+          return JSON.parse(saved);
+      } catch (e) {
+          console.error("Erro ao ler saves", e);
+          return [];
       }
-  }, []);
+  });
 
-  const handleLoadGame = async (sessionId: string, saveInfo?: SavedGame) => {
-    setLoading(true);
-    try {
+  // Etapa 7, ADR-0013: `useMutation` no lugar do `try/finally` +
+  // `setLoading` escrito à mão — o `isPending` do próprio TanStack Query
+  // já é o estado de loading do botão "play" de cada save.
+  const loadGame = useMutation({
+    mutationFn: async (sessionId: string) => {
       // Confere que a sessão ainda existe no backend antes de navegar. O
       // resto dos dados (HP, defesa, atributos...) o próprio GameChat busca
       // de novo ao montar, a partir da URL — o backend é a fonte da verdade.
-      await axios.post("http://127.0.0.1:8000/load_game", { session_id: sessionId });
-
-      navigate(`/jogar/${sessionId}`, {
-        state: { charImage: saveInfo?.image }
-      });
-
-    } catch (e) {
+      await api.post("/load_game", { session_id: sessionId });
+    },
+    onSuccess: (_data, sessionId) => {
+      const saveInfo = localSaves.find(s => s.id === sessionId);
+      navigate(`/jogar/${sessionId}`, { state: { charImage: saveInfo?.image } });
+    },
+    onError: () => {
       alert("Erro: O save no servidor expirou ou não existe mais. Crie um novo.");
-    } finally {
-      setLoading(false);
-    }
-  };
+    },
+  });
+  const loading = loadGame.isPending;
 
   const deleteSave = (id: string, e: React.MouseEvent) => {
       e.stopPropagation();
@@ -106,7 +107,7 @@ export default function Home() {
                             value={loadId}
                             onChange={e => setLoadId(e.target.value)}
                         />
-                        <button onClick={() => handleLoadGame(loadId)} disabled={loading} className="bg-gray-800 hover:bg-gray-700 text-rpg-gold p-2 rounded">
+                        <button onClick={() => loadGame.mutate(loadId)} disabled={loading} className="bg-gray-800 hover:bg-gray-700 text-rpg-gold p-2 rounded">
                             <ArrowRight size={16}/>
                         </button>
                     </div>
@@ -126,8 +127,12 @@ export default function Home() {
                         localSaves.map((save) => (
                             <div
                                 key={save.id}
-                                onClick={() => handleLoadGame(save.id, save)}
-                                className="group flex items-center gap-4 p-3 bg-gray-900/60 hover:bg-gray-800 border border-gray-800 hover:border-rpg-gold/50 rounded-lg cursor-pointer transition-all relative"
+                                onClick={() => loadGame.mutate(save.id)}
+                                role="button"
+                                tabIndex={0}
+                                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); loadGame.mutate(save.id); } }}
+                                aria-label={`Continuar como ${save.name}, ${save.race} ${save.class}`}
+                                className="group flex items-center gap-4 p-3 bg-gray-900/60 hover:bg-gray-800 border border-gray-800 hover:border-rpg-gold/50 rounded-lg cursor-pointer transition-all relative focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rpg-gold"
                             >
                                 {/* Foto Pequena */}
                                 <div className="w-16 h-16 rounded bg-black border border-gray-700 overflow-hidden shrink-0">
@@ -151,8 +156,9 @@ export default function Home() {
                                 {/* Deletar */}
                                 <button
                                     onClick={(e) => deleteSave(save.id, e)}
-                                    className="absolute top-2 right-2 p-1 text-gray-700 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
+                                    className="absolute top-2 right-2 p-1 text-gray-700 hover:text-red-500 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 transition-opacity"
                                     title="Apagar Save"
+                                    aria-label={`Apagar save de ${save.name}`}
                                 >
                                     <Trash2 size={14}/>
                                 </button>

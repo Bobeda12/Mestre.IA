@@ -17,10 +17,13 @@ ATRIBUTOS_HEROI = {
 def _heroi(**overrides) -> Personagem:
     base = dict(
         nome="TesteFerramentas",
+        classe="Guerreiro",
         hp_atual=10,
         hp_max=10,
         defesa=15,
         ouro=10,
+        nivel=1,
+        xp=0,
         atributos=dict(ATRIBUTOS_HEROI),
         inventario=["Cimitarra"],
         reputacao_npcs={},
@@ -77,6 +80,32 @@ class TestAtacar:
         assert resultado["resultado"] == "vitoria"
         assert c_state.ativo is False
         assert c_state.resultado == "vitoria"
+
+    def test_vitoria_concede_xp_do_bestiario(self):
+        # Goblin vale 50 XP (data/monsters.json) — não sobe de nível (limiar do 2 é 300).
+        c_state = CombatState(ativo=True, inimigos=[self._goblin(hp=1)])
+        heroi = _heroi(xp=0, nivel=1)
+        executor = _executor(heroi=heroi, c_state=c_state, rng=RngFixo([15, 4]))
+        resultado = executor.atacar("Goblin", "Cimitarra")
+        assert resultado["xp_ganho"] == 50
+        assert resultado["xp_total"] == 50
+        assert heroi.xp == 50
+        assert heroi.nivel == 1
+        assert any("XP" in e for e in executor.eventos)
+
+    def test_xp_suficiente_sobe_de_nivel_e_aumenta_hp_max(self):
+        c_state = CombatState(ativo=True, inimigos=[self._goblin(hp=1)])
+        heroi = _heroi(xp=250, nivel=1, hp_max=10, hp_atual=10, classe="Guerreiro")
+        # ataque: d20=15, dano d6=4. Subida de nível: 1d10 (dado_vida do Guerreiro) = 7.
+        # mod constituição 13 -> +1. hp_ganho = 7+1 = 8.
+        executor = _executor(heroi=heroi, c_state=c_state, rng=RngFixo([15, 4, 7]))
+        resultado = executor.atacar("Goblin", "Cimitarra")
+        assert resultado["xp_total"] == 300  # 250 + 50 do Goblin
+        assert resultado["nivel"] == 2
+        assert heroi.nivel == 2
+        assert heroi.hp_max == 18
+        assert heroi.hp_atual == 18
+        assert any("nível 2" in e for e in executor.eventos)
 
 
 class TestAplicarDano:
@@ -210,6 +239,18 @@ class TestIniciarCombate:
         assert resultado["inimigos"] == ["Goblin"]
         assert c_state.ativo is True
         assert c_state.inimigos[0].hp == 7
+
+    def test_ordem_de_iniciativa_e_copiada_pro_c_state_do_executor(self):
+        # Bug real (Etapa 7): `iniciar_combate` copiava só alguns campos de
+        # `novo` pra `self.c_state` campo a campo, e `ordem_iniciativa`/
+        # `turno_atual` (adicionados nesta etapa) ficaram de fora — o HUD
+        # do frontend nunca via a ordem calculada. Achado ao vivo no
+        # browser, não pelos testes (nenhum conferia esse campo até aqui).
+        c_state = CombatState()
+        executor = _executor(c_state=c_state, rng=RngFixo([10, 1]))
+        executor.iniciar_combate(["Goblin"])
+        assert c_state.ordem_iniciativa != []
+        assert -1 in c_state.ordem_iniciativa  # o herói sempre entra na ordem
 
 
 class TestExecutar:

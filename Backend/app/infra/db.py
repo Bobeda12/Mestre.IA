@@ -68,6 +68,11 @@ class Personagem(Base):
     # ToolExecutor nunca toca o banco diretamente, só reatribui esta coluna
     # (ver services/tools.py:ajustar_reputacao_npc e Lição 03).
     reputacao_npcs: Mapped[dict] = mapped_column(JSON, default=dict)
+    # Progressão (Etapa 7) — XP e nível, tabela SRD 5e (rules_engine.py:
+    # XP_POR_NIVEL). `ToolExecutor._conceder_xp` é quem muta isso, nunca o
+    # modelo diretamente (mesmo princípio de rules_engine.py como juiz).
+    nivel: Mapped[int] = mapped_column(default=1, server_default="1")
+    xp: Mapped[int] = mapped_column(default=0, server_default="0")
 
     usuario: Mapped["Usuario"] = relationship(back_populates="personagens")
     eventos_memoria: Mapped[list["EventoMemoria"]] = relationship(back_populates="personagem")

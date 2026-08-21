@@ -29,6 +29,16 @@ class CombatState(BaseModel):
     sucessos_morte: int = 0
     falhas_morte: int = 0
     resultado: Literal["vitoria", "morte", "estabilizado"] | None = None
+    # Ordem de iniciativa (Etapa 7) — índices em `inimigos`, com -1
+    # representando o herói, ordenados do maior pro menor resultado de
+    # `rules_engine.rolar_iniciativa`. Calculada uma vez em
+    # `combat.iniciar_combate`; `combat.turno_inimigos` ataca nessa ordem
+    # em vez de todos de uma vez. `turno_atual` é o índice dentro desta
+    # lista — HUD do frontend usa pra destacar de quem é a vez; não trava a
+    # resolução (o backend ainda resolve o herói e depois a rodada de
+    # inimigos inteira numa única chamada, um turno = uma mensagem).
+    ordem_iniciativa: list[int] = []
+    turno_atual: int = 0
 
 
 class WorldState(BaseModel):

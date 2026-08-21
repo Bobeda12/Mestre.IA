@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Lição 8 — Streaming do servidor ao pixel: o caminho de um token</title>
+<link rel="stylesheet" href="../assets/curso.css">
+</head>
+<body>
+<main class="page">
+
+<p class="kicker">Lição 08 · Mestre.IA</p>
+<h1>Streaming do servidor ao pixel — o caminho de um token</h1>
+<p class="standfirst">Até a Etapa 6, <code>POST /chat</code> é uma chamada clássica de pergunta-resposta: o cliente manda a ação, o servidor roda o loop de ferramentas inteiro e só devolve JSON quando a narrativa completa já está pronta. O jogador olha pra tela parada até o texto inteiro aparecer de um golpe. Esta lição segue um token desde o modelo até o pixel — e no meio do caminho encontra um problema que a maioria dos tutoriais de streaming não menciona: o que fazer com a cadeia de fallback (Etapa 4) quando você já mandou texto pro cliente e o modelo cai no meio da frase?</p>
+<div class="tagline">
+  <span>~12 minutos</span>
+  <span>Arquivos: <code>app/infra/llm_client.py</code> · <code>app/services/agent_loop.py</code> · <code>app/routers/game.py</code> · <code>Frontend/src/lib/sse.ts</code></span>
+  <span><a href="0007-como-se-testa-um-sistema-que-nao-e-deterministico.html">Lição 7 — como se testa um sistema que não é determinístico ↗</a></span>
+</div>
+
+<h2>Por que "streaming" não é só um efeito de máquina de escrever</h2>
+
+<p>Dá para simular um efeito de digitação inteiramente no cliente: pega a resposta completa (que já chegou, do jeito de sempre) e revela um caractere por vez com <code>setInterval</code>. Isso parece streaming, mas não muda uma coisa que importa de verdade: o tempo até o jogador ver <em>qualquer coisa</em> continua sendo o tempo da resposta inteira. Streaming de verdade — o servidor mandando cada pedaço assim que o modelo o produz — reduz esse tempo até o primeiro pedaço visível, porque o cliente não precisa mais esperar o último token pra ver o primeiro.</p>
+
+<p>Essa é a métrica que importa aqui: <b>tempo até o primeiro token</b>, não o tempo total. É por isso que a Etapa 7 pediu pra medir, não só implementar — sem número, "parece mais rápido" é opinião.</p>
+
+<h2>SSE, não WebSocket, não polling</h2>
+
+<p>Três jeitos de um servidor entregar dado incremental pro navegador: <b>polling</b> (cliente pergunta "terminou?" de novo e de novo — não resolve o problema, o texto só aparece quando o polling flagra o turno pronto), <b>WebSocket</b> (canal bidirecional completo, mas o servidor deste jogo nunca precisa iniciar uma mensagem por conta própria — é sempre pergunta→resposta) e <b>Server-Sent Events</b> (SSE — um único fluxo HTTP, unidirecional servidor→cliente, exatamente a forma deste problema). <a href="../../docs/adr/0012-sse-em-vez-de-websocket-ou-polling.md">ADR-0012</a> tem a tabela completa de alternativas; aqui fica só o resumo: SSE é o formato mais simples que resolve exatamente o que precisa ser resolvido, nem mais nem menos.</p>
+
+<h2>O problema que ninguém avisa: fallback e streaming não combinam de graça</h2>
+
+<p>A Etapa 4 deu ao jogo uma cadeia de modelos (<a href="../../docs/adr/0008-cadeia-de-fallback-de-modelo.md">ADR-0008</a>): se o modelo principal falhar, tenta o próximo da lista. Isso é seguro numa chamada de resposta única — nada foi mostrado ao jogador ainda, então trocar de modelo por baixo dos panos é invisível. Mas com streaming, depois do primeiro chunk, o jogador já <em>viu</em> texto sendo narrado por um modelo específico. Se a conexão cair no meio e o código trocar silenciosamente pro próximo modelo, o resto da frase sai com outro "narrador" — dois estilos costurados numa resposta só, sem o jogador nunca saber que isso aconteceu.</p>
+
+<pre><code># app/infra/llm_client.py — chamar_stream_com_fallback (resumido)
+for modelo in MODELOS:
+    try:
+        stream = _chamar_modelo(modelo, msgs, tools, tool_choice, stream=True)
+    except (_ERROS_TRANSITORIOS, groq.APIStatusError):
+        continue  # ainda não mandou nada pro cliente — pode trocar de modelo
+
+    comprometido = False
+    try:
+        for chunk in stream:
+            comprometido = True
+            yield chunk
+        return
+    except _ERROS_TRANSITORIOS as e:
+        if comprometido:
+            raise ErroMestre("A conexão com a IA caiu no meio da resposta.") from e
+        continue  # falhou antes do 1º chunk — ainda pode trocar</code></pre>
+
+<div class="note"><b>A regra em uma frase</b>Fallback só é seguro antes do primeiro chunk. Depois disso, a stream está "comprometida" com aquele modelo — uma falha vira erro explícito pro jogador, nunca uma troca silenciosa.</div>
+
+<h2>De chunk a evento: o que <code>executar_turno_stream</code> faz</h2>
+
+<p><code>agent_loop.executar_turno</code> (Etapa 4) já sabia rodar o loop de ferramentas até a narrativa final. <code>executar_turno_stream</code> faz a mesma coisa, mas devolve um <em>generator</em> de eventos em vez de um resultado só, no fim: <code>token</code> (um pedaço de texto de narração), <code>tool_event</code> (uma ferramenta acabou de resolver — carrega o dado estruturado da rolagem, da Fase 1 desta etapa) e <code>erro</code>.</p>
+
+<p>Um detalhe que só apareceu testando contra a Groq de verdade, não em nenhum teste com LLM falso: o modelo usado neste projeto (<code>openai/gpt-oss-120b</code>) manda tokens de <b>raciocínio</b> — o "pensamento" interno antes de decidir o que narrar — num campo separado do chunk (<code>delta.reasoning</code>, <code>channel: "analysis"</code>), diferente do campo de conteúdo público (<code>delta.content</code>). Como o código só olha <code>delta.content</code> pra decidir o que virar evento <code>token</code>, esse raciocínio nunca vaza pra tela — mas ele ainda <em>consome tempo</em> antes do primeiro token visível, o que importa pra próxima seção.</p>
+
+<div class="warn"><b>Deltas de ferramenta nunca viram "token"</b>Enquanto o modelo está montando os argumentos de uma chamada de ferramenta (JSON chegando aos poucos), isso também vem em chunks — mas não interessa ao jogador ver um <code>{"a</code> aparecendo na tela. <code>executar_turno_stream</code> acumula esses pedaços em silêncio e só produz um evento quando a ferramenta já foi executada de verdade, com o resultado.</div>
+
+<h2>Sem <code>EventSource</code>: por que um parser SSE feito à mão</h2>
+
+<p>A API nativa do browser pra consumir SSE, <code>EventSource</code>, só sabe fazer <code>GET</code> — e este turno precisa mandar <code>session_id</code>/<code>action</code> no corpo de um <code>POST</code>. A solução é <code>fetch</code> normal (que aceita POST) lendo o corpo como um <code>ReadableStream</code>, com um parser pequeno (<code>Frontend/src/lib/sse.ts</code>) cortando esse fluxo de bytes em frames <code>event: ...\ndata: ...\n\n</code>:</p>
+
+<pre><code>// lib/sse.ts (resumido) — o buffer é o que garante que um frame
+// cortado entre dois pacotes de rede não se perde
+let buffer = "";
+while (true) {
+  const { done, value } = await reader.read();
+  if (done) break;
+  buffer += decoder.decode(value, { stream: true });
+  let sepIndex;
+  while ((sepIndex = buffer.indexOf("\n\n")) !== -1) {
+    yield parseFrame(buffer.slice(0, sepIndex));
+    buffer = buffer.slice(sepIndex + 2);
+  }
+}</code></pre>
+
+<p>O detalhe que um parser ingênuo erraria: a rede não entrega um frame SSE inteiro de uma vez só — o separador <code>"\n\n"</code> pode cair bem no meio, entre dois pacotes TCP diferentes. Sem o <code>buffer</code> acumulando entre leituras, metade de um frame chegaria num <code>chunk</code> e a outra metade no próximo, e um parser que só olha um <code>chunk</code> por vez perderia o frame inteiro. <code>Frontend/src/lib/sse.test.ts</code> tem um teste dedicado a exatamente esse caso.</p>
+
+<h2>Medindo de verdade: o achado desconfortável</h2>
+
+<p>Rodando um turno real contra a Groq (não um LLM falso) — o herói agindo sem combate, um passo de ferramenta (<code>mover</code>) seguido de narração — o primeiro token visível saiu em <b>~1,26 segundos</b>, com o texto inteiro terminando pouco depois disso. Isso não é rede lenta: é o tempo que o modelo gasta no canal de raciocínio (seção anterior) antes de emitir qualquer conteúdo público. Streaming ainda ajuda — o resto do texto aparece token a token, em vez de tudo de uma vez no fim — mas não elimina essa espera inicial.</p>
+
+<div class="win"><b>A lição real aqui</b>"Streaming reduz o tempo até o primeiro token" é verdade — mas pra um modelo de raciocínio, esse "primeiro token" ainda carrega o custo do pensamento escondido. A otimização de percepção que o streaming promete depende de quanto do tempo total é raciocínio vs. geração de texto público — não é grátis nem uniforme entre modelos.</div>
+
+<h2>Teste rápido</h2>
+<p>Sem olhar para cima. O objetivo aqui é lembrar, não acertar de primeira.</p>
+
+<div id="quiz"></div>
+<p class="score" id="score"></p>
+
+<div class="next">
+  <h4>Fonte primária desta lição</h4>
+  <ul>
+    <li><a href="https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events">MDN — Server-Sent Events</a> — o formato de frame que <code>lib/sse.ts</code> e <code>_sse()</code> implementam à mão.</li>
+    <li><a href="../../docs/adr/0012-sse-em-vez-de-websocket-ou-polling.md">ADR-0012</a> — a decisão completa, com a tabela de alternativas e as consequências pagas.</li>
+  </ul>
+  <h4>Próximas lições possíveis</h4>
+  <ul>
+    <li><strong>Lição 9 —</strong> quando a Etapa 8 chegar: sessão, cookie e token — quem guarda o quê, e por que <code>localStorage</code> é o lugar errado.</li>
+  </ul>
+  <div class="ask">Travou em algo, ou uma explicação ficou pela metade? Me pergunta — eu sou o seu professor aqui, e é melhor desentortar agora do que seguir com um modelo mental torto.</div>
+</div>
+
+</main>
+
+<script>
+const QUESTIONS = [
+ {q:"Por que um efeito de digitação simulado no cliente (revelar a resposta já completa, caractere por caractere) NÃO conta como a otimização de latência que a Etapa 7 pede?",
+  o:["O tempo até o jogador ver qualquer coisa continua sendo o tempo da resposta inteira — só o streaming de verdade (servidor mandando pedaços assim que produz) reduz o tempo até o primeiro token visível","Porque `setInterval` é proibido no projeto","Porque simular no cliente usa mais memória do que streaming real","Porque o efeito visual fica idêntico, então não faz diferença nenhuma"], a:0,
+  fb:"A métrica que importa é tempo-até-primeiro-token, não a sensação visual. Simular no cliente não muda quando o primeiro pedaço de fato chega — o servidor ainda esperou a resposta inteira antes de mandar."},
+
+ {q:"Por que a cadeia de fallback entre modelos (ADR-0008) só pode trocar de modelo ANTES do primeiro chunk de uma stream, não depois?",
+  o:["Depois do primeiro chunk o jogador já viu texto de um modelo específico — trocar em silêncio costuraria o resto da resposta com outro 'narrador', misturando estilos sem o jogador saber","Porque a API da Groq bloqueia trocar de modelo no meio de uma chamada","Porque só é tecnicamente possível trocar de modelo antes da primeira chamada, nunca depois","Porque o `tenacity` não suporta retry em streams"], a:0,
+  fb:"Antes do primeiro chunk, nada foi mostrado — trocar é invisível e seguro. Depois, o jogador já está lendo a resposta de um modelo específico; uma falha nesse ponto vira erro explícito, não uma substituição silenciosa."},
+
+ {q:"Em `executar_turno_stream`, por que deltas de `tool_calls` (os argumentos de uma ferramenta sendo montados aos poucos) NUNCA viram um evento `token`?",
+  o:["Só texto de narração é mostrado ao vivo — o JSON de uma ferramenta em montagem (ex: um `{\"a` aparecendo aos poucos) não interessa ao jogador; esses deltas são acumulados em silêncio até a ferramenta executar de verdade","Porque a Groq não manda deltas de tool_calls, só de content","Porque tool_calls sempre chegam num chunk só, nunca fragmentados","Porque mostrar isso quebraria o parser JSON do frontend"], a:0,
+  fb:"Deltas de tool_calls são acumulados até finish_reason indicar que a ferramenta deve rodar; só então um evento tool_event (com o resultado real) é emitido. Nada do JSON em montagem chega à tela."},
+
+ {q:"No parser SSE feito à mão (lib/sse.ts), por que existe um `buffer` acumulando texto entre leituras do stream, em vez de processar cada `chunk` de rede isoladamente?",
+  o:["O separador \"\\n\\n\" de um frame pode cair no meio, entre dois pacotes de rede diferentes — sem buffer, um parser que olha só um chunk por vez perderia metade do frame","Porque o TypeScript exige uma variável de buffer para usar `ReadableStream`","Porque o backend manda os frames fora de ordem, e o buffer reordena","Porque `fetch` não suporta `ReadableStream` sem um buffer intermediário"], a:0,
+  fb:"A rede entrega bytes em pedaços arbitrários, não um frame SSE completo por vez. O buffer acumula entre leituras até encontrar o separador \"\\n\\n\" — sem ele, um frame cortado ao meio simplesmente some."},
+
+ {q:"Por que \"streaming reduz o tempo até o primeiro token\" não significa \"o jogador vê o primeiro token quase instantaneamente\", no caso medido nesta etapa?",
+  o:["O modelo usado gasta tempo num canal de raciocínio (reasoning) escondido, antes de emitir qualquer conteúdo público — esse tempo de 'pensamento' ainda precisa passar antes do primeiro token visível, streaming ou não","Porque o streaming em si adiciona latência de rede extra","Porque a Groq limita a velocidade de streaming artificialmente","Porque o primeiro token só é enviado depois que a resposta inteira termina, mesmo em streaming"], a:0,
+  fb:"O achado ao vivo: ~1,26s até o primeiro token visível, dominado pelo canal de reasoning do modelo (não pela rede nem pelo protocolo). Streaming ajuda com o RESTO do texto, mas não elimina o custo do pensamento inicial."},
+];
+
+let answered=0, right=0;
+const host=document.getElementById('quiz');
+QUESTIONS.forEach((item,i)=>{
+  const order=item.o.map((t,k)=>k);
+  for(let k=order.length-1;k>0;k--){const j=Math.floor(Math.random()*(k+1));[order[k],order[j]]=[order[j],order[k]];}
+  const el=document.createElement('div');
+  el.className='quiz';
+  el.innerHTML=`<p class="q">${i+1}. ${item.q}</p>
+    <div class="opts">${order.map(k=>`<button data-k="${k}">${item.o[k]}</button>`).join('')}</div>
+    <p class="fb">${item.fb}</p>`;
+  el.querySelectorAll('button').forEach(b=>{
+    b.addEventListener('click',()=>{
+      if(el.dataset.done) return;
+      el.dataset.done='1'; answered++;
+      const ok = Number(b.dataset.k)===item.a;
+      if(ok) right++;
+      el.querySelectorAll('button').forEach(x=>{
+        x.disabled=true;
+        if(Number(x.dataset.k)===item.a) x.classList.add('right');
+      });
+      if(!ok) b.classList.add('wrong');
+      el.querySelector('.fb').classList.add('on');
+      document.getElementById('score').textContent =
+        `${right} de ${answered} respondidas corretamente` +
+        (answered===QUESTIONS.length ? (right===QUESTIONS.length
+          ? " — você sabe defender essa fronteira." : " — reveja as perguntas que escaparam.") : "");
+    });
+  });
+  host.appendChild(el);
+});
+</script>
+
+</body>
+</html>

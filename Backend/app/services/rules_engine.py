@@ -18,9 +18,18 @@ ATRIBUTOS_VALIDOS = {"forca", "destreza", "constituicao", "inteligencia", "sabed
 CUSTO_PONTOS = {8: 0, 9: 1, 10: 2, 11: 3, 12: 4, 13: 5, 14: 7, 15: 9}
 PONTOS_DISPONIVEIS = 27
 
-# Nível 1 fixo — todo personagem tem o mesmo bônus de proficiência até a
-# progressão de nível chegar (Etapa 7, XP e nível).
-BONUS_PROFICIENCIA = 2
+# SRD 5e, tabela de progressão de personagem — limiares de XP por nível e o
+# bônus de proficiência correspondente. A campanha é curta (o bestiário só
+# tem monstros de nível 1 e um chefe) e enxuta (decisão de escopo "D&D 5e
+# enxuto", PLANO_MESTRE.md §9): fica em 1–5, não os 20 níveis do livro.
+XP_POR_NIVEL: dict[int, int] = {1: 0, 2: 300, 3: 900, 4: 2700, 5: 6500}
+NIVEL_MAXIMO = max(XP_POR_NIVEL)
+
+
+def bonus_proficiencia(nivel: int) -> int:
+    """SRD 5e: +2 do nível 1 ao 4, +3 a partir do 5 (a tabela real vai até
+    +6 no nível 17; truncada aqui porque `NIVEL_MAXIMO` já para no 5)."""
+    return 3 if nivel >= 5 else 2
 
 _PADRAO_DADO = _re.compile(r"^(\d+)d(\d+)([+-]\d+)?$")
 _PADRAO_ATAQUE_MONSTRO = _re.compile(r"^(.*?)\s*\(([+-]\d+)\s*para acertar,\s*([^)]+?)\s*dano\)$")
@@ -129,6 +138,28 @@ def rolar_teste_morte(rng: random.Random | None = None) -> ResultadoMorte:
     else:
         resultado = "falha"
     return ResultadoMorte(rolagem, resultado)
+
+
+@dataclass
+class ResultadoNivel:
+    nivel_novo: int
+    hp_ganho: int
+    subiu: bool
+
+
+def subir_nivel(
+    xp_atual: int, nivel_atual: int, dado_vida: int, mod_constituicao: int, rng: random.Random | None = None
+) -> ResultadoNivel:
+    """Confere se `xp_atual` já cruzou o limiar do próximo nível em
+    `XP_POR_NIVEL` e, se sim, sobe **um** nível (quem chama decide se
+    continua chamando em loop — XP de uma vitória grande pode pular mais de
+    um limiar de uma vez). HP ganho é `1d{dado_vida} + mod_constituicao`,
+    mínimo 1 (regra do livro: rolar o dado de vida a cada nível, nunca menos
+    que 1 PV) — mesmo padrão de RNG injetável de `calcular_dano`."""
+    if nivel_atual >= NIVEL_MAXIMO or xp_atual < XP_POR_NIVEL.get(nivel_atual + 1, float("inf")):
+        return ResultadoNivel(nivel_novo=nivel_atual, hp_ganho=0, subiu=False)
+    hp_ganho = max(1, rolar_dado(f"1d{dado_vida}", rng) + mod_constituicao)
+    return ResultadoNivel(nivel_novo=nivel_atual + 1, hp_ganho=hp_ganho, subiu=True)
 
 
 def parse_ataque_monstro(texto: str) -> tuple[str, int, str]:

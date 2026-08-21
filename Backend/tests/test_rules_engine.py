@@ -10,7 +10,9 @@ devolver 0 em silêncio — exatamente como o diário da Etapa 2 previu.
 import pytest
 
 from app.services.rules_engine import (
-    BONUS_PROFICIENCIA,
+    NIVEL_MAXIMO,
+    XP_POR_NIVEL,
+    bonus_proficiencia,
     calcular_dano,
     calcular_modificador,
     parse_ataque_monstro,
@@ -19,6 +21,7 @@ from app.services.rules_engine import (
     rolar_dado,
     rolar_iniciativa,
     rolar_teste_morte,
+    subir_nivel,
     validar_point_buy,
 )
 from tests.helpers import RngFixo
@@ -142,9 +145,35 @@ class TestParseAtaqueMonstro:
             parse_ataque_monstro("Cimitarra ataca forte")
 
 
-def test_bonus_proficiencia_e_fixo_no_nivel_1():
-    # Nível 1 fixo até a Etapa 7 (XP e progressão) existir.
-    assert BONUS_PROFICIENCIA == 2
+class TestBonusProficiencia:
+    @pytest.mark.parametrize("nivel,esperado", [(1, 2), (4, 2), (5, 3)])
+    def test_tabela_srd(self, nivel, esperado):
+        assert bonus_proficiencia(nivel) == esperado
+
+
+class TestSubirNivel:
+    def test_xp_insuficiente_nao_sobe(self):
+        resultado = subir_nivel(xp_atual=299, nivel_atual=1, dado_vida=10, mod_constituicao=1)
+        assert resultado.subiu is False
+        assert resultado.nivel_novo == 1
+
+    def test_xp_suficiente_sobe_um_nivel_e_rola_hp(self):
+        assert XP_POR_NIVEL[2] == 300
+        resultado = subir_nivel(
+            xp_atual=300, nivel_atual=1, dado_vida=10, mod_constituicao=1, rng=RngFixo([6])
+        )
+        assert resultado.subiu is True
+        assert resultado.nivel_novo == 2
+        assert resultado.hp_ganho == 7  # 1d10 (rolou 6) + mod con 1
+
+    def test_hp_ganho_nunca_fica_abaixo_de_um(self):
+        resultado = subir_nivel(xp_atual=300, nivel_atual=1, dado_vida=6, mod_constituicao=-5, rng=RngFixo([1]))
+        assert resultado.hp_ganho == 1
+
+    def test_nivel_maximo_nao_sobe_mais(self):
+        resultado = subir_nivel(xp_atual=999_999, nivel_atual=NIVEL_MAXIMO, dado_vida=10, mod_constituicao=0)
+        assert resultado.subiu is False
+        assert resultado.nivel_novo == NIVEL_MAXIMO
 
 
 class TestValidarPointBuy:

@@ -3,6 +3,8 @@ passos, quando para, o que faz com ferramenta malformada), sem depender da
 API da Groq de verdade nem das ferramentas reais de tools.py. Um `_FakeLLM`
 substitui `chamar_com_fallback`; um `FakeExecutor` substitui `ToolExecutor`."""
 
+from app.domain.eventos import DadosRolagem, EventoRolagem
+from app.infra.llm_client import ErroMestre
 from app.services import agent_loop
 
 
@@ -146,4 +148,133 @@ def test_limite_de_passos_estourado_devolve_narrativa_de_recuperacao(monkeypatch
 
     assert "perdeu o fio" in narrativa
     assert len(chamadas) == 3
+    assert fake.chamadas == 3
+
+
+# -- executar_turno_stream (Etapa 7) -------------------------------------
+
+
+class _DeltaFuncaoFalsa:
+    def __init__(self, name: str | None = None, arguments: str | None = None) -> None:
+        self.name = name
+        self.arguments = arguments
+
+
+class _DeltaToolCallFalso:
+    def __init__(
+        self, index: int, id: str | None = None, name: str | None = None, arguments: str | None = None
+    ) -> None:
+        self.index = index
+        self.id = id
+        self.function = _DeltaFuncaoFalsa(name, arguments)
+
+
+class _DeltaFalso:
+    def __init__(self, content: str | None = None, tool_calls: list | None = None) -> None:
+        self.content = content
+        self.tool_calls = tool_calls
+
+
+class _ChunkFalso:
+    def __init__(self, delta: _DeltaFalso) -> None:
+        self.choices = [type("Choice", (), {"delta": delta})()]
+
+
+class _StreamLLMFalso:
+    """Uma fila de "passos" — cada passo é a lista de chunks que
+    `chamar_stream_com_fallback` devolveria pra uma chamada do loop."""
+
+    def __init__(self, passos: list[list[_ChunkFalso] | Exception]) -> None:
+        self._passos = iter(passos)
+        self.chamadas = 0
+
+    def __call__(self, msgs, tools=None, tool_choice="auto"):
+        self.chamadas += 1
+        proximo = next(self._passos)
+        if isinstance(proximo, Exception):
+            raise proximo
+        return iter(proximo)
+
+
+class FakeExecutorEstruturado:
+    """Mesmo contrato de `FakeExecutor`, mas gera `EventoRolagem` de verdade
+    — necessário pra testar que `executar_turno_stream` emite "tool_event"
+    só para eventos com dado estruturado (ver domain/eventos.py)."""
+
+    def __init__(self, respostas: dict[str, tuple[dict, bool]]) -> None:
+        self._respostas = respostas
+        self.eventos: list[str] = []
+
+    def executar(self, nome: str, args_json: str) -> tuple[dict, bool]:
+        resultado, sucesso = self._respostas[nome]
+        if sucesso:
+            dados = DadosRolagem(tipo="teste", quem="heroi", d20=15, total=17, cd=10, sucesso=True)
+            self.eventos.append(EventoRolagem(f"🎲 {nome} deu certo.", dados))
+        return resultado, sucesso
+
+
+def test_stream_sem_tool_calls_gera_so_tokens():
+    passo = [_ChunkFalso(_DeltaFalso(content="Você entra ")), _ChunkFalso(_DeltaFalso(content="na taverna."))]
+    fake = _StreamLLMFalso([passo])
+
+    eventos = list(agent_loop.executar_turno_stream([], FakeExecutor({}), chamar_fn=fake))
+
+    assert [e.tipo for e in eventos] == ["token", "token"]
+    assert "".join(e.dados for e in eventos) == "Você entra na taverna."
+    assert fake.chamadas == 1
+
+
+def test_stream_tool_call_gera_tool_event_antes_da_narrativa_final():
+    passo_1 = [_ChunkFalso(_DeltaFalso(tool_calls=[_DeltaToolCallFalso(0, id="t1", name="rolar_teste")])),
+               _ChunkFalso(_DeltaFalso(tool_calls=[_DeltaToolCallFalso(0, arguments='{"atributo": "destreza"}')]))]
+    passo_2 = [_ChunkFalso(_DeltaFalso(content="Você se esgueira."))]
+    fake = _StreamLLMFalso([passo_1, passo_2])
+    executor = FakeExecutorEstruturado({"rolar_teste": ({"sucesso": True}, True)})
+
+    eventos = list(agent_loop.executar_turno_stream([], executor, chamar_fn=fake))
+
+    assert [e.tipo for e in eventos] == ["tool_event", "token"]
+    assert eventos[0].dados["tipo"] == "teste"
+    assert eventos[0].dados["texto"] == "🎲 rolar_teste deu certo."
+    assert eventos[1].dados == "Você se esgueira."
+    assert fake.chamadas == 2
+
+
+def test_stream_ferramenta_sem_evento_estruturado_nao_gera_tool_event():
+    # FakeExecutor "comum" (do resto deste arquivo) só produz string solta,
+    # sem EventoRolagem — não deve virar card.
+    tc = _DeltaToolCallFalso(0, id="t1", name="mover", arguments='{"destino": "Floresta"}')
+    passo_1 = [_ChunkFalso(_DeltaFalso(tool_calls=[tc]))]
+    passo_2 = [_ChunkFalso(_DeltaFalso(content="Vocês chegam."))]
+    fake = _StreamLLMFalso([passo_1, passo_2])
+    executor = FakeExecutor({"mover": ({"local": "Floresta"}, True)})
+
+    eventos = list(agent_loop.executar_turno_stream([], executor, chamar_fn=fake))
+
+    assert [e.tipo for e in eventos] == ["token"]
+    assert eventos[0].dados == "Vocês chegam."
+
+
+def test_stream_erro_do_modelo_vira_evento_de_erro():
+    fake = _StreamLLMFalso([ErroMestre("todos os modelos falharam")])
+
+    eventos = list(agent_loop.executar_turno_stream([], FakeExecutor({}), chamar_fn=fake))
+
+    assert len(eventos) == 1
+    assert eventos[0].tipo == "erro"
+    assert eventos[0].dados == "todos os modelos falharam"
+
+
+def test_stream_limite_de_passos_estourado_gera_token_de_recuperacao():
+    sempre_chama_ferramenta = [
+        [_ChunkFalso(_DeltaFalso(tool_calls=[_DeltaToolCallFalso(0, id=f"t{i}", name="mover", arguments="{}")]))]
+        for i in range(5)
+    ]
+    fake = _StreamLLMFalso(sempre_chama_ferramenta)
+    executor = FakeExecutor({"mover": ({"local": "Floresta"}, True)})
+
+    eventos = list(agent_loop.executar_turno_stream([], executor, max_passos=3, chamar_fn=fake))
+
+    assert eventos[-1].tipo == "token"
+    assert "perdeu o fio" in eventos[-1].dados
     assert fake.chamadas == 3

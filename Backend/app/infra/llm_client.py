@@ -7,6 +7,7 @@ serviços (`services/agent_loop.py`) precisam levantá-lo sem importar de
 `services/narrator.py`, o que violaria a direção de dependência do
 ADR-0003 (routers → services → domain/infra)."""
 
+from collections.abc import Iterator
 from typing import Any
 
 import groq
@@ -60,6 +61,7 @@ def _chamar_modelo(
     tools: list[dict] | None,
     tool_choice: str,
     response_format: dict | None = None,
+    stream: bool = False,
 ) -> Any:
     kwargs: dict[str, Any] = {"model": modelo, "messages": msgs}
     if tools:
@@ -67,6 +69,8 @@ def _chamar_modelo(
         kwargs["tool_choice"] = tool_choice
     if response_format:
         kwargs["response_format"] = response_format
+    if stream:
+        kwargs["stream"] = True
     return client.chat.completions.create(**kwargs)  # type: ignore[union-attr]
 
 
@@ -119,6 +123,55 @@ def chamar_com_fallback(msgs: list[dict], tools: list[dict] | None = None, tool_
         except groq.APIStatusError as e:
             ultimo_erro = e
             continue
+    raise ErroMestre(
+        "Todos os modelos configurados falharam ao responder. Tente de novo em instantes."
+    ) from ultimo_erro
+
+
+def chamar_stream_com_fallback(
+    msgs: list[dict], tools: list[dict] | None = None, tool_choice: str = "auto"
+) -> Iterator[Any]:
+    """Versão em streaming de `chamar_com_fallback` (Etapa 7, ADR-0012).
+
+    A cadeia de fallback do ADR-0008 troca de modelo depois de um erro —
+    seguro quando nada foi mandado pro cliente ainda. Streaming quebra essa
+    suposição: depois que o primeiro chunk sai daqui, o chamador (`agent_loop.
+    executar_turno_stream`) já pode ter repassado texto pro jogador, e trocar
+    de modelo no meio geraria uma resposta costurada de dois "narradores"
+    diferentes, incoerente.
+
+    Por isso o fallback aqui só vale **antes do primeiro chunk** — troca de
+    modelo se a conexão falhar na hora de abrir o stream (rate limit, 4xx/5xx,
+    timeout). Depois do primeiro chunk, a stream está "comprometida" com
+    aquele modelo: uma falha a partir daí vira `ErroMestre` (o router traduz
+    isso num evento SSE `error`), não uma troca silenciosa."""
+    if not client:
+        raise ErroMestre(
+            "O mestre está sem acesso à IA — falta configurar a chave da Groq no servidor (GROQ_API_KEY)."
+        )
+    ultimo_erro: Exception | None = None
+    for modelo in MODELOS:
+        try:
+            stream = _chamar_modelo(modelo, msgs, tools, tool_choice, stream=True)
+        except _ERROS_TRANSITORIOS as e:
+            ultimo_erro = e
+            continue
+        except groq.APIStatusError as e:
+            ultimo_erro = e
+            continue
+
+        comprometido = False
+        try:
+            for chunk in stream:
+                comprometido = True
+                yield chunk
+            return
+        except _ERROS_TRANSITORIOS as e:
+            if comprometido:
+                raise ErroMestre("A conexão com a IA caiu no meio da resposta.") from e
+            ultimo_erro = e
+            continue
+
     raise ErroMestre(
         "Todos os modelos configurados falharam ao responder. Tente de novo em instantes."
     ) from ultimo_erro

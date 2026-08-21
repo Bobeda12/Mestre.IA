@@ -1,6 +1,25 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@import "@fontsource-variable/geist";
+
+@custom-variant dark (&:is(.dark *));
+
+/* Tailwind v4 é CSS-first (Etapa 7) — o `tailwind.config.js` de tema
+   (cores, fontes) morreu; o que ele descrevia em JS agora é este bloco
+   `@theme`, que gera as MESMAS utilities de antes (`text-rpg-gold`,
+   `font-rpg`, etc.) direto a partir de variáveis CSS. */
+@theme {
+  --font-rpg: "Cinzel", serif;
+  --font-hand: "MedievalSharp", cursive;
+
+  --color-rpg-dark: #0f0e0b;
+  --color-rpg-darker: #050505;
+  --color-rpg-gold: #c5a059;
+  --color-rpg-crimson: #8a1c1c;
+  --color-rpg-parchment: #d4c5a9;
+  --color-rpg-leather: #4a3b2a;
+}
 
 /* --- ESTILOS PERSONALIZADOS RPG --- */
 
@@ -55,10 +74,10 @@ body {
   width: 8px;
 }
 .custom-scrollbar::-webkit-scrollbar-track {
-  background: #0a0a0a; 
+  background: #0a0a0a;
 }
 .custom-scrollbar::-webkit-scrollbar-thumb {
-  background: #333; 
+  background: #333;
   border-radius: 4px;
 }
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
@@ -72,4 +91,132 @@ body {
 }
 .animate-fade-in {
   animation: fadeIn 0.3s ease-out forwards;
+}
+
+/* Pulsação lenta (Etapa 7 — existia como classe usada em Home.tsx sem
+   nunca ter sido definida; implementada de verdade em vez de carregar
+   o bug adiante na migração pro Tailwind v4). */
+@keyframes pulseSlow {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+.animate-pulse-slow {
+  animation: pulseSlow 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* Entrada em escala (Etapa 7 — mesmo caso de animate-pulse-slow, usada
+   em CharacterCreation.tsx sem definição). */
+@keyframes scaleIn {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
+.animate-scale-in {
+  animation: scaleIn 0.25s ease-out forwards;
+}
+
+/* Dano flutuante no HUD de combate (Etapa 7) — sobe e desaparece. */
+@keyframes floatUp {
+  0% { opacity: 0; transform: translate(-50%, 0); }
+  15% { opacity: 1; }
+  100% { opacity: 0; transform: translate(-50%, -28px); }
+}
+.animate-float-up {
+  animation: floatUp 1.2s ease-out forwards;
+}
+
+@theme inline {
+  --font-heading: var(--font-sans);
+  --font-sans: 'Geist Variable', sans-serif;
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --color-foreground: var(--foreground);
+  --color-background: var(--background);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+/* O jogo é sempre escuro (sem alternância claro/escuro) — em vez de manter
+   duas paletas (:root claro do preset "Nova" + .dark), os tokens shadcn
+   nascem direto na paleta rpg.* já existente em vez da cinza genérica do
+   preset, e `.dark` fica igual a `:root` (só existe pra o seletor
+   `@custom-variant dark` acima não quebrar se algum componente shadcn
+   futuro checar explicitamente por `.dark`). */
+:root,
+.dark {
+  --background: var(--color-rpg-darker);
+  --foreground: var(--color-rpg-parchment);
+  --card: var(--color-rpg-dark);
+  --card-foreground: var(--color-rpg-parchment);
+  --popover: var(--color-rpg-dark);
+  --popover-foreground: var(--color-rpg-parchment);
+  --primary: var(--color-rpg-gold);
+  --primary-foreground: var(--color-rpg-darker);
+  --secondary: var(--color-rpg-leather);
+  --secondary-foreground: var(--color-rpg-parchment);
+  --muted: oklch(0.269 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+  --accent: var(--color-rpg-leather);
+  --accent-foreground: var(--color-rpg-parchment);
+  --destructive: var(--color-rpg-crimson);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: var(--color-rpg-gold);
+  --chart-1: oklch(0.87 0 0);
+  --chart-2: oklch(0.556 0 0);
+  --chart-3: oklch(0.439 0 0);
+  --chart-4: oklch(0.371 0 0);
+  --chart-5: oklch(0.269 0 0);
+  --radius: 0.5rem;
+  --sidebar: var(--color-rpg-dark);
+  --sidebar-foreground: var(--color-rpg-parchment);
+  --sidebar-primary: var(--color-rpg-gold);
+  --sidebar-primary-foreground: var(--color-rpg-darker);
+  --sidebar-accent: var(--color-rpg-leather);
+  --sidebar-accent-foreground: var(--color-rpg-parchment);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: var(--color-rpg-gold);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  html {
+    @apply font-sans;
+  }
 }

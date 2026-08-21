@@ -7,6 +7,8 @@ O TestClient do FastAPI sobe a aplicação em processo, sem precisar de
 um servidor ativo nem de rede.
 """
 
+import json
+
 from fastapi.testclient import TestClient
 
 from app.infra import llm_client
@@ -200,3 +202,40 @@ def test_chat_com_ferramenta_chamada_de_ponta_a_ponta(monkeypatch):
     assert "Vocês seguem para a floresta" in dados["narrativa"]
     assert "🧭" in dados["narrativa"]  # evento da ferramenta mover anexado
     assert "ouro" in dados
+
+
+def test_chat_stream_de_ponta_a_ponta(monkeypatch):
+    """Mesma prova de ponta a ponta de `test_chat_com_ferramenta_chamada_de_
+    ponta_a_ponta`, mas em `/chat/stream` (Etapa 7): confere que o frame
+    `token` chega em pedaços, o `tool_event` carrega o dado estruturado do
+    `mover`... na verdade `mover` não é uma rolagem (sem EventoRolagem), então
+    o que este teste prova é que o frame `state` final tem a narrativa
+    completa e persistida, igual ao `/chat` síncrono."""
+    from app.services import agent_loop
+    from tests.test_agent_loop import _ChunkFalso, _DeltaFalso, _DeltaToolCallFalso, _StreamLLMFalso
+
+    monkeypatch.setattr(narrator, "client", None)
+    criado = client.post("/create_character", json=_payload_base(nome="TesteStreamChat"))
+    assert criado.status_code == 200
+    session_id = criado.json()["session_id"]
+
+    tc = _DeltaToolCallFalso(0, id="t1", name="mover", arguments='{"destino": "Floresta das Sombras"}')
+    passo_1 = [_ChunkFalso(_DeltaFalso(tool_calls=[tc]))]
+    passo_2 = [_ChunkFalso(_DeltaFalso(content="Vocês seguem ")), _ChunkFalso(_DeltaFalso(content="para a floresta."))]
+    fake = _StreamLLMFalso([passo_1, passo_2])
+    monkeypatch.setattr(agent_loop, "chamar_stream_com_fallback", fake)
+
+    resp = client.post("/chat/stream", json={"session_id": session_id, "action": "Eu vou para a floresta"})
+    assert resp.status_code == 200
+    assert resp.headers["content-type"].startswith("text/event-stream")
+
+    corpo = resp.text
+    assert "event: token" in corpo
+    assert "Vocês seguem " in corpo
+
+    frames = [f for f in corpo.strip().split("\n\n") if f]
+    assert frames[-1].startswith("event: state")
+    dados_state = json.loads(frames[-1].split("data: ", 1)[1])
+    assert "Vocês seguem para a floresta." in dados_state["narrativa"]
+    assert "🧭" in dados_state["narrativa"]  # evento da ferramenta mover, persistido igual ao /chat
+    assert "ouro" in dados_state

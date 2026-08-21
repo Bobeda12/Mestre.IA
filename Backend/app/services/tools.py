@@ -12,7 +12,8 @@ import json
 import random
 from collections.abc import Callable
 
-from app.domain.state import CombatState, WorldState
+from app.domain.eventos import DadosRolagem, EventoRolagem
+from app.domain.state import CombatState, Inimigo, WorldState
 from app.infra.data_manager import regras
 from app.infra.db import Personagem
 from app.services import combat
@@ -54,6 +55,15 @@ class ToolExecutor:
         self.rng = rng
         self.eventos: list[str] = []
 
+    @property
+    def eventos_estruturados(self) -> list[dict]:
+        """O dado por trás de cada evento que veio de uma rolagem (Etapa 7)
+        — para o card do frontend, sem fazer parsing do texto emoji. Só os
+        eventos construídos como `EventoRolagem` (ver domain/eventos.py)
+        entram aqui; um `self.eventos.append("string comum")` continua
+        funcionando em todo lugar, só não vira card."""
+        return [e.dados.to_dict() for e in self.eventos if isinstance(e, EventoRolagem) and e.dados is not None]
+
     # -- ferramentas ---------------------------------------------------
 
     def rolar_teste(self, atributo: str, cd: int) -> dict:
@@ -61,23 +71,33 @@ class ToolExecutor:
             return {"erro": f"'{atributo}' não é um atributo válido: {sorted(motor.ATRIBUTOS_VALIDOS)}"}
         mod = motor.calcular_modificador(self.heroi.atributos.get(atributo, 10))
         resultado = motor.resolver_teste_atributo(mod, cd, self.rng)
+        dados = DadosRolagem(
+            tipo="teste", quem="heroi", d20=resultado.rolagem, bonus=mod, total=resultado.total,
+            cd=cd, sucesso=resultado.sucesso,
+        )
         self.eventos.append(
-            f"🎲 Teste de {atributo}: d20({resultado.rolagem})+{mod}={resultado.total} vs CD {cd} → "
-            f"{'SUCESSO' if resultado.sucesso else 'FALHA'}."
+            EventoRolagem(
+                f"🎲 Teste de {atributo}: d20({resultado.rolagem})+{mod}={resultado.total} vs CD {cd} → "
+                f"{'SUCESSO' if resultado.sucesso else 'FALHA'}.",
+                dados,
+            )
         )
         return {"sucesso": resultado.sucesso, "total": resultado.total}
 
     def atacar(self, alvo: str, arma: str | None = None) -> dict:
         if not self.c_state.ativo:
             return {"erro": "não há combate ativo — chame iniciar_combate antes de atacar"}
-        eventos = combat.turno_jogador(self.c_state, self.heroi.atributos, self.heroi.inventario, arma, alvo, self.rng)
+        eventos = combat.turno_jogador(
+            self.c_state, self.heroi.atributos, self.heroi.inventario, arma, alvo, self.rng, self._nivel()
+        )
         self.eventos.extend(eventos)
 
         if all(i.hp <= 0 for i in self.c_state.inimigos):
             self.c_state.ativo = False
             self.c_state.resultado = "vitoria"
             self.eventos.append("🏆 Combate vencido!")
-            return {"resultado": "vitoria"}
+            resultado_xp = self._conceder_xp(self.c_state.inimigos)
+            return {"resultado": "vitoria", **resultado_xp}
 
         eventos_inimigos, dano = combat.turno_inimigos(self.c_state, self.heroi.defesa, self.rng)
         self.eventos.extend(eventos_inimigos)
@@ -85,6 +105,42 @@ class ToolExecutor:
         if self.heroi.hp_atual == 0 and dano > 0:
             self.eventos.append("🩸 Você caiu! Nos próximos turnos, role para não morrer.")
         return {"dano_recebido": dano, "hp_atual": self.heroi.hp_atual}
+
+    def _nivel(self) -> int:
+        """`self.heroi.nivel` pode ser `None` num `Personagem()` montado à
+        mão sem passar pelo default da coluna (cenários de
+        `evals/golden/*.yaml` anteriores à Etapa 7, e testes que constroem
+        o objeto direto — mesmo motivo de `atributos.get(attr, 10)` já usar
+        default em vez de assumir a chave presente). Nunca acontece num
+        personagem real, que sempre passou pelo INSERT com o default '1'."""
+        return self.heroi.nivel or 1
+
+    def _conceder_xp(self, inimigos_derrotados: list[Inimigo]) -> dict:
+        """XP é uma consequência automática da vitória, não uma ferramenta
+        que o modelo chama — mesmo princípio do teste de morte em
+        `routers/game.py` (ADR-0006: o LLM propõe a cena, nunca decide o
+        número). Sobe nível em loop porque uma vitória grande pode cruzar
+        mais de um limiar de `rules_engine.XP_POR_NIVEL` de uma vez."""
+        xp_ganho = sum((regras.get_monster(i.nome) or {}).get("xp", 0) for i in inimigos_derrotados)
+        if xp_ganho <= 0:
+            return {}
+        self.heroi.xp = (self.heroi.xp or 0) + xp_ganho
+        self.heroi.nivel = self._nivel()
+        self.eventos.append(f"✨ Ganha {xp_ganho} de XP ({self.heroi.xp} total).")
+
+        dado_vida = regras.get_class_details(self.heroi.classe).get("dado_vida", 8)
+        mod_con = motor.calcular_modificador(self.heroi.atributos.get("constituicao", 10))
+        while True:
+            resultado = motor.subir_nivel(self.heroi.xp, self.heroi.nivel, dado_vida, mod_con, self.rng)
+            if not resultado.subiu:
+                break
+            self.heroi.nivel = resultado.nivel_novo
+            self.heroi.hp_max += resultado.hp_ganho
+            self.heroi.hp_atual += resultado.hp_ganho
+            self.eventos.append(
+                f"🎉 Subiu para o nível {resultado.nivel_novo}! (+{resultado.hp_ganho} PV máximo)"
+            )
+        return {"xp_ganho": xp_ganho, "xp_total": self.heroi.xp, "nivel": self.heroi.nivel}
 
     def aplicar_dano(self, alvo: str, dado_dano: str, motivo: str = "") -> dict:
         dano = motor.calcular_dano(dado_dano, rng=self.rng)
@@ -183,6 +239,8 @@ class ToolExecutor:
         self.c_state.sucessos_morte = novo.sucessos_morte
         self.c_state.falhas_morte = novo.falhas_morte
         self.c_state.resultado = novo.resultado
+        self.c_state.ordem_iniciativa = novo.ordem_iniciativa
+        self.c_state.turno_atual = novo.turno_atual
         self.eventos.extend(eventos)
         if dano_surpresa:
             self.heroi.hp_atual = max(0, self.heroi.hp_atual - dano_surpresa)

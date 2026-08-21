@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react';
-import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import {
   Sword, Crown, ChevronRight, ArrowLeft, Sparkles,
   Minus, Plus, Heart, Scroll, User, Zap, Edit2
 } from 'lucide-react';
+import { api } from '../lib/api';
 
 interface CharacterCreationProps {
   onCharacterCreated?: (sessionId: string) => void; // Opcional agora
@@ -51,18 +51,18 @@ export default function CharacterCreation({ onCharacterCreated }: CharacterCreat
 
   // Carregamento Inicial
   useEffect(() => {
-    axios.get("http://127.0.0.1:8000/options/races").then(res => setRaces(res.data.opcoes)).catch(() => {});
-    axios.get("http://127.0.0.1:8000/options/classes").then(res => setClasses(res.data.opcoes)).catch(() => {});
+    api.get("/options/races").then(res => setRaces(res.data.opcoes)).catch(() => {});
+    api.get("/options/classes").then(res => setClasses(res.data.opcoes)).catch(() => {});
   }, []);
 
   useEffect(() => {
     if (selectedRace) {
-        axios.get(`http://127.0.0.1:8000/options/races/${selectedRace}`).then(res => { setRaceData(res.data); setFreePointsAllocation({}); }).catch(() => {});
+        api.get(`/options/races/${selectedRace}`).then(res => { setRaceData(res.data); setFreePointsAllocation({}); }).catch(() => {});
     }
   }, [selectedRace]);
 
   useEffect(() => {
-    if (selectedClass) axios.get(`http://127.0.0.1:8000/options/classes/${selectedClass}`).then(res => setClassData(res.data)).catch(() => {});
+    if (selectedClass) api.get(`/options/classes/${selectedClass}`).then(res => setClassData(res.data)).catch(() => {});
   }, [selectedClass]);
 
   // Gerador de Imagem (IA)
@@ -121,7 +121,7 @@ export default function CharacterCreation({ onCharacterCreated }: CharacterCreat
       // recalcula tudo e é ele quem decide o valor final. Ver ADR-0002.
       const atributosLivreEscolhidos = Object.keys(freePointsAllocation).filter(attr => freePointsAllocation[attr] === 1);
 
-      const res = await axios.post("http://127.0.0.1:8000/create_character", {
+      const res = await api.post("/create_character", {
         nome: name, raca: selectedRace, classe: selectedClass,
         alinhamento: alignment, background: background, objetivo: goal,
         historia_texto: history,

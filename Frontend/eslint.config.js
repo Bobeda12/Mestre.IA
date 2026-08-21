@@ -20,4 +20,15 @@ export default defineConfig([
       globals: globals.browser,
     },
   },
+  {
+    // Componentes gerados pelo shadcn/ui (Etapa 7) — exportam `xVariants`
+    // junto do componente de propósito (padrão da própria lib), o que
+    // esbarra em react-refresh/only-export-components. É código vendorizado
+    // (regenerado por `npx shadcn add`), não faz sentido reescrever pra
+    // calar o lint.
+    files: ['src/components/ui/**/*.{ts,tsx}'],
+    rules: {
+      'react-refresh/only-export-components': 'off',
+    },
+  },
 ])

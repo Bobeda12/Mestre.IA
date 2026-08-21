@@ -65,6 +65,61 @@ class TestIniciarCombate:
         assert dano_surpresa == 6
         assert any("surpresa" in e for e in eventos)
 
+    def test_ordem_de_iniciativa_e_guardada_do_maior_pro_menor(self):
+        # Herói: d20=20+1(dex)=21. Goblin(idx 0): d20=3+2(dex)=5. Lobo(idx 1): d20=10+2(dex)=12.
+        # Ninguém supera o herói -> sem rolagem de ataque de surpresa, só 3 valores no rng.
+        c_state, _, dano_surpresa = combat.iniciar_combate(
+            ["Goblin", "Lobo"], ATRIBUTOS_HEROI, ca_heroi=15, rng=RngFixo([20, 3, 10])
+        )
+        assert dano_surpresa == 0
+        # -1 é o herói; 1 (Lobo, iniciativa 12) vem antes de 0 (Goblin, iniciativa 5).
+        assert c_state.ordem_iniciativa == [-1, 1, 0]
+        assert c_state.turno_atual == 0
+
+    def test_evento_de_surpresa_carrega_dados_estruturados(self):
+        c_state, eventos, _ = combat.iniciar_combate(
+            ["Goblin"], ATRIBUTOS_HEROI, ca_heroi=10, rng=RngFixo([1, 20, 15, 4])
+        )
+        evento_surpresa = next(e for e in eventos if "surpresa" in e)
+        assert evento_surpresa.dados.tipo == "ataque"
+        assert evento_surpresa.dados.quem == "Goblin"
+        assert evento_surpresa.dados.sucesso is True
+        assert evento_surpresa.dados.dano == 6
+
+
+class TestTurnoInimigos:
+    def _goblin(self) -> Inimigo:
+        return Inimigo(nome="Goblin", hp=7, max_hp=7, ca=15, bonus_ataque=4, dano_dado="1d6+2", nome_ataque="Cimitarra")
+
+    def _lobo(self) -> Inimigo:
+        return Inimigo(nome="Lobo", hp=11, max_hp=11, ca=13, bonus_ataque=4, dano_dado="2d4+2", nome_ataque="Mordida")
+
+    def test_ataca_na_ordem_de_iniciativa_nao_na_ordem_de_spawn(self):
+        # ordem_iniciativa manda o Lobo (índice 1) atacar antes do Goblin
+        # (índice 0), mesmo com o Goblin vindo primeiro em `inimigos`.
+        c_state = CombatState(
+            ativo=True, inimigos=[self._goblin(), self._lobo()], ordem_iniciativa=[1, -1, 0]
+        )
+        eventos, _ = combat.turno_inimigos(c_state, ca_heroi=15, rng=RngFixo([1, 1]))  # ambos erram
+        assert "Lobo" in eventos[0]
+        assert "Goblin" in eventos[1]
+
+    def test_sem_ordem_calculada_cai_para_ordem_de_spawn(self):
+        # CombatState montado à mão (sem passar por iniciar_combate) não tem
+        # ordem_iniciativa — não pode quebrar quem já fazia isso antes da Etapa 7.
+        c_state = CombatState(ativo=True, inimigos=[self._goblin(), self._lobo()])
+        eventos, _ = combat.turno_inimigos(c_state, ca_heroi=15, rng=RngFixo([1, 1]))
+        assert "Goblin" in eventos[0]
+        assert "Lobo" in eventos[1]
+
+    def test_inimigo_morto_e_pulado_mesmo_na_ordem(self):
+        goblin_morto = self._goblin()
+        goblin_morto.hp = 0
+        c_state = CombatState(ativo=True, inimigos=[goblin_morto, self._lobo()], ordem_iniciativa=[0, -1, 1])
+        eventos, dano = combat.turno_inimigos(c_state, ca_heroi=15, rng=RngFixo([1]))
+        assert len(eventos) == 1
+        assert "Lobo" in eventos[0]
+
 
 class TestTurnoJogador:
     def _inimigo(self, hp=7, ca=15) -> Inimigo:

@@ -3,29 +3,34 @@
     "Goblin": {
       "hp": 7, "ac": 15, "forca": 8, "destreza": 14,
       "ataque": "Cimitarra (+4 para acertar, 1d6+2 dano)",
-      "comportamento": "Covarde. Ataca e foge (Ação Ardilosa)."
+      "comportamento": "Covarde. Ataca e foge (Ação Ardilosa).",
+      "xp": 50
     },
     "Esqueleto": {
       "hp": 13, "ac": 13, "forca": 10, "destreza": 14,
       "ataque": "Espada Curta (+4 para acertar, 1d6+2 dano)",
-      "comportamento": "Mente vazia. Segue ordens até ser destruído."
+      "comportamento": "Mente vazia. Segue ordens até ser destruído.",
+      "xp": 50
     },
     "Lobo": {
       "hp": 11, "ac": 13, "forca": 12, "destreza": 15,
       "ataque": "Mordida (+4 para acertar, 2d4+2 dano)",
-      "comportamento": "Alcatéia. Ganha vantagem se tiver aliado perto."
+      "comportamento": "Alcatéia. Ganha vantagem se tiver aliado perto.",
+      "xp": 50
     },
     "Kobold": {
       "hp": 5, "ac": 12, "forca": 7, "destreza": 15,
       "ataque": "Adaga (+4 para acertar, 1d4+2 dano)",
-      "comportamento": "Ataca em grupo. Foge se estiver sozinho."
+      "comportamento": "Ataca em grupo. Foge se estiver sozinho.",
+      "xp": 25
     }
   },
   "Chefe": {
     "Bugbear": {
       "hp": 27, "ac": 16, "forca": 15, "destreza": 14,
       "ataque": "Maça Estrela (+4 para acertar, 2d8+2 dano)",
-      "comportamento": "Brutal. Tenta matar com um golpe surpresa."
+      "comportamento": "Brutal. Tenta matar com um golpe surpresa.",
+      "xp": 200
     }
   }
 }
