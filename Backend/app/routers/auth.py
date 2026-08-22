@@ -64,7 +64,11 @@ def registrar(request: Request, req: RegistrarRequest, response: Response, db: S
     db.commit()
     db.refresh(usuario)
     _setar_cookie_sessao(response, usuario.id)
-    _disparar_confirmacao(usuario.id, usuario.email)
+    # `req.email`, não `usuario.email`: o atributo do ORM continua tipado
+    # `str | None` (a coluna é nullable para convidado) mesmo já tendo
+    # acabado de receber um valor não-None no construtor — mypy não
+    # enxerga essa garantia através do SQLAlchemy.
+    _disparar_confirmacao(usuario.id, req.email)
     return {"email": usuario.email}
 
 
