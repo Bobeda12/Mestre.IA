@@ -36,6 +36,29 @@ jobs:
             --cov=app/domain --cov=app/services --cov=evals \
             --cov-report=term-missing --cov-fail-under=60
 
+  deploy-backend:
+    # Etapa 9 (ADR-0015): deploy automático no Fly.io a cada push em `main`
+    # que passar no job `backend` acima — não em PR (`needs` já garante que
+    # só roda depois dos testes, e a condição abaixo garante que só roda em
+    # push direto em `main`, nunca em pull_request). Pré-requisito: o
+    # secret `FLY_API_TOKEN` (token de deploy escopado ao app
+    # `mestre-ia-backend`, gerado com `fly tokens create deploy`).
+    needs: backend
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: Backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Deploy no Fly.io
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: flyctl deploy --remote-only
+
   avaliacao:
     # Etapa 6 (ADR-0011): gate de avaliação real contra a Groq — manual, não
     # em todo PR/push. A chave da Groq é compartilhada com os jogadores
