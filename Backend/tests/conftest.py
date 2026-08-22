@@ -25,16 +25,46 @@ os.environ["DATABASE_URL"] = f"sqlite:///{_tmp_db.as_posix()}"
 
 
 def pytest_configure(config):
-    from app.infra.db import Base, SessionLocal, engine, garantir_usuario_local
+    from app.infra.db import Base, engine
 
     Base.metadata.create_all(bind=engine)
-    # O TestClient só roda o lifespan (que faria isso) dentro de um `with`;
-    # os testes usam a forma direta, então garantimos aqui.
+
+
+@pytest.fixture(autouse=True)
+def _usuario_autenticado():
+    """A maioria dos testes (criação de personagem, chat, memória...) não é
+    sobre autenticação — não faz sentido repetir registro/login em cada um.
+    Por padrão, todo teste roda como um usuário já logado, via dependency
+    override do FastAPI. `tests/test_auth.py` é quem desliga isto
+    explicitamente, porque é o fluxo de login em si que ele testa."""
+    from app.infra.db import SessionLocal, Usuario
+    from app.main import app
+    from app.services.auth import get_current_user
+
     db = SessionLocal()
     try:
-        garantir_usuario_local(db)
+        usuario = db.query(Usuario).filter(Usuario.email == "teste@mestre.ia").first()
+        if usuario is None:
+            usuario = Usuario(email="teste@mestre.ia")
+            db.add(usuario)
+            db.commit()
+            db.refresh(usuario)
+        usuario_id = usuario.id
     finally:
         db.close()
+
+    def _usuario_atual() -> Usuario:
+        db2 = SessionLocal()
+        try:
+            usuario = db2.get(Usuario, usuario_id)
+            assert usuario is not None  # criado logo acima; só pode ter sumido se o teste apagou o banco
+            return usuario
+        finally:
+            db2.close()
+
+    app.dependency_overrides[get_current_user] = _usuario_atual
+    yield
+    app.dependency_overrides.pop(get_current_user, None)
 
 
 def _embedding_falso(texto: str) -> list[float]:

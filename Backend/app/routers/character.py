@@ -6,7 +6,8 @@ from sqlalchemy.orm import Session
 from app.domain.character import CharacterCreationRequest
 from app.domain.state import CombatState, QuestLog, WorldState
 from app.infra.data_manager import regras
-from app.infra.db import USUARIO_LOCAL_ID, Personagem, get_db
+from app.infra.db import Personagem, Usuario, get_db
+from app.services.auth import get_current_user
 from app.services.narrator import gerar_prologo_missao
 from app.services.rules_engine import calcular_modificador
 
@@ -14,7 +15,11 @@ router = APIRouter(tags=["character"])
 
 
 @router.post("/create_character")
-def create_character(char: CharacterCreationRequest, db: Session = Depends(get_db)) -> dict:
+def create_character(
+    char: CharacterCreationRequest,
+    current_user: Usuario = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
     d_classe = regras.get_class_details(char.classe)
     d_raca = regras.get_race_details(char.raca)
     if not d_classe:
@@ -58,7 +63,7 @@ def create_character(char: CharacterCreationRequest, db: Session = Depends(get_d
     quest_log = QuestLog(nome_missao=roteiro["nome_missao"], objetivo_missao=roteiro["objetivo_missao"])
 
     novo = Personagem(
-        usuario_id=USUARIO_LOCAL_ID,
+        usuario_id=current_user.id,
         session_id=session_id,
         nome=char.nome,
         raca=char.raca,

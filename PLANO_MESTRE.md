@@ -160,7 +160,7 @@ Esta seção vale tanto quanto a de cima. Numa entrevista, saber justificar o qu
 - **LangChain / LlamaIndex.** Escondem exatamente as três coisas que o projeto existe para demonstrar: a montagem do prompt, o loop de ferramentas e a recuperação de memória. Você viraria usuário de um framework em vez de autor de uma arquitetura. Reavaliar apenas se manter o código próprio virar gargalo real — e aí o ADR registra a virada.
 - **Banco vetorial dedicado (Pinecone, Qdrant, Weaviate).** `sqlite-vec` em desenvolvimento e `pgvector` no Neon cobrem folgadamente a escala deste projeto. Mais um serviço é mais um ponto de falha e mais uma conta.
 - **Redis.** Só entra quando houver necessidade concreta (rate limit distribuído ou cache semântico com múltiplas instâncias). Começa em memória.
-- **Serviço de autenticação gerenciado (Clerk, Auth0, Supabase Auth).** O projeto **tem** contas (decisão §9.1), mas com login por e-mail mágico implementado à mão: uma tabela de tokens de uso único e um cookie de sessão. São ~150 linhas contra uma dependência externa, um SDK no front e um provedor a mais no diagrama. Autenticação sem senha é justamente o caso em que rolar o próprio é defensável — não há hash de senha a errar. *(Se o produto um dia precisar de SSO corporativo ou MFA, esse cálculo se inverte, e o ADR-0014 registra o gatilho.)*
+- **Serviço de autenticação gerenciado (Clerk, Auth0, Supabase Auth).** O projeto **tem** contas (decisão §9.1), mas com login implementado à mão: senha com hash (PBKDF2) e Google OAuth opcional, mais um cookie de sessão assinado. É pequeno o bastante (algumas centenas de linhas) contra uma dependência externa, um SDK no front e um provedor a mais no diagrama. *(Se o produto um dia precisar de SSO corporativo ou MFA, esse cálculo se inverte, e o ADR-0014 registra o gatilho. A versão inicial desta decisão cogitou login sem senha — e-mail mágico — mas o usuário preferiu o padrão mais familiar; ver ADR-0014.)*
 - **Kubernetes, microserviços, filas.** Não. Um monólito bem estruturado é a arquitetura correta para este tamanho, e saber disso é a competência.
 - **WebSocket.** SSE resolve streaming unidirecional com muito menos complexidade. O ADR-0012 vai registrar a comparação.
 
@@ -458,17 +458,16 @@ backend/
 **Por que agora:** o schema já comporta contas desde a Etapa 2 (decisão §9.1) — falta a autenticação e a tela. Fazer isto antes do deploy é deliberado: **é muito mais barato depurar login em localhost do que em produção**, e o deploy da Etapa 9 já sobe com o produto completo.
 
 **O que muda:**
-- **Login por e-mail mágico** (link de uso único, sem senha). Sem senha significa: sem hash, sem "esqueci minha senha", sem vazamento de credencial. Menos código e menos superfície de ataque — o argumento de segurança e o de esforço apontam para o mesmo lado.
+- **Login por e-mail e senha, com Google OAuth opcional.** *(A primeira versão implementada foi e-mail mágico, seguindo o argumento original abaixo; revisado ao vivo com o usuário, que preferiu o padrão mais familiar — ver ADR-0014 e `docs/diario/0009-etapa-8.md`.)* Senha com PBKDF2 (stdlib — `bcrypt`/`argon2` não puderam ser instalados sem rede na sessão que implementou isto). Google via *authorization code flow*, botão condicional a `GOOGLE_CLIENT_ID`/`SECRET` configurados.
 - Sessão em **cookie `httpOnly` + `SameSite`**, não token no `localStorage` (que é legível por qualquer XSS)
 - O `localStorage` como fonte de saves **morre**. Hoje ele é a fonte de verdade da lista de heróis (`Home.tsx:27`) e da CA — o servidor passa a ser dono dos dois.
 - Tela "Meus heróis": lista, criar, continuar, arquivar
 - Autorização em toda rota: um `personagem_id` só responde ao dono. **Isto precisa de teste** — é a falha de segurança nº 1 em API de portfólio (IDOR: trocar o id na URL e ler o personagem de outra pessoa).
-- Envio de e-mail: Resend ou Postmark (free tier)
 
-**Tecnologia nova:** autenticação sem senha, cookies de sessão seguros, autorização por recurso, envio transacional de e-mail
+**Tecnologia nova:** hash de senha (PBKDF2), OAuth 2.0 (*authorization code flow*), cookies de sessão seguros, autorização por recurso
 
 **Documentos:**
-- `ADR-0014` — autenticação por e-mail mágico em vez de senha ou OAuth
+- `ADR-0014` — login por senha (PBKDF2) com Google OAuth opcional; cookie de sessão assinado à mão
 - `Lição 09` — sessão, cookie e token: quem guarda o quê, e por que `localStorage` é o lugar errado
 - `docs/diario/0009-etapa-8.md`
 

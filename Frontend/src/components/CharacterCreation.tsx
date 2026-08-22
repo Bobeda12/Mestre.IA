@@ -5,6 +5,7 @@ import {
   Minus, Plus, Heart, Scroll, User, Zap, Edit2
 } from 'lucide-react';
 import { api } from '../lib/api';
+import { getLocalImage } from '../lib/utils';
 
 interface CharacterCreationProps {
   onCharacterCreated?: (sessionId: string) => void; // Opcional agora
@@ -15,7 +16,6 @@ const formatAttribute = (key: string) => {
     const map: Record<string, string> = { "forca": "FOR", "destreza": "DES", "constituicao": "CON", "inteligencia": "INT", "sabedoria": "SAB", "carisma": "CAR", "livre_escolha": "LIVRE" };
     return map[key] || key.substring(0,3).toUpperCase();
 };
-const getLocalImage = (type: 'classes' | 'races', name: string) => `/assets/${type}/${name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, '-')}.jpg`;
 const getPointCost = (score: number) => { if (score <= 8) return 0; const costs: Record<number, number> = {9:1, 10:2, 11:3, 12:4, 13:5, 14:7, 15:9}; return costs[score] || 99; };
 
 export default function CharacterCreation({ onCharacterCreated }: CharacterCreationProps) {
@@ -132,24 +132,9 @@ export default function CharacterCreation({ onCharacterCreated }: CharacterCreat
       const sessionId = res.data.session_id;
       if (onCharacterCreated) onCharacterCreated(sessionId);
 
+      // Etapa 8: a lista de heróis (Home.tsx) vem do servidor via
+      // GET /personagens — não existe mais save local pra escrever aqui.
       const imageToSend = finalImageUrl || getLocalImage('classes', selectedClass);
-
-      // Salva no LocalStorage só como índice para a tela inicial listar os
-      // heróis — HP, defesa e atributos de verdade vivem no servidor.
-      const saveInfo = {
-          id: sessionId,
-          name: name,
-          race: selectedRace,
-          class: selectedClass,
-          image: imageToSend,
-          maxHp: res.data.hp_max,
-          defense: res.data.defesa,
-          date: new Date().toLocaleDateString()
-      };
-
-      const existingSaves = JSON.parse(localStorage.getItem('mestre_ia_saves') || '[]');
-      localStorage.setItem('mestre_ia_saves', JSON.stringify([saveInfo, ...existingSaves]));
-
       navigate(`/jogar/${sessionId}`, { state: { charImage: imageToSend } });
 
     } catch (err: any) {

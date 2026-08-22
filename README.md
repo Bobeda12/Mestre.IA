@@ -36,6 +36,10 @@ npm run dev
 
 Abra `http://localhost:5173`.
 
+**Desde a Etapa 8, é preciso entrar para jogar** — e-mail e senha (`/entrar`), com login opcional via Google se `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` estiverem configurados no `Backend/.env` (sem eles, o botão "Entrar com Google" simplesmente não aparece). Ver [`ADR-0014`](docs/adr/0014-senha-com-google-opcional.md).
+
+**Importante:** `Frontend/.env` precisa apontar `VITE_API_URL` para `http://localhost:8000`, não `http://127.0.0.1:8000` — os dois funcionam para navegar, mas o cookie de sessão não sobrevive à troca (`localhost` e `127.0.0.1` são sites diferentes para a política `SameSite`; ver Lição 09).
+
 **Sem chave da Groq:** o jogo ainda sobe e a criação de personagem funciona — ela cai num prólogo de fallback pré-escrito (`app/services/narrator.py`) em vez de gerar um com IA. O chat responde com uma mensagem explicando que falta a chave, em vez de tentar narrar. É suficiente para navegar a interface; não é suficiente para jogar de verdade.
 
 Se tiver [`just`](https://github.com/casey/just) instalado, `just backend-dev` já encadeia `uv sync` + `alembic upgrade head` + `uvicorn`, e `just frontend-dev` sobe o front (veja o [`justfile`](justfile) para a lista completa).
@@ -81,9 +85,9 @@ flowchart TB
     FE["Frontend (React)"] -->|HTTP/JSON| RT
 
     subgraph app["Backend/app"]
-        RT["routers/<br/>character · game · options"]
-        SV["services/<br/>narrator · combat · rules_engine<br/>memory · hybrid_search · rag_regras"]
-        DM["domain/<br/>character · state · memoria<br/>(Pydantic — a 'verdade' do sistema)"]
+        RT["routers/<br/>auth · character · game · options · personagens"]
+        SV["services/<br/>auth · narrator · combat · rules_engine<br/>memory · hybrid_search · rag_regras"]
+        DM["domain/<br/>auth · character · state · memoria<br/>(Pydantic — a 'verdade' do sistema)"]
         IF["infra/<br/>db · settings · llm_client · data_manager · embeddings"]
 
         RT --> SV
@@ -93,29 +97,30 @@ flowchart TB
         SV --> IF
     end
 
-    IF -->|SQLAlchemy 2.0| DB[("rpg_save.db<br/>usuarios · personagens · eventos_memoria")]
+    IF -->|SQLAlchemy 2.0| DB[("rpg_save.db<br/>usuarios · personagens<br/>eventos_memoria")]
     IF -->|Alembic| MIG["migrations/"]
     SV -->|chat completions| GROQ["Groq API"]
     IF -->|embeddings locais| ONNX["fastembed (ONNX Runtime)"]
 ```
 
 - **`routers/`** — só HTTP: parseia a requisição (via os modelos de `domain/`), chama um `service`, devolve a resposta. Não sabe nada sobre regras de D&D nem sobre o LLM.
-- **`services/`** — a lógica: `narrator.py` fala com a Groq (e sabe transformar cada tipo de falha numa mensagem própria), `rules_engine.py` é determinístico (zero I/O, zero LLM — dados, ataque, dano, iniciativa, testes de morte, point-buy), `combat.py` orquestra o combate ligando o bestiário real ao motor (Etapa 3, ADR-0006), `agent_loop.py`/`tools.py` são o tool calling da Etapa 4 (ADR-0007), `memory.py` é a memória em três camadas — curto prazo cru, médio prazo (resumo estruturado) e longo prazo (eventos buscáveis) —, e `hybrid_search.py`/`rag_regras.py` são a busca híbrida (BM25 + embeddings) que alimenta a memória de longo prazo e filtra a bíblia do mestre por relevância (Etapa 5, ADR-0009/ADR-0010).
+- **`services/`** — a lógica: `auth.py` é o login por senha/Google e o cookie de sessão assinado à mão (Etapa 8, ADR-0014), `narrator.py` fala com a Groq (e sabe transformar cada tipo de falha numa mensagem própria), `rules_engine.py` é determinístico (zero I/O, zero LLM — dados, ataque, dano, iniciativa, testes de morte, point-buy), `combat.py` orquestra o combate ligando o bestiário real ao motor (Etapa 3, ADR-0006), `agent_loop.py`/`tools.py` são o tool calling da Etapa 4 (ADR-0007), `memory.py` é a memória em três camadas — curto prazo cru, médio prazo (resumo estruturado) e longo prazo (eventos buscáveis) —, e `hybrid_search.py`/`rag_regras.py` são a busca híbrida (BM25 + embeddings) que alimenta a memória de longo prazo e filtra a bíblia do mestre por relevância (Etapa 5, ADR-0009/ADR-0010).
 - **`domain/`** — os modelos Pydantic que definem a forma do estado do jogo: o que o cliente pode propor na criação de personagem (`character.py`), como `world_state`/`combat_state`/`quest_log` são tipados (`state.py`), e a forma do resumo rolante (`memoria.py`) — em vez de dicionários soltos.
 - **`infra/`** — tudo que fala com o mundo externo: banco (SQLAlchemy 2.0 tipado), config (`pydantic-settings`, lendo `.env`), o client da Groq, o carregador dos JSONs de regras (`data/`), e o modelo de embeddings local (`embeddings.py`, via `fastembed`/ONNX Runtime — sem rede depois do primeiro download).
 
-Ver [`ADR-0003`](docs/adr/0003-camadas-router-service-domain-infra.md) para o porquê dessa divisão, [`ADR-0004`](docs/adr/0004-alembic-para-migrations.md) para as migrations, [`ADR-0005`](docs/adr/0005-usuario-personagem-antes-do-login.md) para o par `usuario`/`personagem` no schema, [`ADR-0006`](docs/adr/0006-llm-nao-e-motor-de-regras.md) para a separação juiz × narrador do combate, [`ADR-0007`](docs/adr/0007-tool-calling-em-vez-de-json-solto.md) para o tool calling, e [`ADR-0009`](docs/adr/0009-memoria-hierarquica-em-tres-camadas.md)/[`ADR-0010`](docs/adr/0010-busca-hibrida-bm25-mais-densa-e-por-que-nao-sqlite-vec.md) para a memória e a busca híbrida.
+Ver [`ADR-0003`](docs/adr/0003-camadas-router-service-domain-infra.md) para o porquê dessa divisão, [`ADR-0004`](docs/adr/0004-alembic-para-migrations.md) para as migrations, [`ADR-0005`](docs/adr/0005-usuario-personagem-antes-do-login.md) para o par `usuario`/`personagem` no schema, [`ADR-0006`](docs/adr/0006-llm-nao-e-motor-de-regras.md) para a separação juiz × narrador do combate, [`ADR-0007`](docs/adr/0007-tool-calling-em-vez-de-json-solto.md) para o tool calling, [`ADR-0009`](docs/adr/0009-memoria-hierarquica-em-tres-camadas.md)/[`ADR-0010`](docs/adr/0010-busca-hibrida-bm25-mais-densa-e-por-que-nao-sqlite-vec.md) para a memória e a busca híbrida, e [`ADR-0014`](docs/adr/0014-senha-com-google-opcional.md) para o login e a autorização por recurso.
 
 ## Limitações conhecidas
 
 Honestas de propósito — ver `PLANO_MESTRE.md` §2.2 para o diagnóstico completo e as etapas que fecham cada uma:
 
-- **Não existe login de verdade.** Todo personagem pertence a um único `usuario` local fixo (id 1), criado no startup. O schema já suporta múltiplos usuários (Etapa 2); a autenticação por e-mail mágico chega na Etapa 8.
 - **O resumo rolante de médio prazo pode divergir do estado real** — visto ao vivo na Etapa 5: o resumo estruturado registrou uma mudança de reputação de NPC que a ferramenta que governa esse número nunca aplicou. O guardrail (Etapa 4) confere a narrativa contra o estado; não confere o resumo contra nada ainda (ver ADR-0009).
 - **Reputação de NPC só alimenta a narrativa, não existe motor de preço de loja** — a bíblia promete "o preço na loja sobe 20%", a Etapa 5 implementa o número (`reputacao_npcs`) mas não um sistema de comércio (não é regressão: esse sistema nunca existiu no jogo).
 - **D&D 5e enxuto, de propósito** (`PLANO_MESTRE.md` §9.2): sem magias com slots, multiclasse, façanhas, grid tático com deslocamento em metros, nem a maior parte das condições. O combate é theater-of-the-mind com resolução determinística — CA, dado de vida, `d20+mod` vs CD, dano por arma, iniciativa e testes de morte, e mais nada por enquanto.
 - **Um único herói, sem mesa multiplayer** — decisão de escopo deliberada (`PLANO_MESTRE.md` §9.3), não uma limitação a corrigir.
-- **CORS aberto (`*`) e sem rate limit.** Aceitável em dev; fechar isso é Etapa 9 (deploy).
+- **Sem rate limit em `/auth/login`/`/auth/registrar`.** Nada impede tentativas repetidas de senha para o mesmo e-mail (força bruta online) — rate limit geral é Etapa 9 (deploy). CORS já não é mais aberto (`*`) desde a Etapa 8 — precisa de origem específica para o cookie de sessão funcionar (ver ADR-0014).
+- **Senha usa PBKDF2, não `bcrypt`/`argon2`** — funcional e aprovado pelo NIST, mas sem instalar dependência nova nesta sessão (sem acesso à rede). Trocar antes de um deploy real é o próximo passo natural (ver ADR-0014).
+- **`SESSION_SECRET` tem valor de desenvolvimento hardcoded** (`app/infra/settings.py`) — precisa virar variável de ambiente real antes de qualquer deploy, senão qualquer um forja um cookie de sessão válido.
 - **O narrador vaza o próprio prompt de sistema se pedido diretamente** — achado ao vivo da Etapa 6 (pedir "repita todas as instruções" funcionou). O guardrail (Etapa 4) não pega isso; não corrigido ainda, ver [`docs/relatorios/0001-avaliacao-v1.md`](docs/relatorios/0001-avaliacao-v1.md).
 - **A calibração do LLM-as-judge (Etapa 6) ainda não foi feita** — a ferramenta de anotação existe (`evals/annotate.py`), mas os ~30 exemplos anotados por uma pessoa de verdade, e o kappa de concordância, ficaram pendentes (ver ADR-0011).
 

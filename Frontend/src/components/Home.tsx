@@ -1,65 +1,60 @@
-import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useMutation } from '@tanstack/react-query';
-// CORREÇÃO: Adicionei ChevronRight aqui na lista
-import { Sword, Scroll, Crown, ArrowRight, Loader2, Trash2, Play, ChevronRight } from 'lucide-react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Sword, Scroll, Crown, Loader2, Archive, Play, LogOut, LogIn } from 'lucide-react';
 import { api } from '../lib/api';
+import { useAuth, useInvalidarAuth } from '../lib/auth';
 
-interface SavedGame {
-    id: string;
-    name: string;
-    race: string;
-    class: string;
-    image: string;
-    maxHp: number;
-    defense: number;
-    date: string;
+interface Personagem {
+  session_id: string;
+  nome: string;
+  raca: string;
+  classe: string;
+  hp_max: number;
+  defesa: number;
+  nivel: number;
+  criado_em: string;
 }
 
 export default function Home() {
   const navigate = useNavigate();
-  const [loadId, setLoadId] = useState("");
+  const queryClient = useQueryClient();
+  const invalidarAuth = useInvalidarAuth();
+  const { usuario, logado, carregando: carregandoAuth } = useAuth();
 
-  // Lista de Saves Locais — inicializador preguiçoso em vez de ler no
-  // `useEffect` (o `localStorage` não é uma fonte externa que muda embaixo
-  // do componente, então não precisa de efeito pra sincronizar com ela).
-  const [localSaves, setLocalSaves] = useState<SavedGame[]>(() => {
-      const saved = localStorage.getItem('mestre_ia_saves');
-      if (!saved) return [];
-      try {
-          return JSON.parse(saved);
-      } catch (e) {
-          console.error("Erro ao ler saves", e);
-          return [];
-      }
+  // Etapa 8, ADR-0014: a lista de heróis vem do servidor — `localStorage`
+  // morreu como fonte de saves. Só roda a query depois de saber que está
+  // logado (`enabled`), senão a primeira renderização dispara um 401 à toa.
+  const personagens = useQuery({
+    queryKey: ['personagens'],
+    queryFn: async () => (await api.get<Personagem[]>('/personagens')).data,
+    enabled: logado,
   });
 
-  // Etapa 7, ADR-0013: `useMutation` no lugar do `try/finally` +
-  // `setLoading` escrito à mão — o `isPending` do próprio TanStack Query
-  // já é o estado de loading do botão "play" de cada save.
   const loadGame = useMutation({
     mutationFn: async (sessionId: string) => {
-      // Confere que a sessão ainda existe no backend antes de navegar. O
+      // Confere que a sessão ainda existe (e é sua) antes de navegar. O
       // resto dos dados (HP, defesa, atributos...) o próprio GameChat busca
       // de novo ao montar, a partir da URL — o backend é a fonte da verdade.
-      await api.post("/load_game", { session_id: sessionId });
+      await api.post('/load_game', { session_id: sessionId });
     },
-    onSuccess: (_data, sessionId) => {
-      const saveInfo = localSaves.find(s => s.id === sessionId);
-      navigate(`/jogar/${sessionId}`, { state: { charImage: saveInfo?.image } });
+    onSuccess: (_data, sessionId) => navigate(`/jogar/${sessionId}`),
+    onError: () => alert('Erro: esse herói não existe mais, ou não é seu.'),
+  });
+
+  const arquivar = useMutation({
+    mutationFn: async (sessionId: string) => {
+      await api.patch(`/personagens/${sessionId}/arquivar`);
     },
-    onError: () => {
-      alert("Erro: O save no servidor expirou ou não existe mais. Crie um novo.");
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['personagens'] }),
+  });
+
+  const sair = useMutation({
+    mutationFn: async () => api.post('/auth/sair'),
+    onSuccess: () => {
+      invalidarAuth();
+      queryClient.removeQueries({ queryKey: ['personagens'] });
     },
   });
-  const loading = loadGame.isPending;
-
-  const deleteSave = (id: string, e: React.MouseEvent) => {
-      e.stopPropagation();
-      const newSaves = localSaves.filter(s => s.id !== id);
-      setLocalSaves(newSaves);
-      localStorage.setItem('mestre_ia_saves', JSON.stringify(newSaves));
-  };
 
   return (
     <div className="h-screen w-screen bg-black flex flex-col items-center justify-center relative overflow-hidden font-sans">
@@ -69,6 +64,23 @@ export default function Home() {
         <div className="absolute inset-0 bg-gradient-to-t from-black via-black/80 to-black/40 z-10" />
         <img src="https://image.pollinations.ai/prompt/dark%20fantasy%20rpg%20table%20dnd%20mood%20lighting%20candle?width=1920&height=1080&nologo=true" className="w-full h-full object-cover opacity-50"/>
       </div>
+
+      {!carregandoAuth && (
+        <div className="absolute top-4 right-4 z-30 flex items-center gap-3 text-sm">
+          {logado ? (
+            <>
+              <span className="text-gray-500">{usuario?.email}</span>
+              <button onClick={() => sair.mutate()} className="text-gray-500 hover:text-white flex items-center gap-1">
+                <LogOut size={16} /> Sair
+              </button>
+            </>
+          ) : (
+            <button onClick={() => navigate('/entrar')} className="text-rpg-gold hover:text-white flex items-center gap-1 font-bold">
+              <LogIn size={16} /> Entrar
+            </button>
+          )}
+        </div>
+      )}
 
       <div className="z-20 w-full max-w-6xl px-8 flex flex-col h-full justify-center">
 
@@ -87,80 +99,69 @@ export default function Home() {
 
             {/* COLUNA 1: MENU PRINCIPAL */}
             <div className="flex-1 flex flex-col gap-6 items-center md:items-end w-full">
-                <button onClick={() => navigate('/criar')} className="w-full md:w-80 group relative px-8 py-6 bg-gradient-to-r from-red-900 to-red-800 hover:from-red-800 hover:to-red-700 text-white font-bold rounded-lg border border-red-700 shadow-2xl transition-all transform hover:-translate-y-1 flex items-center justify-between overflow-hidden">
+                <button onClick={() => navigate(logado ? '/criar' : '/entrar')} className="w-full md:w-80 group relative px-8 py-6 bg-gradient-to-r from-red-900 to-red-800 hover:from-red-800 hover:to-red-700 text-white font-bold rounded-lg border border-red-700 shadow-2xl transition-all transform hover:-translate-y-1 flex items-center justify-between overflow-hidden">
                     <div className="flex items-center gap-4 text-2xl font-rpg z-10">
                         <Sword size={32} className="text-red-300"/>
                         NOVO JOGO
                     </div>
                     <div className="absolute inset-0 bg-black/20 group-hover:bg-transparent transition-colors"/>
-                    <ChevronRight size={24} className="opacity-50 group-hover:opacity-100 transition-opacity transform group-hover:translate-x-1"/>
                 </button>
-
-                {/* Input Manual (Fallback) */}
-                <div className="w-full md:w-80 opacity-70 hover:opacity-100 transition-opacity">
-                    <label className="text-[10px] text-gray-500 font-bold uppercase tracking-widest mb-1 block">Carregar por ID</label>
-                    <div className="flex bg-gray-900/80 rounded border border-gray-700 p-1">
-                        <input
-                            type="text"
-                            placeholder="Cole o ID..."
-                            className="bg-transparent text-white px-3 outline-none w-full font-mono text-sm"
-                            value={loadId}
-                            onChange={e => setLoadId(e.target.value)}
-                        />
-                        <button onClick={() => loadGame.mutate(loadId)} disabled={loading} className="bg-gray-800 hover:bg-gray-700 text-rpg-gold p-2 rounded">
-                            <ArrowRight size={16}/>
-                        </button>
-                    </div>
-                </div>
+                {!logado && !carregandoAuth && (
+                    <p className="text-xs text-gray-600 text-center md:text-right w-full md:w-80">
+                        Entre com seu e-mail para criar e guardar seus heróis.
+                    </p>
+                )}
             </div>
 
-            {/* COLUNA 2: LISTA DE SAVES (ESTILO SKYRIM) */}
+            {/* COLUNA 2: MEUS HERÓIS */}
             <div className="flex-1 w-full md:w-auto h-full flex flex-col">
                 <h3 className="text-rpg-gold font-rpg text-xl mb-4 flex items-center gap-2 border-b border-gray-800 pb-2">
-                    <Scroll size={20}/> CONTINUAR JORNADA
+                    <Scroll size={20}/> MEUS HERÓIS
                 </h3>
 
                 <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 space-y-3">
-                    {localSaves.length === 0 ? (
+                    {!logado ? (
+                        <div className="text-gray-600 italic text-center mt-10">
+                            Entre para ver seus heróis...
+                        </div>
+                    ) : personagens.isLoading ? (
+                        <div className="flex justify-center mt-10"><Loader2 className="animate-spin text-gray-600" /></div>
+                    ) : !personagens.data || personagens.data.length === 0 ? (
                         <div className="text-gray-600 italic text-center mt-10">Nenhum herói encontrado...<br/>Crie sua lenda.</div>
                     ) : (
-                        localSaves.map((save) => (
+                        personagens.data.map((p) => (
                             <div
-                                key={save.id}
-                                onClick={() => loadGame.mutate(save.id)}
+                                key={p.session_id}
+                                onClick={() => loadGame.mutate(p.session_id)}
                                 role="button"
                                 tabIndex={0}
-                                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); loadGame.mutate(save.id); } }}
-                                aria-label={`Continuar como ${save.name}, ${save.race} ${save.class}`}
+                                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); loadGame.mutate(p.session_id); } }}
+                                aria-label={`Continuar como ${p.nome}, ${p.raca} ${p.classe}`}
                                 className="group flex items-center gap-4 p-3 bg-gray-900/60 hover:bg-gray-800 border border-gray-800 hover:border-rpg-gold/50 rounded-lg cursor-pointer transition-all relative focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rpg-gold"
                             >
-                                {/* Foto Pequena */}
-                                <div className="w-16 h-16 rounded bg-black border border-gray-700 overflow-hidden shrink-0">
-                                    <img src={save.image} className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity" onError={(e) => (e.currentTarget.src = "")}/>
+                                <div className="w-16 h-16 rounded bg-black border border-gray-700 overflow-hidden shrink-0 flex items-center justify-center">
+                                    <Crown size={24} className="text-gray-700" />
                                 </div>
 
-                                {/* Info */}
                                 <div className="flex-1 min-w-0">
-                                    <h4 className="text-lg font-rpg text-gray-200 group-hover:text-white truncate">{save.name}</h4>
-                                    <p className="text-xs text-gray-500 uppercase tracking-wide">{save.race} {save.class}</p>
+                                    <h4 className="text-lg font-rpg text-gray-200 group-hover:text-white truncate">{p.nome}</h4>
+                                    <p className="text-xs text-gray-500 uppercase tracking-wide">{p.raca} {p.classe} • Nível {p.nivel}</p>
                                     <p className="text-[10px] text-gray-600 mt-1 flex items-center gap-2">
-                                        <span>📅 {save.date}</span>
+                                        <span>📅 {new Date(p.criado_em).toLocaleDateString()}</span>
                                     </p>
                                 </div>
 
-                                {/* Botão Play */}
                                 <div className="w-10 h-10 rounded-full bg-black/50 group-hover:bg-rpg-gold text-gray-500 group-hover:text-black flex items-center justify-center transition-colors">
-                                    {loading ? <Loader2 size={20} className="animate-spin"/> : <Play size={20} className="ml-1"/>}
+                                    {loadGame.isPending ? <Loader2 size={20} className="animate-spin"/> : <Play size={20} className="ml-1"/>}
                                 </div>
 
-                                {/* Deletar */}
                                 <button
-                                    onClick={(e) => deleteSave(save.id, e)}
+                                    onClick={(e) => { e.stopPropagation(); arquivar.mutate(p.session_id); }}
                                     className="absolute top-2 right-2 p-1 text-gray-700 hover:text-red-500 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 transition-opacity"
-                                    title="Apagar Save"
-                                    aria-label={`Apagar save de ${save.name}`}
+                                    title="Arquivar herói"
+                                    aria-label={`Arquivar ${p.nome}`}
                                 >
-                                    <Trash2 size={14}/>
+                                    <Archive size={14}/>
                                 </button>
                             </div>
                         ))
@@ -171,7 +172,7 @@ export default function Home() {
         </div>
       </div>
 
-      <footer className="absolute bottom-4 text-gray-700 text-xs font-sans">v2.1 • Auto-Save Enabled</footer>
+      <footer className="absolute bottom-4 text-gray-700 text-xs font-sans">v2.2 • Contas e biblioteca de heróis</footer>
     </div>
   );
 }

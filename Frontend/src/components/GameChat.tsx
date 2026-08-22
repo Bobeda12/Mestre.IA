@@ -7,6 +7,7 @@ import {
 import { Progress } from './ui/progress';
 import { api, API_URL } from '../lib/api';
 import { postSse } from '../lib/sse';
+import { getLocalImage } from '../lib/utils';
 import RollCard, { type DadosRolagem } from './RollCard';
 
 type Message =
@@ -123,21 +124,16 @@ export default function GameChat() {
   });
 
   useEffect(() => {
-    if (!sessionId) return;
-    // Se não veio imagem pela navegação (ex: F5 na página), procura no
-    // índice local pelo id — é só decoração, não afeta o estado do jogo.
-    if (!charImageFromNav) {
-        const saves = JSON.parse(localStorage.getItem('mestre_ia_saves') || '[]');
-        const match = saves.find((s: any) => s.id === sessionId);
-        if (match?.image) setCharImage(match.image);
-    }
-  }, [sessionId, charImageFromNav]);
-
-  useEffect(() => {
     if (!cargaJogo) return;
     setCharName(cargaJogo.nome);
     setCharRace(cargaJogo.raca);
     setCharClass(cargaJogo.classe);
+    // Etapa 8: o retrato gerado por IA na criação não é persistido no
+    // servidor (não existe coluna de imagem em Personagem) — só chegava
+    // aqui via `location.state` (criação) ou, antes, via localStorage
+    // (agora extinto). Entrando por "continuar", cai no retrato genérico
+    // da classe em vez de ficar sem imagem nenhuma.
+    if (!charImageFromNav) setCharImage(getLocalImage('classes', cargaJogo.classe));
     setHpAtual(cargaJogo.hp_atual);
     setHpMax(cargaJogo.hp_max ?? 10);
     setDefesa(cargaJogo.defesa ?? null);
@@ -155,7 +151,7 @@ export default function GameChat() {
 
     if (cargaJogo.hp_atual <= 0) setGameOver(true);
     setMessages([{ kind: 'texto', role: 'assistant', content: `Conectado ao mundo. Local: ${cargaJogo.local}.` }]);
-  }, [cargaJogo]);
+  }, [cargaJogo, charImageFromNav]);
 
   const scrollToBottom = () => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); };
   useEffect(() => { scrollToBottom(); }, [messages]);

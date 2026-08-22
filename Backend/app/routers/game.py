@@ -9,10 +9,11 @@ from app.domain.character import LoadRequest, UserAction
 from app.domain.memoria import ResumoRolante
 from app.domain.state import CombatState, QuestLog, WorldState
 from app.infra.data_manager import regras
-from app.infra.db import Personagem, get_db
+from app.infra.db import Personagem, Usuario, get_db
 from app.infra.llm_client import ErroMestre, chamar_com_fallback
 from app.services import combat, memory, rag_regras, rules_engine
 from app.services.agent_loop import executar_turno, executar_turno_stream
+from app.services.auth import get_current_user
 from app.services.guardrail import corrigir_narrativa, validar_narrativa
 from app.services.memory import contexto_recente
 from app.services.narrator import montar_contexto
@@ -21,10 +22,15 @@ from app.services.tools import ToolExecutor
 router = APIRouter(tags=["game"])
 
 
-def _buscar_personagem(db: Session, session_id: str, mensagem_404: str) -> Personagem:
+def _buscar_personagem(db: Session, current_user: Usuario, session_id: str, mensagem_404: str) -> Personagem:
     heroi = db.query(Personagem).filter(Personagem.session_id == session_id).first()
     if heroi is None:
         raise HTTPException(status_code=404, detail=mensagem_404)
+    # IDOR (ver ADR-0014): o id está na URL/corpo do pedido, então qualquer
+    # um pode tentar adivinhar o session_id de outra pessoa. 403, não um
+    # 404 silencioso — o personagem existe, só não é deste usuário.
+    if heroi.usuario_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Este personagem não pertence a você.")
     return heroi
 
 
@@ -55,8 +61,10 @@ def regras_xp_proximo_nivel(nivel: int) -> int | None:
 
 
 @router.post("/load_game")
-def load_game(req: LoadRequest, db: Session = Depends(get_db)) -> dict:
-    heroi = _buscar_personagem(db, req.session_id, "Save não encontrado")
+def load_game(
+    req: LoadRequest, current_user: Usuario = Depends(get_current_user), db: Session = Depends(get_db)
+) -> dict:
+    heroi = _buscar_personagem(db, current_user, req.session_id, "Save não encontrado")
     c_state = CombatState.model_validate(heroi.combat_state or {})
     w_state = WorldState.model_validate(heroi.world_state or {})
     q_state = QuestLog.model_validate(heroi.quest_log or {})
@@ -68,8 +76,10 @@ def load_game(req: LoadRequest, db: Session = Depends(get_db)) -> dict:
 
 
 @router.post("/chat")
-async def chat_endpoint(user_input: UserAction, db: Session = Depends(get_db)) -> dict:
-    heroi = _buscar_personagem(db, user_input.session_id, "Sessão não encontrada.")
+async def chat_endpoint(
+    user_input: UserAction, current_user: Usuario = Depends(get_current_user), db: Session = Depends(get_db)
+) -> dict:
+    heroi = _buscar_personagem(db, current_user, user_input.session_id, "Sessão não encontrada.")
 
     w_state = WorldState.model_validate(heroi.world_state or {})
     c_state = CombatState.model_validate(heroi.combat_state or {})
@@ -161,7 +171,9 @@ def _sse(evento: str, dados: dict) -> str:
 
 
 @router.post("/chat/stream")
-def chat_stream_endpoint(user_input: UserAction, db: Session = Depends(get_db)) -> StreamingResponse:
+def chat_stream_endpoint(
+    user_input: UserAction, current_user: Usuario = Depends(get_current_user), db: Session = Depends(get_db)
+) -> StreamingResponse:
     """Versão em streaming de `/chat` (Etapa 7, ADR-0012) — mesma regra de
     jogo, mesma persistência, só a entrega ao cliente muda. Duplica a
     montagem de contexto de `chat_endpoint` de propósito: o plano desta
@@ -179,7 +191,7 @@ def chat_stream_endpoint(user_input: UserAction, db: Session = Depends(get_db)) 
     - `state`: sempre o último frame — o mesmo formato de `_resposta()`,
       pra o HUD atualizar HP/inventário/combate de uma vez.
     """
-    heroi = _buscar_personagem(db, user_input.session_id, "Sessão não encontrada.")
+    heroi = _buscar_personagem(db, current_user, user_input.session_id, "Sessão não encontrada.")
 
     w_state = WorldState.model_validate(heroi.world_state or {})
     c_state = CombatState.model_validate(heroi.combat_state or {})

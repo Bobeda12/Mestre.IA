@@ -1,15 +1,10 @@
 from collections.abc import Generator
 from datetime import UTC, datetime
 
-from sqlalchemy import JSON, ForeignKey, create_engine
+from sqlalchemy import JSON, ForeignKey, create_engine, func
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, relationship, sessionmaker
 
 from app.infra.settings import settings
-
-# Único usuário local, criado no startup (ver garantir_usuario_local). A
-# autenticação de verdade chega na Etapa 8 — até lá, todo personagem
-# pertence a este id. Ver ADR-0005.
-USUARIO_LOCAL_ID = 1
 
 
 class Base(DeclarativeBase):
@@ -21,6 +16,12 @@ class Usuario(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     email: Mapped[str | None] = mapped_column(unique=True, default=None)
+    # Nenhum dos dois é obrigatório sozinho: uma conta pode ter só senha, só
+    # Google, ou as duas (ver ADR-0014) — o que não pode é ter nenhuma.
+    senha_hash: Mapped[str | None] = mapped_column(default=None)
+    # `sub` do Google (identificador estável da conta, não muda se o e-mail
+    # mudar) — é o que liga um login OAuth a um Usuario, não o e-mail cru.
+    google_sub: Mapped[str | None] = mapped_column(unique=True, index=True, default=None)
     criado_em: Mapped[datetime] = mapped_column(default=lambda: datetime.now(UTC))
 
     personagens: Mapped[list["Personagem"]] = relationship(back_populates="usuario")
@@ -35,6 +36,13 @@ class Personagem(Base):
     # do front — não é mais a chave primária (ver ADR-0005), mas continua
     # existindo para não quebrar o contrato com o Frontend.
     session_id: Mapped[str] = mapped_column(unique=True, index=True)
+    criado_em: Mapped[datetime] = mapped_column(
+        default=lambda: datetime.now(UTC), server_default=func.now()
+    )
+    # Etapa 8: "arquivar" em vez de apagar — a tela "Meus heróis" some com o
+    # personagem sem destruir histórico/memória (evento_memoria continua
+    # apontando pra ele).
+    arquivado: Mapped[bool] = mapped_column(default=False, server_default="0")
 
     nome: Mapped[str]
     raca: Mapped[str]
@@ -109,9 +117,3 @@ def get_db() -> Generator[Session]:
         yield db
     finally:
         db.close()
-
-
-def garantir_usuario_local(db: Session) -> None:
-    if db.get(Usuario, USUARIO_LOCAL_ID) is None:
-        db.add(Usuario(id=USUARIO_LOCAL_ID))
-        db.commit()

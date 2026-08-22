@@ -22,8 +22,22 @@ class Settings(BaseSettings):
     modelos_fallback: list[str] = ["openai/gpt-oss-20b", "qwen/qwen3.6-27b"]
     agent_max_passos: int = 6
     database_url: str = f"sqlite:///{(BASE_DIR / 'rpg_save.db').as_posix()}"
-    cors_origins: list[str] = ["*"]
+    # Cookie de sessão exige uma origem específica — "*" e credentials são
+    # incompatíveis em qualquer navegador (ver ADR-0014). localhost:5173 é a
+    # porta padrão do `vite dev`.
+    cors_origins: list[str] = ["http://localhost:5173"]
     data_dir: Path = BASE_DIR / "data"
+
+    # Etapa 8 (ADR-0014) — login por senha e cookie de sessão.
+    session_secret: str = "dev-secret-troque-em-producao"
+    frontend_url: str = "http://localhost:5173"
+
+    # Login com Google (opcional) — sem estas duas, o botão "Entrar com
+    # Google" fica desabilitado no front (GET /auth/opcoes) em vez de
+    # quebrar. Criadas em https://console.cloud.google.com/apis/credentials.
+    google_client_id: str | None = None
+    google_client_secret: str | None = None
+    google_redirect_uri: str = "http://localhost:8000/auth/google/callback"
 
 
 settings = Settings()
