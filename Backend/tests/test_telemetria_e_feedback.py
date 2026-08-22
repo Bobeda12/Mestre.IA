@@ -68,7 +68,7 @@ def test_chat_registra_evento_turno(client, monkeypatch):
     _registrar(client, "telemetria-turno@teste.com")
     session_id = client.post("/create_character", json=_payload_base(nome="HeroiTurno")).json()["session_id"]
 
-    from app.infra import llm_client
+    from app.services import agent_loop
 
     class _RespostaFalsa:
         class _Choice:
@@ -78,7 +78,11 @@ def test_chat_registra_evento_turno(client, monkeypatch):
             message = _Msg()
         choices = [_Choice()]
 
-    monkeypatch.setattr(llm_client, "chamar_com_fallback", lambda *a, **k: _RespostaFalsa())
+    # `agent_loop` importa `chamar_com_fallback` com `from ... import` — o
+    # nome vive no NAMESPACE de `agent_loop`, não no de `llm_client`, depois
+    # do import. Substituir em `llm_client` não afeta quem `agent_loop`
+    # realmente chama (o mesmo padrão usado em tests/test_agent_loop.py).
+    monkeypatch.setattr(agent_loop, "chamar_com_fallback", lambda *a, **k: _RespostaFalsa())
 
     antes = len(_eventos_do_tipo("turno"))
     resp = client.post("/chat", json={"session_id": session_id, "action": "Eu observo o local."})
