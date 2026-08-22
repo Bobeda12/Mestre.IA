@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Lição 11 — Onde o tempo de um turno vai</title>
+<link rel="stylesheet" href="../assets/curso.css">
+</head>
+<body>
+<main class="page">
+
+<p class="kicker">Lição 11 · Mestre.IA</p>
+<h1>Onde o tempo de um turno vai — medir antes de mexer</h1>
+<p class="standfirst">O relato foi "ficou mais lento depois do deploy". Essa frase sozinha não diz o que consertar — podia ser a máquina do Fly.io acordando do zero, podia ser uma query que cresce com o tamanho da sessão, podia ser só a Groq mesmo. Esta lição é sobre como separar essas hipóteses com números reais em vez de achismo, e sobre um efeito colateral que não tinha nada a ver com o código: o Windows bloqueando o próprio ambiente de desenvolvimento.</p>
+<div class="tagline">
+  <span>~10 minutos</span>
+  <span>Arquivos: <code>Backend/app/infra/tracing.py</code> · <code>Backend/app/infra/embeddings.py</code> · <code>Backend/app/routers/game.py</code></span>
+  <span><a href="0010-do-localhost-a-internet.html">Lição 10 — do localhost à internet ↗</a></span>
+</div>
+
+<h2>Um turno não é uma coisa só — são quatro</h2>
+
+<p>"O turno demora" esconde que um turno de <code>/chat/stream</code> passa por pelo menos quatro fases com donos completamente diferentes: <b>recuperar memória</b> (uma query no banco + um embedding local), <b>montar o contexto</b> (RAG sobre a bíblia, também com embedding), <b>o laço do agente</b> (uma ou mais chamadas de verdade à Groq, ADR-0007) e <b>escrever de volta</b> (persistir o turno, atualizar o resumo rolante). O Langfuse (Etapa 9) já instrumenta a terceira — é uma trace por chamada real ao modelo. As outras três não apareciam em lugar nenhum.</p>
+
+<div class="note"><b>Por que isso importa antes de otimizar qualquer coisa</b>Sem saber qual fase pesa, "otimizar" vira chute — trocar de biblioteca, cachear algo, reescrever uma query, tudo com a mesma confiança e metade tendo zero efeito no número que o jogador sente. A Etapa 6 já tinha essa regra para qualidade (não confiar em "parece melhor"); a Etapa 10 aplica a mesma regra para performance.</div>
+
+<h2>Instrumentar sem instalar nada novo</h2>
+
+<p>A medição usa só <code>time.perf_counter()</code> e um <code>logger.info</code>, dentro de um <i>context manager</i> pequeno:</p>
+
+<pre><code># app/infra/tracing.py
+@contextmanager
+def medir(fase: str, **contexto: object) -> Iterator[None]:
+    inicio = time.perf_counter()
+    try:
+        yield
+    finally:
+        duracao_ms = (time.perf_counter() - inicio) * 1000
+        logger.info("latencia fase=%s duracao_ms=%.1f %s", fase, duracao_ms, contexto)</code></pre>
+
+<p>Diferença chave em relação ao Langfuse: <code>medir()</code> loga <b>sempre</b> — em produção e em dev, com ou sem conta configurada. Um `grep latencia` no log de produção já dá amostra suficiente para p50/p95 de verdade, sem precisar de outra ferramenta. Envolvendo a recuperação de memória e o laço do agente:</p>
+
+<pre><code>with medir("memoria", personagem_id=heroi.id, turno=w_state.turno):
+    memorias = memory.memorias_relevantes(db, heroi.id, user_input.action, w_state.turno)
+...
+with turno_span(...), medir("agente", personagem_id=heroi.id, turno=w_state.turno):
+    for evento in executar_turno_stream(msgs, executor):
+        ...</code></pre>
+
+<p>Cinco turnos reais (não mockados) contra a Groq deram: <code>memoria</code> p50 <b>58,8ms</b> / p95 <b>61ms</b> — <code>agente</code> p50 <b>2179ms</b> / p95 <b>5957ms</b>. A diferença de ordem de grandeza já responde a primeira pergunta: <b>o laço do agente domina o turno de longe</b>. Isso não é uma ineficiência do projeto para corrigir — é o custo real de estar chamando um LLM, possivelmente mais de uma vez por turno (uma ferramenta chamada = uma chamada nova ao modelo, ADR-0007). Nenhuma correção de código muda essa ordem de grandeza; só troca de modelo ou menos chamadas por turno mudariam.</p>
+
+<h2>Duas famílias de lentidão pedem duas provas diferentes</h2>
+
+<p>O relato "ficou mais lento depois do deploy" apontava para uma família específica: o que só existe em produção, porque só lá a máquina desliga sozinha (<code>min_machines_running = 0</code>, <code>fly.toml</code>) e reboota no próximo pedido. Não dá para medir <i>cold start</i> em <code>localhost</code> — a máquina de dev nunca desliga. A prova aqui teve que ser outra: <code>docker build</code> e <code>docker run</code> reais, olhando os logs, não um número de p50/p95.</p>
+
+<table>
+<tr><th>Onde mora</th><th>Como provar sem produção</th></tr>
+<tr><td>Boot da máquina (Família 1)</td><td><code>docker build</code>/<code>docker run</code> — provar que o trabalho saiu do caminho, não medir quanto ele custava antes</td></tr>
+<tr><td>Custo por turno (Família 2)</td><td><code>medir()</code> com turnos reais, em qualquer ambiente — <code>localhost</code> serve</td></tr>
+</table>
+
+<h2>Pagar o custo antes, não durante</h2>
+
+<p>O modelo de embedding (<code>fastembed</code>, usado pela memória de longo prazo e pelo RAG da bíblia) carregava <i>lazy</i> — na primeira vez que qualquer coisa precisasse dele. Numa máquina que acabou de ligar, essa "primeira vez" é dentro do turno de um jogador de verdade, baixando o modelo do HuggingFace ao vivo. A correção é um padrão que vale para qualquer custo de inicialização caro: <b>mover o carregamento para o boot, não para o primeiro uso</b> — um <code>lifespan</code> do FastAPI que roda antes do servidor aceitar qualquer pedido:</p>
+
+<pre><code># app/main.py
+@asynccontextmanager
+async def _lifespan(_app: FastAPI) -> AsyncIterator[None]:
+    embeddings.carregar_modelo()
+    yield
+
+app = FastAPI(title="Mestre.IA", lifespan=_lifespan)</code></pre>
+
+<p>Sozinho, isso só move <i>quando</i> o download acontece (ainda no boot, ainda lento) — não some com ele. A segunda metade é baixar o modelo <b>em build time</b>, dentro do <code>Dockerfile</code>, para o boot só ler do disco:</p>
+
+<pre><code># Dockerfile
+RUN uv run --no-dev python -c \
+  "from app.infra.embeddings import carregar_modelo; carregar_modelo()"</code></pre>
+
+<p>Com as duas peças juntas: build baixa uma vez por imagem (~15s, medido no <code>docker build</code> real), boot só carrega do cache (~1,1s, medido no log do <code>docker run</code>) — <b>nenhum jogador paga o download, nunca</b>.</p>
+
+<div class="warn"><b>Onde o cache mora importa</b><code>fastembed</code> usa <code>/tmp</code> por padrão. Alguns runtimes de container montam um <i>tmpfs</i> próprio por cima de <code>/tmp</code> — o que apagaria um cache baixado em build time antes do container sequer subir. A correção: <code>cache_dir</code> explícito dentro de <code>/app</code>, uma pasta comum da imagem, sem essa armadilha.</div>
+
+<h2>Mover trabalho para depois da resposta não é mentira sobre o total</h2>
+
+<p>Duas peças da escrita final — atualizar o resumo rolante (pode chamar o modelo de novo) e registrar o evento de memória (calcula um embedding) — aconteciam <b>antes</b> do jogador ver a resposta. O trabalho total não muda ao mover isso para depois; o que muda é <i>quem espera por ele</i>. Em <code>/chat</code> (que devolve uma resposta só), isso é literalmente o <code>BackgroundTasks</code> do FastAPI:</p>
+
+<pre><code>db.commit()
+background_tasks.add_task(_persistir_memoria_em_segundo_plano, heroi.id, ...)
+return _resposta(...)</code></pre>
+
+<p>Em <code>/chat/stream</code> a solução é diferente, e o motivo é interessante: a rota é <code>def</code>, não <code>async def</code> — devolve o <code>StreamingResponse</code> antes do <i>generator</i> sequer rodar, então não existe <code>BackgroundTasks</code> injetável ali dentro. O Starlette resolve isso com <code>background=</code> no próprio <code>Response</code>, que roda **depois que todo o corpo já foi entregue ao cliente**:</p>
+
+<pre><code>resultado_pos_stream: dict = {}
+
+def gerar():
+    ...
+    resultado_pos_stream.update(heroi_id=heroi.id, ...)
+    yield _sse("state", ...)   # o jogador já recebeu tudo neste ponto
+
+def _tarefa_pos_stream():
+    if resultado_pos_stream:
+        _persistir_memoria_em_segundo_plano(**resultado_pos_stream)
+
+return StreamingResponse(gerar(), background=BackgroundTask(_tarefa_pos_stream))</code></pre>
+
+<p>O dicionário mutável (<code>resultado_pos_stream</code>) é a ponte entre os dois escopos — o <i>generator</i> só sabe os valores finais no fim de si mesmo, e a tarefa de fundo só existe fora dele. E a tarefa usa uma <code>SessionLocal()</code> própria, não a sessão do pedido: pelo tempo em que ela roda, o pedido original já pode ter terminado de vez.</p>
+
+<h2>O achado que não tinha nada a ver com o código</h2>
+
+<p>Verificar os dois primeiros pontos exigia <code>docker build</code> de verdade — e o Docker Desktop desta máquina não subia, com um erro de socket interno (<code>"The file cannot be accessed by the system"</code>). A causa raiz, achada lendo o log de erro do próprio Docker: o <b>Acesso Controlado a Pastas</b> do Windows Defender bloqueando o Docker de gerenciar arquivos em <code>AppData\Local\Docker</code>. Depois de liberar o Docker Desktop nessa lista, o Docker voltou — mas o <code>python.exe</code> do ambiente virtual, que <b>não</b> estava na lista, passou a ser bloqueado de criar pastas novas dentro do projeto (que vive em <code>OneDrive\Documentos\...</code>, também protegido por padrão). <code>ruff</code>, <code>pytest</code> e o próprio <code>fastembed</code> pararam de conseguir criar suas pastas de cache — todos com o mesmo sintoma, todos resolvidos rodando sem cache ou apontando para uma pasta fora da árvore protegida.</p>
+
+<div class="note"><b>O mesmo padrão da Lição 10, de novo</b>Nenhum desses dois problemas (Docker, Acesso Controlado a Pastas) é bug de lógica — são a borda entre o código e o ambiente que o executa. <code>pytest</code>/<code>ruff</code>/<code>mypy</code> continuaram verdes o tempo inteiro; nada disso aparece rodando a suíte. Só apareceu tentando rodar a coisa de verdade contra um ambiente real — desta vez não era rede nem SDK, era o próprio sistema operacional decidindo, por segurança, que um processo não confiável não pode criar arquivo.</div>
+
+<h2>Teste rápido</h2>
+<p>Sem olhar para cima. O objetivo aqui é lembrar, não acertar de primeira.</p>
+
+<div id="quiz"></div>
+<p class="score" id="score"></p>
+
+<div class="next">
+  <h4>Fonte primária desta lição</h4>
+  <ul>
+    <li><a href="https://www.starlette.io/background/">Starlette — Background Tasks</a> — o mecanismo `background=` de `Response`, usado no `/chat/stream`.</li>
+    <li><a href="https://fastapi.tiangolo.com/advanced/events/">FastAPI — Lifespan Events</a> — carregar recursos caros no boot, não no primeiro pedido.</li>
+    <li><a href="https://learn.microsoft.com/en-us/microsoft-365/security/defender-endpoint/controlled-folders">Microsoft — Controlled folder access</a> — o mecanismo que bloqueou Docker e depois `python.exe`.</li>
+    <li><a href="../../docs/relatorios/0003-latencia.md">Relatório 0003</a> — os números completos, com a ressalva sobre o que ainda não foi medido em produção.</li>
+  </ul>
+  <div class="ask">Travou em algo, ou uma explicação ficou pela metade? Me pergunta — eu sou o seu professor aqui, e é melhor desentortar agora do que seguir com um modelo mental torto.</div>
+</div>
+
+</main>
+
+<script>
+const QUESTIONS = [
+ {q:"O relato era 'ficou mais lento depois do deploy'. Por que isso não dava para medir rodando `localhost`?",
+  o:["A família de lentidão suspeita (boot da máquina) só existe em produção — o Fly.io desliga a máquina quando ninguém joga (min_machines_running=0) e reboota no próximo pedido; localhost nunca desliga","localhost sempre é mais rápido que qualquer produção, não há o que medir","O Langfuse não funciona em localhost","O Python roda mais devagar em produção por padrão"], a:0,
+  fb:"Duas famílias de lentidão diferentes pedem duas provas diferentes — cold start só se prova com docker build/run reais, não com um número de p50/p95 local."},
+
+ {q:"Os cinco turnos reais mediram memória (p50 58,8ms) e o laço do agente (p50 2179ms). O que essa diferença de ordem de grandeza already responde?",
+  o:["O laço do agente (chamada real à Groq) domina o turno de longe — não é uma ineficiência do projeto para corrigir, é o custo real de estar chamando um LLM, possivelmente mais de uma vez por turno","A memória está mal otimizada e precisa de mais correção","Os números estão errados, deveriam ser parecidos","O agente deveria ser mais rápido que a memória"], a:0,
+  fb:"Nenhuma correção de código muda a ordem de grandeza da chamada ao modelo — só trocar de modelo ou reduzir chamadas por turno mudariam isso."},
+
+ {q:"Por que carregar o modelo de embedding no `lifespan` do FastAPI, sozinho, não bastava — precisou também baixar o modelo em build time no Dockerfile?",
+  o:["Sozinho, o lifespan só move QUANDO o download acontece (ainda no boot, ainda lento) — não elimina o download em si; baixar em build time é o que faz o boot virar só leitura de disco","O lifespan não funciona sem o Dockerfile","Baixar em build time é mais rápido que baixar no boot, na mesma rede","O FastAPI exige que todo modelo seja baixado em build time"], a:0,
+  fb:"As duas peças juntas: build baixa uma vez por imagem, boot só lê do cache — nenhum jogador paga o download, nunca."},
+
+ {q:"Por que o cache do modelo (`fastembed`) não podia ficar em `/tmp`, o default da biblioteca, dentro do container?",
+  o:["Alguns runtimes de container montam um tmpfs próprio por cima de /tmp, o que apagaria um cache baixado em build time antes do container sequer subir — um diretório comum da imagem (dentro de /app) não tem essa armadilha","/tmp não existe em containers Linux","/tmp é somente leitura em produção","O fastembed proíbe cache em /tmp por licença"], a:0,
+  fb:"O cache precisa sobreviver do build time até o runtime — uma pasta comum da imagem garante isso; /tmp pode ser um mount especial que não persiste."},
+
+ {q:"Em `/chat/stream`, por que mover a escrita de memória para 'depois' não usou `BackgroundTasks` (o jeito normal do FastAPI), e sim `background=` do próprio `StreamingResponse`?",
+  o:["A rota é `def`, não `async def` — devolve o StreamingResponse antes do generator sequer rodar, então BackgroundTasks não tem como ser injetado ali dentro; `background=` do Response roda depois que TODO o corpo já foi entregue ao cliente","BackgroundTasks não existe no Starlette, só no FastAPI","StreamingResponse não aceita BackgroundTasks por bug conhecido","Não tem diferença nenhuma entre os dois mecanismos"], a:0,
+  fb:"Duas ferramentas para o mesmo problema, escolhidas pela forma da rota — síncrona injeta BackgroundTasks; a que devolve uma Response de streaming usa o parâmetro do próprio Response."},
+
+ {q:"Depois de liberar o Docker Desktop no Acesso Controlado a Pastas do Windows, por que o `python.exe` do venv passou a falhar criando pastas de cache (ruff, pytest, fastembed)?",
+  o:["O Acesso Controlado a Pastas protege por aplicativo — liberar o Docker Desktop não libera outros processos; o python.exe continuou de fora da lista, então continuou bloqueado de criar arquivo/pasta nova dentro da árvore protegida (o projeto vive em OneDrive/Documentos)","Liberar um app sempre libera todos os outros automaticamente depois de um tempo","O Python foi desinstalado sem querer durante o processo","O antivírus detectou um vírus real no projeto"], a:0,
+  fb:"A permissão é por executável, não global — cada processo que precisa escrever na pasta protegida precisa da própria entrada na lista."},
+];
+
+let answered=0, right=0;
+const host=document.getElementById('quiz');
+QUESTIONS.forEach((item,i)=>{
+  const order=item.o.map((t,k)=>k);
+  for(let k=order.length-1;k>0;k--){const j=Math.floor(Math.random()*(k+1));[order[k],order[j]]=[order[j],order[k]];}
+  const el=document.createElement('div');
+  el.className='quiz';
+  el.innerHTML=`<p class="q">${i+1}. ${item.q}</p>
+    <div class="opts">${order.map(k=>`<button data-k="${k}">${item.o[k]}</button>`).join('')}</div>
+    <p class="fb">${item.fb}</p>`;
+  el.querySelectorAll('button').forEach(b=>{
+    b.addEventListener('click',()=>{
+      if(el.dataset.done) return;
+      el.dataset.done='1'; answered++;
+      const ok = Number(b.dataset.k)===item.a;
+      if(ok) right++;
+      el.querySelectorAll('button').forEach(x=>{
+        x.disabled=true;
+        if(Number(x.dataset.k)===item.a) x.classList.add('right');
+      });
+      if(!ok) b.classList.add('wrong');
+      el.querySelector('.fb').classList.add('on');
+      document.getElementById('score').textContent =
+        `${right} de ${answered} respondidas corretamente` +
+        (answered===QUESTIONS.length ? (right===QUESTIONS.length
+          ? " — você sabe defender essa fronteira." : " — reveja as perguntas que escaparam.") : "");
+    });
+  });
+  host.appendChild(el);
+});
+</script>
+
+</body>
+</html>

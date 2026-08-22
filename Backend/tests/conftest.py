@@ -45,7 +45,13 @@ def _usuario_autenticado():
     try:
         usuario = db.query(Usuario).filter(Usuario.email == "teste@mestre.ia").first()
         if usuario is None:
-            usuario = Usuario(email="teste@mestre.ia")
+            # `email_verificado=True`: a maioria dos testes não é sobre o
+            # fluxo de confirmação (Etapa 10, A-2) — tratar o usuário
+            # padrão como já confirmado evita que toda a suíte precise
+            # simular o e-mail pra passar do `get_current_verified_user`.
+            # `tests/test_confirmacao_email.py` testa o caso não-verificado
+            # à parte, com seu próprio usuário.
+            usuario = Usuario(email="teste@mestre.ia", email_verificado=True)
             db.add(usuario)
             db.commit()
             db.refresh(usuario)

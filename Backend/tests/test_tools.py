@@ -52,6 +52,15 @@ class TestRolarTeste:
         assert resultado["sucesso"] is True
         assert resultado["total"] == 15
 
+    def test_dados_estruturados_mostram_de_onde_vem_o_bonus(self):
+        # Etapa 11 (B-8): o card de rolagem precisa saber QUAL atributo
+        # gerou o bônus, não só o número somado.
+        executor = _executor(rng=RngFixo([14]))
+        executor.rolar_teste("destreza", 15)
+        [evento] = executor.eventos
+        assert evento.dados.atributo == "destreza"
+        assert evento.dados.partes_bonus == [{"rotulo": "Destreza", "valor": 1}]
+
 
 class TestAtacar:
     def _goblin(self, hp=7) -> Inimigo:
@@ -72,6 +81,20 @@ class TestAtacar:
         assert c_state.inimigos[0].hp == 1
         assert resultado["dano_recebido"] == 0
         assert any("ACERTO" in e for e in executor.eventos)
+
+    def test_dados_estruturados_mostram_arma_e_atributo_do_ataque(self):
+        # Etapa 11 (B-8): Cimitarra é "Sutil" — força(+2) vence destreza(+1)
+        # nesta ficha, então o card precisa apontar força, não destreza.
+        c_state = CombatState(ativo=True, inimigos=[self._goblin()])
+        executor = _executor(c_state=c_state, rng=RngFixo([15, 4, 1]))
+        executor.atacar("Goblin", "Cimitarra")
+        [evento_ataque, _contra_ataque] = executor.eventos
+        assert evento_ataque.dados.arma == "Cimitarra"
+        assert evento_ataque.dados.atributo == "forca"
+        assert evento_ataque.dados.partes_bonus == [
+            {"rotulo": "Força", "valor": 2},
+            {"rotulo": "Proficiência", "valor": 2},
+        ]
 
     def test_vitoria_encerra_o_combate(self):
         c_state = CombatState(ativo=True, inimigos=[self._goblin(hp=1)])
@@ -130,6 +153,20 @@ class TestAplicarDano:
         assert resultado["dano"] == 5
         assert goblin.hp == 2
 
+    def test_morte_do_inimigo_vira_evento_estruturado(self):
+        # Etapa 10 (A-7) — "💀 X cai morto" deixa de ser só texto solto:
+        # carrega um EventoStatus, mesmo padrão de card de DadosRolagem.
+        goblin = Inimigo(
+            nome="Goblin", hp=5, max_hp=7, ca=15, bonus_ataque=4, dano_dado="1d6+2", nome_ataque="Cimitarra"
+        )
+        c_state = CombatState(ativo=True, inimigos=[goblin])
+        executor = _executor(c_state=c_state, rng=RngFixo([6]))
+        executor.aplicar_dano("Goblin", "1d6", motivo="armadilha")
+        assert goblin.hp == 0
+        [_evento_dano, evento_morte] = executor.eventos
+        assert evento_morte.dados.tipo == "morte_inimigo"
+        assert evento_morte.dados.quem == "Goblin"
+
 
 class TestMover:
     def test_destino_valido_atualiza_local(self):
@@ -172,6 +209,16 @@ class TestUsarItem:
         assert resultado["cura"] == 8  # 2d4+2 com d4=3,3
         assert heroi.hp_atual == 10  # capado no hp_max
         assert "Poção de Cura" not in heroi.inventario
+
+    def test_pocao_de_cura_vira_evento_estruturado(self):
+        # Etapa 10 (A-7) — deixa de ser só "🧪 ..." em texto solto.
+        heroi = _heroi(hp_atual=5, hp_max=10, inventario=["Poção de Cura"])
+        executor = _executor(heroi=heroi, rng=RngFixo([3, 3]))
+        executor.usar_item("Poção de Cura")
+        [evento] = executor.eventos
+        assert evento.dados.tipo == "cura"
+        assert evento.dados.quem == "heroi"
+        assert evento.dados.valor == 8
 
     def test_item_sem_efeito_conhecido_so_confirma_posse(self):
         heroi = _heroi(inventario=["Tocha"])

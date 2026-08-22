@@ -16,3 +16,13 @@ export function getLocalImage(type: 'classes' | 'races', name: string) {
   const semAcento = name.toLowerCase().normalize('NFD').replace(/\p{Diacritic}/gu, '')
   return `/assets/${type}/${semAcento.replace(/\s+/g, '-')}.jpg`
 }
+
+// Etapa 10 (A-7) — limpeza leve enquanto o texto ainda está chegando aos
+// pedaços (GameChat.tsx). O servidor (services/guardrail.limpar_formatacao)
+// já limpa o texto completo antes de persistir; isto é só para a tela não
+// piscar um `**` cru por meio segundo antes do fechamento chegar. Passa
+// sempre sobre o texto ACUMULADO, nunca sobre o pedaço isolado — um `**`
+// pode chegar partido entre dois frames SSE.
+export function limparMarkdownLeve(texto: string) {
+  return texto.replace(/\*{1,3}([^*\n]+?)\*{1,3}/g, '$1').replace(/`([^`\n]+?)`/g, '$1')
+}

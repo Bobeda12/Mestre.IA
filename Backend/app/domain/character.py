@@ -15,10 +15,21 @@ class CharacterCreationRequest(BaseModel):
     background: str = Field(max_length=500)
     objetivo: str = Field(max_length=500)
     historia_texto: str = Field(default="", max_length=4000)
+    # Etapa 11 (B-3) — URL da imagem já gerada pelo front (pollinations.ai);
+    # o servidor só guarda, não valida conteúdo. Precisa ser http(s) porque
+    # vira `<img src>` direto no HUD.
+    imagem: str = Field(default="", max_length=500)
     # O cliente PROPÕE estes valores; o servidor sempre revalida (ver
     # routers/character.py). Ver ADR-0002 (Etapa 1).
     atributos: dict[str, int]
     atributos_livre: list[str] = []
+
+    @field_validator("imagem")
+    @classmethod
+    def valida_imagem(cls, valor: str) -> str:
+        if valor and not valor.startswith(("http://", "https://")):
+            raise ValueError("imagem precisa ser uma URL http(s)")
+        return valor
 
     @field_validator("atributos")
     @classmethod

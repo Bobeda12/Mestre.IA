@@ -39,8 +39,23 @@ def dois_clientes(_usuario_autenticado):
 
 
 def _registrar(client: TestClient, email: str, senha: str = "senha-forte-123") -> None:
+    """A maioria dos testes que chamam isto não é sobre o fluxo de
+    confirmação (Etapa 10, A-2) — registrar já deixa a conta verificada,
+    direto no banco, pra não precisar simular clicar num link de e-mail em
+    todo teste de IDOR/feedback/etc. `TestConfirmacaoEmail` abaixo testa o
+    caso não-verificado de propósito, sem passar por este helper."""
+    from app.infra.db import SessionLocal, Usuario
+
     resp = client.post("/auth/registrar", json={"email": email, "senha": senha})
     assert resp.status_code == 201, resp.text
+    db = SessionLocal()
+    try:
+        usuario = db.query(Usuario).filter(Usuario.email == email).first()
+        assert usuario is not None
+        usuario.email_verificado = True
+        db.commit()
+    finally:
+        db.close()
 
 
 # ---------------------------------------------------------------------------
@@ -102,6 +117,92 @@ def test_sair_apaga_a_sessao(client):
 def test_criar_personagem_sem_login_devolve_401(client):
     resp = client.post("/create_character", json=_payload_base(nome="SemLogin"))
     assert resp.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# Convidado (Etapa 10, A-1)
+# ---------------------------------------------------------------------------
+
+
+def test_convidado_cria_usuario_sem_email(client):
+    resp = client.post("/auth/convidado")
+    assert resp.status_code == 201
+    assert resp.json()["email"] is None
+    assert client.get("/auth/eu").json()["email"] is None
+
+
+def test_convidado_tem_rate_limit_por_ip(client):
+    resp1 = client.post("/auth/convidado")
+    assert resp1.status_code == 201
+    resp2 = client.post("/auth/convidado")
+    assert resp2.status_code == 429
+
+
+def test_reivindicar_mantem_o_mesmo_usuario_e_os_herois(client, monkeypatch):
+    from app.services import narrator
+
+    monkeypatch.setattr(narrator, "client", None)
+    client.post("/auth/convidado")
+    criado = client.post("/create_character", json=_payload_base(nome="HeroiConvidado"))
+    assert criado.status_code == 200
+    session_id = criado.json()["session_id"]
+
+    resp = client.post("/auth/reivindicar", json={"email": "convidado@teste.com", "senha": "senha-forte-123"})
+    assert resp.status_code == 200
+    assert resp.json()["email"] == "convidado@teste.com"
+
+    # O herói criado como convidado continua acessível pelo mesmo usuário.
+    assert client.post("/load_game", json={"session_id": session_id}).status_code == 200
+
+    # E agora dá pra sair e entrar de novo com e-mail+senha.
+    client.post("/auth/sair")
+    login = client.post("/auth/login", json={"email": "convidado@teste.com", "senha": "senha-forte-123"})
+    assert login.status_code == 200
+    assert client.post("/load_game", json={"session_id": session_id}).status_code == 200
+
+
+def test_reivindicar_com_email_ja_usado_e_rejeitado(dois_clientes):
+    cliente_a, cliente_b = dois_clientes
+    _registrar(cliente_a, "jatenho@teste.com")
+    cliente_b.post("/auth/convidado")
+    resp = cliente_b.post("/auth/reivindicar", json={"email": "jatenho@teste.com", "senha": "senha-forte-123"})
+    assert resp.status_code == 409
+
+
+def test_reivindicar_de_conta_que_ja_tem_email_e_rejeitado(client):
+    _registrar(client, "jatemconta@teste.com")
+    resp = client.post("/auth/reivindicar", json={"email": "outro@teste.com", "senha": "senha-forte-123"})
+    assert resp.status_code == 400
+
+
+def test_reivindicar_sem_login_devolve_401(client):
+    resp = client.post("/auth/reivindicar", json={"email": "x@teste.com", "senha": "senha-forte-123"})
+    assert resp.status_code == 401
+
+
+def test_convidado_de_outro_nao_enxerga_heroi_do_outro(dois_clientes, monkeypatch):
+    """Mesmo teste de IDOR da Etapa 8 (`dois_clientes`), mas com dois
+    convidados em vez de duas contas com e-mail."""
+    from app.infra.rate_limit import limiter
+    from app.services import narrator
+
+    monkeypatch.setattr(narrator, "client", None)
+    cliente_a, cliente_b = dois_clientes
+    cliente_a.post("/auth/convidado")
+    # O TestClient não distingue IP entre os dois clientes (mesmo processo) —
+    # sem isto, a segunda chamada bateria no rate limit de "1/10 minute" do
+    # /auth/convidado, não no cenário de IDOR que este teste quer cobrir.
+    limiter.reset()
+    cliente_b.post("/auth/convidado")
+
+    criado = cliente_a.post("/create_character", json=_payload_base(nome="HeroiConvidadoA"))
+    assert criado.status_code == 200
+    session_id = criado.json()["session_id"]
+
+    lista_b = cliente_b.get("/personagens")
+    assert lista_b.status_code == 200
+    assert all(p["nome"] != "HeroiConvidadoA" for p in lista_b.json())
+    assert cliente_b.post("/load_game", json={"session_id": session_id}).status_code == 403
 
 
 # ---------------------------------------------------------------------------

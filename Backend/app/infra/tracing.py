@@ -6,12 +6,16 @@
 no Langfuse (dev local, CI) simplesmente não gera trace nenhuma, sem quebrar
 nada."""
 
+import logging
+import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 
 from langfuse import Langfuse
 
 from app.infra.settings import settings
+
+logger = logging.getLogger(__name__)
 
 
 def _build_client() -> Langfuse | None:
@@ -42,3 +46,19 @@ def turno_span(*, personagem_id: int, usuario_id: int, turno: int) -> Iterator[N
         metadata={"personagem_id": personagem_id, "usuario_id": usuario_id, "turno": turno},
     ):
         yield
+
+
+@contextmanager
+def medir(fase: str, **contexto: object) -> Iterator[None]:
+    """Etapa 10 (A-6) — "meça primeiro": Langfuse já cobre as chamadas ao
+    modelo (`llm_client._chamar_modelo`), mas o caminho suspeito de
+    lentidão é o que NÃO é chamada ao modelo — memória, embedding. Loga
+    sempre (não só com Langfuse configurado), em produção e em dev, pra dar
+    pra tirar p50/p95 de verdade de um log real, não de uma amostra manual
+    (ver Lição 08 — a amostra anterior não era sistemática)."""
+    inicio = time.perf_counter()
+    try:
+        yield
+    finally:
+        duracao_ms = (time.perf_counter() - inicio) * 1000
+        logger.info("latencia fase=%s duracao_ms=%.1f %s", fase, duracao_ms, contexto)

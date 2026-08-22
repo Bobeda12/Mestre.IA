@@ -80,6 +80,27 @@ class TestMemoriasRelevantes:
         heroi = _personagem(db, "sessao-vazia")
         assert memory.memorias_relevantes(db, heroi.id, "qualquer coisa", turno_atual=1, embed_fn=_embed_fake) == []
 
+    def test_query_nao_traz_mais_eventos_que_o_teto(self, db, monkeypatch):
+        # Etapa 10 (A-6) — antes desta correção, todo evento do personagem
+        # (com embedding) vinha do banco a cada turno; a sessão longa que
+        # motivou o A-6 tinha centenas. Aqui o teto vem apertado (3) pra não
+        # precisar criar centenas de linhas só pra provar o comportamento.
+        from app.infra.settings import settings
+
+        monkeypatch.setattr(settings, "limite_eventos_memoria", 3)
+        heroi = _personagem(db, "sessao-muitos-eventos")
+        for i in range(10):
+            memory.registrar_evento(db, heroi.id, turno=i, tipo="turno", texto=f"evento {i}", embed_fn=_embed_fake)
+
+        # `hybrid_search.buscar` só pode devolver o que a query trouxe do
+        # banco — com teto 3, só os turnos mais recentes (7, 8, 9) entram
+        # na disputa, mesmo pedindo k=10 (mais do que existe candidato).
+        encontrados = memory.memorias_relevantes(
+            db, heroi.id, "evento", turno_atual=10, k=10, embed_fn=_embed_fake
+        )
+        assert len(encontrados) == 3
+        assert all(texto in ("evento 7", "evento 8", "evento 9") for texto in encontrados)
+
 
 class TestAtualizarResumoRolante:
     def test_nao_atualiza_antes_do_limiar_de_turnos(self, db):

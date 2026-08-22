@@ -60,7 +60,21 @@ def memorias_relevantes(
     filtro por `personagem_id` acontece na query, antes de qualquer busca,
     para memória nunca vazar entre personagens/sessões)."""
     embed_fn = embed_fn or embeddings.embed_um
-    eventos = db.query(EventoMemoria).filter(EventoMemoria.personagem_id == personagem_id).all()
+    # Etapa 10 (A-6) — antes trazia TODOS os eventos do personagem (com
+    # embedding) a cada turno; numa sessão longa contra o Neon (rede, não
+    # arquivo local como no SQLite de dev) isso cresce com o próprio jogo.
+    # `.order_by(turno.desc()).limit(N)` é a correção imediata: os eventos
+    # mais recentes quase sempre importam mais, e ainda sobra margem pra
+    # busca híbrida ranquear dentro do que trouxe. Filtrar candidato no SQL
+    # antes de trazer vetor nenhum (BM25/embedding no banco) é a correção
+    # boa, fora de escopo desta etapa.
+    eventos = (
+        db.query(EventoMemoria)
+        .filter(EventoMemoria.personagem_id == personagem_id)
+        .order_by(EventoMemoria.turno.desc())
+        .limit(settings.limite_eventos_memoria)
+        .all()
+    )
     documentos = [
         hybrid_search.Documento(id=e.id, texto=e.texto, embedding=e.embedding, turno=e.turno) for e in eventos
     ]

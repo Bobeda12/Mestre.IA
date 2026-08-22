@@ -15,6 +15,12 @@ from dataclasses import dataclass
 from typing import Literal
 
 ATRIBUTOS_VALIDOS = {"forca", "destreza", "constituicao", "inteligencia", "sabedoria", "carisma"}
+# Etapa 11 (B-8) — nome de exibição por atributo, para o card de rolagem
+# mostrar "Destreza +2" em vez do "destreza" cru usado internamente.
+ATRIBUTO_LABEL = {
+    "forca": "Força", "destreza": "Destreza", "constituicao": "Constituição",
+    "inteligencia": "Inteligência", "sabedoria": "Sabedoria", "carisma": "Carisma",
+}
 CUSTO_PONTOS = {8: 0, 9: 1, 10: 2, 11: 3, 12: 4, 13: 5, 14: 7, 15: 9}
 PONTOS_DISPONIVEIS = 27
 

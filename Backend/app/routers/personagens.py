@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
 
 from app.infra.db import FeedbackNarracao, Personagem, Usuario, get_db
@@ -12,6 +12,10 @@ router = APIRouter(prefix="/personagens", tags=["personagens"])
 class FeedbackRequest(BaseModel):
     turno_index: int
     valor: int
+    # Etapa 10 (A-4) — "isso ficou estranho": texto livre opcional, só
+    # o 👎 costuma oferecer no front. Vale mais que qualquer eval durante o
+    # teste com amigos, porque diz *o quê* incomodou, não só que incomodou.
+    comentario: str | None = Field(default=None, max_length=500)
 
     @field_validator("valor")
     @classmethod
@@ -19,6 +23,12 @@ class FeedbackRequest(BaseModel):
         if v not in (1, -1):
             raise ValueError("valor precisa ser 1 (👍) ou -1 (👎).")
         return v
+
+    @field_validator("comentario")
+    @classmethod
+    def valida_comentario(cls, v: str | None) -> str | None:
+        v = v.strip() if v else None
+        return v or None
 
 
 @router.get("")
@@ -84,6 +94,10 @@ def registrar_feedback(
     if not (0 <= req.turno_index < len(personagem.historico_chat)):
         raise HTTPException(status_code=400, detail="turno_index fora do histórico deste personagem.")
 
-    db.add(FeedbackNarracao(personagem_id=personagem.id, turno_index=req.turno_index, valor=req.valor))
+    db.add(
+        FeedbackNarracao(
+            personagem_id=personagem.id, turno_index=req.turno_index, valor=req.valor, comentario=req.comentario
+        )
+    )
     db.commit()
     return {"status": "registrado"}

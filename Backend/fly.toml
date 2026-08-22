@@ -7,6 +7,16 @@ app = 'mestre-ia-backend'
 primary_region = 'gru'
 
 [build]
+
+# Etapa 10 (A-6) — roda uma vez por deploy, antes da nova versão receber
+# tráfego (o Fly só promove a release se isto sair com sucesso). Antes
+# disto, `alembic upgrade head` vivia no CMD do Dockerfile e rodava a cada
+# BOOT de máquina — e a máquina desliga sozinha quando ninguém joga
+# (`min_machines_running = 0` abaixo), então isso era a cada volta de um
+# jogador depois de um tempo parado, não só a cada deploy.
+[deploy]
+  release_command = 'uv run --no-dev alembic upgrade head'
+
 [http_service]
   internal_port = 8000
   force_https = true

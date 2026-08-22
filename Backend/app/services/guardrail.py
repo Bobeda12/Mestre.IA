@@ -5,10 +5,35 @@ LLM-as-judge (isso é a Etapa 6): é checagem textual simples, documentada como
 tal — falso negativo (uma contradição sutil que passa) é esperado; o que
 importa é pegar o caso óbvio sem gastar uma chamada de LLM extra por turno."""
 
+import re
+
 from app.domain.state import CombatState, WorldState
 from app.infra.data_manager import regras
 from app.infra.db import Personagem
 from app.infra.llm_client import ErroMestre, chamar_com_fallback
+
+# Etapa 10 (A-7) — o prompt já pede "sem markdown" (narrator.montar_contexto
+# e a bíblia), mas pedir ao modelo é a primeira linha, não a que vale: isto
+# é a segunda, determinística, aplicada antes de persistir. Importa
+# persistir limpo porque o histórico vira contexto do próximo turno —
+# markdown sujo no histórico ensina o modelo a formatar mais, não menos.
+_PADRAO_NEGRITO_ITALICO = re.compile(r"\*{1,3}([^*\n]+?)\*{1,3}")
+_PADRAO_TITULO = re.compile(r"^#{1,6}\s*", flags=re.MULTILINE)
+_PADRAO_LISTA = re.compile(r"^\s*(?:[-*+]|\d+\.)\s+", flags=re.MULTILINE)
+_PADRAO_BLOCO_CODIGO = re.compile(r"```.*?```", flags=re.DOTALL)
+_PADRAO_CODIGO_INLINE = re.compile(r"`([^`\n]+?)`")
+
+
+def limpar_formatacao(texto: str) -> str:
+    """Remove marcação markdown da narrativa, mantendo o texto — o jogador
+    nunca deveria ver um `**`/`#`/`-` cru numa tela de chat que não
+    interpreta markdown nenhum (`GameChat.tsx` renderiza texto puro)."""
+    texto = _PADRAO_BLOCO_CODIGO.sub(lambda m: m.group(0).strip("`"), texto)
+    texto = _PADRAO_CODIGO_INLINE.sub(r"\1", texto)
+    texto = _PADRAO_NEGRITO_ITALICO.sub(r"\1", texto)
+    texto = _PADRAO_TITULO.sub("", texto)
+    texto = _PADRAO_LISTA.sub("", texto)
+    return texto
 
 
 def validar_narrativa(texto: str, heroi: Personagem, c_state: CombatState, w_state: WorldState) -> list[str]:

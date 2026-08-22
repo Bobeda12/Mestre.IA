@@ -2,7 +2,12 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from './api';
 
 interface Usuario {
-  email: string;
+  // `null` é o convidado (Etapa 10, A-1) — `Usuario.email` é opcional no
+  // backend desde a Etapa 8, convidado só usa esse caminho que já existia.
+  email: string | null;
+  // Etapa 10 (A-2) — só importa quando `email !== null`; convidado e conta
+  // Google (já verificada no OAuth) nunca ficam presos nisso.
+  email_verificado: boolean;
 }
 
 // Etapa 8: fonte única de verdade sobre "estou logado?" — uma query contra

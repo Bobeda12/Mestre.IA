@@ -22,6 +22,10 @@ class Usuario(Base):
     # `sub` do Google (identificador estável da conta, não muda se o e-mail
     # mudar) — é o que liga um login OAuth a um Usuario, não o e-mail cru.
     google_sub: Mapped[str | None] = mapped_column(unique=True, index=True, default=None)
+    # Etapa 10 (A-2) — bloqueia jogar (não logar) até confirmar. Contas
+    # Google entram com isto já `True` (o Google já verificou); convidado
+    # não tem e-mail, então a checagem nem se aplica a ele.
+    email_verificado: Mapped[bool] = mapped_column(default=False)
     criado_em: Mapped[datetime] = mapped_column(default=lambda: datetime.now(UTC))
 
     personagens: Mapped[list["Personagem"]] = relationship(back_populates="usuario")
@@ -50,6 +54,10 @@ class Personagem(Base):
     alinhamento: Mapped[str]
     background: Mapped[str]
     objetivo: Mapped[str]
+    # Etapa 11 (B-3) — URL da imagem gerada na criação. O front monta o
+    # prompt e a URL do pollinations.ai (precisa do nome pro seed, que só
+    # existe no navegador); o servidor só guarda o resultado, não gera nada.
+    imagem: Mapped[str | None] = mapped_column(default=None)
 
     hp_atual: Mapped[int]
     hp_max: Mapped[int]
@@ -140,6 +148,9 @@ class FeedbackNarracao(Base):
     personagem_id: Mapped[int] = mapped_column(ForeignKey("personagens.id"), index=True)
     turno_index: Mapped[int]
     valor: Mapped[int]  # +1 ou -1
+    # Etapa 10 (A-4) — só o 👎 oferece o campo, mas a coluna serve os dois;
+    # nenhum jogador digita nada na maioria dos votos, por isso opcional.
+    comentario: Mapped[str | None] = mapped_column(default=None)
     criado_em: Mapped[datetime] = mapped_column(default=lambda: datetime.now(UTC))
 
 

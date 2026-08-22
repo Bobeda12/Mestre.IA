@@ -12,7 +12,7 @@ import json
 import random
 from collections.abc import Callable
 
-from app.domain.eventos import DadosRolagem, EventoRolagem
+from app.domain.eventos import DadosRolagem, EventoRolagem, EventoStatus
 from app.domain.state import CombatState, Inimigo, WorldState
 from app.infra.data_manager import regras
 from app.infra.db import Personagem
@@ -24,7 +24,10 @@ def _efeito_pocao_cura(executor: "ToolExecutor") -> dict:
     cura = motor.calcular_dano("2d4+2", rng=executor.rng)
     executor.heroi.hp_atual = min(executor.heroi.hp_max, executor.heroi.hp_atual + cura)
     executor.eventos.append(
-        f"🧪 Poção de Cura: recupera {cura} PV. HP: {executor.heroi.hp_atual}/{executor.heroi.hp_max}."
+        EventoRolagem(
+            f"🧪 Poção de Cura: recupera {cura} PV. HP: {executor.heroi.hp_atual}/{executor.heroi.hp_max}.",
+            EventoStatus(tipo="cura", quem="heroi", valor=cura),
+        )
     )
     return {"cura": cura, "hp_atual": executor.heroi.hp_atual}
 
@@ -73,7 +76,8 @@ class ToolExecutor:
         resultado = motor.resolver_teste_atributo(mod, cd, self.rng)
         dados = DadosRolagem(
             tipo="teste", quem="heroi", d20=resultado.rolagem, bonus=mod, total=resultado.total,
-            cd=cd, sucesso=resultado.sucesso,
+            cd=cd, sucesso=resultado.sucesso, atributo=atributo,
+            partes_bonus=[{"rotulo": motor.ATRIBUTO_LABEL[atributo], "valor": mod}],
         )
         self.eventos.append(
             EventoRolagem(
@@ -162,7 +166,9 @@ class ToolExecutor:
             f"{alvo_obj.nome}: {alvo_obj.hp}/{alvo_obj.max_hp} PV."
         )
         if alvo_obj.hp == 0:
-            self.eventos.append(f"💀 {alvo_obj.nome} cai morto.")
+            self.eventos.append(
+                EventoRolagem(f"💀 {alvo_obj.nome} cai morto.", EventoStatus(tipo="morte_inimigo", quem=alvo_obj.nome))
+            )
         return {"dano": dano, "hp_atual": alvo_obj.hp}
 
     def mover(self, destino: str) -> dict:

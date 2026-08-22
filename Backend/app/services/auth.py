@@ -36,6 +36,7 @@ NOME_COOKIE_SESSAO = "sessao"
 NOME_COOKIE_OAUTH_STATE = "oauth_state"
 _TTL_COOKIE = timedelta(days=30)
 _TTL_OAUTH_STATE = timedelta(minutes=10)
+_TTL_TOKEN_CONFIRMACAO = timedelta(hours=24)
 
 GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
@@ -144,8 +145,13 @@ def obter_ou_criar_usuario_google(db: Session, google_sub: str, email: str) -> U
     usuario = db.query(Usuario).filter(Usuario.email == email).first()
     if usuario is not None:
         usuario.google_sub = google_sub
+        # Se a conta já existia por senha, sem e-mail confirmado, o próprio
+        # Google acabou de confirmar esse e-mail por ela.
+        usuario.email_verificado = True
     else:
-        usuario = Usuario(email=email, google_sub=google_sub)
+        # `email_verified` já foi checado em `trocar_code_por_userinfo` —
+        # o Google é a fonte da verdade, não precisa do fluxo de A-2.
+        usuario = Usuario(email=email, google_sub=google_sub, email_verificado=True)
         db.add(usuario)
     db.commit()
     db.refresh(usuario)
@@ -251,3 +257,46 @@ def get_current_user(
     if usuario is None:
         raise HTTPException(status_code=401, detail="Sessão inválida ou expirada.")
     return usuario
+
+
+def get_current_verified_user(current_user: Usuario = Depends(get_current_user)) -> Usuario:
+    """Etapa 10 (A-2) — bloqueia jogar (não logar nem ver a própria tela de
+    confirmação) até o e-mail ser confirmado. Só se aplica a quem TEM
+    e-mail: convidado (`email is None`) e conta via Google (já entra
+    verificada) passam direto — ver `obter_ou_criar_usuario_google`."""
+    if current_user.email is not None and not current_user.email_verificado:
+        raise HTTPException(status_code=403, detail="Confirme seu e-mail para continuar jogando.")
+    return current_user
+
+
+# ---------------------------------------------------------------------------
+# Confirmação de e-mail (Etapa 10, A-2) — token HMAC igual ao cookie de
+# sessão, mesma chave de assinatura, mas com `proposito` no payload: sem
+# isso, nada impediria um token de confirmação (que não tem `emitido_em`
+# no formato que `_ler_cookie_sessao` espera) de ser mal lido como outra
+# coisa se os formatos um dia colidirem por acaso.
+# ---------------------------------------------------------------------------
+
+_PROPOSITO_TOKEN_CONFIRMACAO = "confirmar_email"
+
+
+def criar_token_confirmacao(usuario_id: int) -> str:
+    return _assinar(
+        {"proposito": _PROPOSITO_TOKEN_CONFIRMACAO, "usuario_id": usuario_id, "emitido_em": _agora().isoformat()}
+    )
+
+
+def validar_token_confirmacao(token: str) -> int | None:
+    dados = _verificar(token)
+    if dados is None or dados.get("proposito") != _PROPOSITO_TOKEN_CONFIRMACAO:
+        return None
+    usuario_id, emitido_em_str = dados.get("usuario_id"), dados.get("emitido_em")
+    if not isinstance(usuario_id, int) or not isinstance(emitido_em_str, str):
+        return None
+    try:
+        emitido_em = datetime.fromisoformat(emitido_em_str)
+    except ValueError:
+        return None
+    if _agora() - emitido_em > _TTL_TOKEN_CONFIRMACAO:
+        return None
+    return usuario_id

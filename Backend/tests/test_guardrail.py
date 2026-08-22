@@ -54,6 +54,39 @@ class TestValidarNarrativa:
         assert any("Floresta das Sombras" in v for v in violacoes)
 
 
+class TestLimparFormatacao:
+    """Etapa 10 (A-7) — o prompt já pede prosa sem markdown; isto é a
+    segunda linha de defesa, determinística, aplicada antes de persistir."""
+
+    def test_texto_sem_markdown_passa_intacto(self):
+        texto = "Você avança pela vila, atento ao goblin ferido."
+        assert guardrail.limpar_formatacao(texto) == texto
+
+    def test_remove_negrito(self):
+        assert guardrail.limpar_formatacao("O golpe é **certeiro** e brutal.") == "O golpe é certeiro e brutal."
+
+    def test_remove_italico(self):
+        assert guardrail.limpar_formatacao("Um *sussurro* ecoa nas pedras.") == "Um sussurro ecoa nas pedras."
+
+    def test_remove_titulo(self):
+        assert guardrail.limpar_formatacao("# A Emboscada\nVocês avançam.") == "A Emboscada\nVocês avançam."
+
+    def test_remove_lista(self):
+        texto = "Você vê:\n- uma tocha\n- um baú\n2. um cadáver"
+        assert guardrail.limpar_formatacao(texto) == "Você vê:\numa tocha\num baú\num cadáver"
+
+    def test_remove_bloco_de_codigo_mantendo_o_texto(self):
+        assert guardrail.limpar_formatacao("```\nregras\n```") == "\nregras\n"
+
+    def test_remove_codigo_inline(self):
+        assert guardrail.limpar_formatacao("Ele sussurra `a senha`.") == "Ele sussurra a senha."
+
+    def test_nao_apaga_asterisco_isolado_sem_par(self):
+        # Heurística, não parser de markdown de verdade — um `*` solto
+        # (não é marcação, é só um caractere) não deveria sumir do texto.
+        assert guardrail.limpar_formatacao("3 * 4 = 12") == "3 * 4 = 12"
+
+
 class _MensagemFalsa:
     def __init__(self, content: str) -> None:
         self.content = content

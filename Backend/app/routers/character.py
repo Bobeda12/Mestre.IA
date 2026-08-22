@@ -8,7 +8,7 @@ from app.domain.state import CombatState, QuestLog, WorldState
 from app.infra.data_manager import regras
 from app.infra.db import Personagem, Usuario, get_db
 from app.services import telemetria
-from app.services.auth import get_current_user
+from app.services.auth import get_current_verified_user
 from app.services.narrator import gerar_prologo_missao
 from app.services.rules_engine import calcular_modificador
 
@@ -18,7 +18,7 @@ router = APIRouter(tags=["character"])
 @router.post("/create_character")
 def create_character(
     char: CharacterCreationRequest,
-    current_user: Usuario = Depends(get_current_user),
+    current_user: Usuario = Depends(get_current_verified_user),
     db: Session = Depends(get_db),
 ) -> dict:
     d_classe = regras.get_class_details(char.classe)
@@ -72,6 +72,7 @@ def create_character(
         alinhamento=char.alinhamento,
         background=char.background,
         objetivo=char.objetivo,
+        imagem=char.imagem or None,
         hp_atual=hp,
         hp_max=hp,
         defesa=defesa,

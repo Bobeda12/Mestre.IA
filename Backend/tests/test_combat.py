@@ -144,6 +144,10 @@ class TestTurnoJogador:
         )
         assert c_state.inimigos[0].hp == 0
         assert any("cai morto" in e for e in eventos)
+        # Etapa 10 (A-7): esse evento carrega dado estruturado, não é só texto.
+        evento_morte = next(e for e in eventos if "cai morto" in e)
+        assert evento_morte.dados.tipo == "morte_inimigo"
+        assert evento_morte.dados.quem == "Goblin"
 
     def test_alvo_inexistente_cai_para_primeiro_inimigo_vivo(self):
         c_state = CombatState(ativo=True, inimigos=[self._inimigo()])

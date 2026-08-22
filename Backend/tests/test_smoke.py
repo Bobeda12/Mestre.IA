@@ -144,6 +144,23 @@ def test_atributos_livre_em_atributo_com_bonus_fixo_e_rejeitado():
     assert resp.status_code == 400
 
 
+def test_imagem_persiste_e_volta_no_load_game(monkeypatch):
+    # Etapa 11 (B-3): a foto gerada na criação não pode mais se perder ao
+    # recarregar — antes só vivia em `location.state`, agora é uma coluna.
+    monkeypatch.setattr(narrator, "client", None)
+    payload = _payload_base(imagem="https://image.pollinations.ai/prompt/teste")
+    resp = client.post("/create_character", json=payload)
+    assert resp.status_code == 200
+    dados = client.post("/load_game", json={"session_id": resp.json()["session_id"]}).json()
+    assert dados["imagem"] == "https://image.pollinations.ai/prompt/teste"
+
+
+def test_imagem_sem_url_valida_e_rejeitada():
+    payload = _payload_base(imagem="javascript:alert(1)")
+    resp = client.post("/create_character", json=payload)
+    assert resp.status_code == 422
+
+
 def test_chat_sem_chave_de_api_devolve_mensagem_explicita(monkeypatch):
     """O bug original (api.py, versão anterior às Etapas 1 e 2) engolia qualquer
     erro num `except:` nu e respondia sempre a mesma narrativa "...". Agora
@@ -160,8 +177,10 @@ def test_chat_sem_chave_de_api_devolve_mensagem_explicita(monkeypatch):
     assert resp.status_code == 200
     dados = resp.json()
     assert dados["erro"] is True
-    assert "chave" in dados["narrativa"].lower()
-    assert dados["narrativa"] != "*(...)*"
+    # Etapa 10 (A-7): a mensagem vira um campo próprio (`erro_mensagem`),
+    # não texto embutido em `narrativa` com `*(...)*`.
+    assert "chave" in dados["erro_mensagem"].lower()
+    assert dados["narrativa"] == ""
 
 
 def test_chat_de_sessao_inexistente_devolve_404():

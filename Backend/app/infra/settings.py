@@ -67,6 +67,27 @@ class Settings(BaseSettings):
     # `Langfuse.auth_check()` contra a conta real desta etapa.
     langfuse_host: str = "https://us.cloud.langfuse.com"
 
+    # Etapa 10 (A-3) — teto de turnos por usuário/dia. A chave da Groq é
+    # uma só, do autor; sem isto, dez amigos animados no mesmo dia drenam
+    # a cota compartilhada de todo mundo. Convidado tem teto menor: quem
+    # ainda nem criou conta tem menos a perder desistindo por hoje.
+    teto_turnos_conta: int = 60
+    teto_turnos_convidado: int = 20
+
+    # Etapa 10 (A-2) — confirmação de e-mail bloqueante. Mesmo padrão
+    # condicional do Google/Langfuse: sem RESEND_API_KEY configurada, o
+    # link de confirmação só é logado (`app/infra/email.py`) — dev continua
+    # funcionando sem conta nenhuma. `onboarding@resend.dev` é o remetente
+    # de teste do Resend, que funciona sem verificar domínio próprio.
+    resend_api_key: str | None = None
+    resend_from_email: str = "Mestre.IA <onboarding@resend.dev>"
+    confirmacao_email_url: str = "http://localhost:8000/auth/confirmar"
+
+    # Etapa 10 (A-6) — teto de eventos de memória trazidos do banco por
+    # turno (services/memory.memorias_relevantes). Sem isto, a query cresce
+    # com o tamanho da partida inteira, não com o turno atual.
+    limite_eventos_memoria: int = 200
+
 
 settings = Settings()
 

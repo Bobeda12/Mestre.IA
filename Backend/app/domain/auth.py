@@ -37,3 +37,24 @@ class LoginRequest(BaseModel):
     @classmethod
     def valida_email(cls, valor: str) -> str:
         return _valida_formato_email(valor)
+
+
+class ReivindicarRequest(BaseModel):
+    """Etapa 10 (A-1) — convidado vira conta com e-mail+senha, mesmo
+    `usuario_id`. Mesma validação de `RegistrarRequest`, mas em outro
+    endpoint porque o dono já está autenticado (não cria usuário novo)."""
+
+    email: str = Field(max_length=254)
+    senha: str = Field(max_length=256)
+
+    @field_validator("email")
+    @classmethod
+    def valida_email(cls, valor: str) -> str:
+        return _valida_formato_email(valor)
+
+    @field_validator("senha")
+    @classmethod
+    def valida_senha(cls, valor: str) -> str:
+        if len(valor) < 8:
+            raise ValueError("A senha precisa ter pelo menos 8 caracteres.")
+        return valor

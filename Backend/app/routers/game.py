@@ -1,22 +1,24 @@
 import json
 from collections.abc import Generator
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
+from starlette.background import BackgroundTask
 
 from app.domain.character import LoadRequest, UserAction
 from app.domain.memoria import ResumoRolante
 from app.domain.state import CombatState, QuestLog, WorldState
 from app.infra.data_manager import regras
-from app.infra.db import Personagem, Usuario, get_db
+from app.infra.db import Personagem, SessionLocal, Usuario, get_db
 from app.infra.llm_client import ErroMestre, chamar_com_fallback
 from app.infra.rate_limit import limiter
-from app.infra.tracing import turno_span
+from app.infra.settings import settings
+from app.infra.tracing import medir, turno_span
 from app.services import combat, memory, rag_regras, rules_engine, telemetria
 from app.services.agent_loop import executar_turno, executar_turno_stream
-from app.services.auth import get_current_user
-from app.services.guardrail import corrigir_narrativa, validar_narrativa
+from app.services.auth import get_current_user, get_current_verified_user
+from app.services.guardrail import corrigir_narrativa, limpar_formatacao, validar_narrativa
 from app.services.memory import contexto_recente
 from app.services.narrator import montar_contexto
 from app.services.tools import ToolExecutor
@@ -34,6 +36,37 @@ def _buscar_personagem(db: Session, current_user: Usuario, session_id: str, mens
     if heroi.usuario_id != current_user.id:
         raise HTTPException(status_code=403, detail="Este personagem não pertence a você.")
     return heroi
+
+
+def _verificar_teto_diario(db: Session, current_user: Usuario) -> None:
+    """Etapa 10 (A-3) — teto de turnos por usuário/dia, checado antes de
+    gastar uma chamada à Groq. `EventoTelemetria` (Postgres) é quem conta,
+    não `slowapi` (em memória): a máquina do Fly desliga sozinha quando
+    ninguém joga (`min_machines_running = 0`), e um contador em memória
+    zeraria a cada boot — o teto precisa sobreviver a isso."""
+    teto = settings.teto_turnos_conta if current_user.email is not None else settings.teto_turnos_convidado
+    if telemetria.turnos_hoje(db, current_user.id) >= teto:
+        raise HTTPException(status_code=429, detail="A taverna fecha ao anoitecer; volte amanhã.")
+
+
+def _persistir_memoria_em_segundo_plano(
+    heroi_id: int, turno: int, tipo: str, texto: str, personagens: list[str]
+) -> None:
+    """Etapa 10 (A-6) — roda depois que a resposta já chegou ao jogador: nem
+    o embedding (`infra/embeddings.embed_um`) nem a chamada ao modelo do
+    resumo rolante (`memory.atualizar_resumo_rolante`) seguram mais o
+    turno. Sessão própria (`SessionLocal`), não a do pedido — que já pode
+    estar fechada quando isto roda, especialmente no `/chat/stream`."""
+    db = SessionLocal()
+    try:
+        heroi = db.get(Personagem, heroi_id)
+        if heroi is None:  # personagem arquivado/apagado entre o turno e isto rodar
+            return
+        memory.atualizar_resumo_rolante(heroi)
+        db.commit()
+        memory.registrar_evento(db, heroi_id, turno, tipo=tipo, texto=texto, personagens=personagens)
+    finally:
+        db.close()
 
 
 def _resposta(heroi: Personagem, c_state: CombatState, q_state: QuestLog, **extra: object) -> dict:
@@ -74,6 +107,7 @@ def load_game(
     return _resposta(
         heroi, c_state, q_state,
         nome=heroi.nome, raca=heroi.raca, classe=heroi.classe, local=w_state.local, missao=heroi.quest_log,
+        imagem=heroi.imagem, turno_mundo=w_state.turno,
     )
 
 
@@ -82,10 +116,12 @@ def load_game(
 async def chat_endpoint(
     request: Request,
     user_input: UserAction,
-    current_user: Usuario = Depends(get_current_user),
+    background_tasks: BackgroundTasks,
+    current_user: Usuario = Depends(get_current_verified_user),
     db: Session = Depends(get_db),
 ) -> dict:
     heroi = _buscar_personagem(db, current_user, user_input.session_id, "Sessão não encontrada.")
+    _verificar_teto_diario(db, current_user)
 
     w_state = WorldState.model_validate(heroi.world_state or {})
     c_state = CombatState.model_validate(heroi.combat_state or {})
@@ -120,7 +156,8 @@ async def chat_endpoint(
         # (sumário rolante estruturado). Ver services/memory.py e
         # services/rag_regras.py.
         resumo = ResumoRolante.model_validate(heroi.resumo_rolante or {})
-        memorias = memory.memorias_relevantes(db, heroi.id, user_input.action, w_state.turno)
+        with medir("memoria", personagem_id=heroi.id, turno=w_state.turno):
+            memorias = memory.memorias_relevantes(db, heroi.id, user_input.action, w_state.turno)
         regras_relevantes = rag_regras.regras_relevantes(user_input.action)
         nomes_na_cena = {i.nome for i in c_state.inimigos} | set(resumo.npcs_conhecidos)
         reputacoes = {nome: valor for nome, valor in heroi.reputacao_npcs.items() if nome in nomes_na_cena}
@@ -138,14 +175,29 @@ async def chat_endpoint(
         msgs = [{"role": "system", "content": prompt}] + hist + [{"role": "user", "content": user_input.action}]
         executor = ToolExecutor(heroi, c_state, w_state)
         try:
-            with turno_span(personagem_id=heroi.id, usuario_id=current_user.id, turno=w_state.turno):
+            with (
+                turno_span(personagem_id=heroi.id, usuario_id=current_user.id, turno=w_state.turno),
+                medir("agente", personagem_id=heroi.id, turno=w_state.turno),
+            ):
                 narrativa, eventos_ferramentas, _chamadas = executar_turno(msgs, executor)
         except ErroMestre as e:
-            return _resposta(heroi, c_state, q_state, narrativa=f"*({e.mensagem})*", erro=True)
+            # Etapa 10 (A-7) — a mensagem de erro é um campo próprio, não
+            # texto embutido em `narrativa` com `*(...)*`: o histórico
+            # nunca vê essa linha (o `return` é antes de persistir), e o
+            # cliente sabe que é um aviso do sistema pelo campo, não por
+            # decorar um padrão de asterisco no texto.
+            return _resposta(
+                heroi, c_state, q_state, narrativa="", erro=True, erro_mensagem=e.mensagem, turno_mundo=w_state.turno
+            )
 
     violacoes = validar_narrativa(narrativa, heroi, c_state, w_state)
     if violacoes:
         narrativa = corrigir_narrativa(narrativa, violacoes, msgs)
+    # Etapa 10 (A-7) — antes de juntar os eventos de sistema (que já são
+    # texto puro, emoji sem markdown) e de persistir: o histórico vira
+    # contexto do próximo turno, e markdown sujo ali ensina o modelo a
+    # formatar mais, não menos.
+    narrativa = limpar_formatacao(narrativa)
 
     todos_eventos = eventos_morte + eventos_ferramentas
     if todos_eventos:
@@ -159,20 +211,25 @@ async def chat_endpoint(
     heroi.historico_chat = novo_hist
     heroi.combat_state = c_state.model_dump()
     heroi.world_state = w_state.model_dump()
-    memory.atualizar_resumo_rolante(heroi)
     db.commit()
 
-    memory.registrar_evento(
-        db,
+    # Etapa 10 (A-6) — resumo rolante e evento de memória saem do caminho
+    # crítico: o jogador não paga o embedding nem a chamada extra ao modelo
+    # pra ver a própria narração.
+    background_tasks.add_task(
+        _persistir_memoria_em_segundo_plano,
         heroi.id,
         w_state.turno,
-        tipo="morte" if eventos_morte else "turno",
-        texto=f"{user_input.action} → {narrativa[:300]}",
-        personagens=[i.nome for i in c_state.inimigos],
+        "morte" if eventos_morte else "turno",
+        f"{user_input.action} → {narrativa[:300]}",
+        [i.nome for i in c_state.inimigos],
     )
     telemetria.registrar_evento(db, current_user.id, "turno", personagem_id=heroi.id)
 
-    return _resposta(heroi, c_state, q_state, narrativa=narrativa, turno_index=len(heroi.historico_chat) - 1)
+    return _resposta(
+        heroi, c_state, q_state, narrativa=narrativa,
+        turno_index=len(heroi.historico_chat) - 1, turno_mundo=w_state.turno,
+    )
 
 
 def _sse(evento: str, dados: dict) -> str:
@@ -184,7 +241,7 @@ def _sse(evento: str, dados: dict) -> str:
 def chat_stream_endpoint(
     request: Request,
     user_input: UserAction,
-    current_user: Usuario = Depends(get_current_user),
+    current_user: Usuario = Depends(get_current_verified_user),
     db: Session = Depends(get_db),
 ) -> StreamingResponse:
     """Versão em streaming de `/chat` (Etapa 7, ADR-0012) — mesma regra de
@@ -205,6 +262,10 @@ def chat_stream_endpoint(
       pra o HUD atualizar HP/inventário/combate de uma vez.
     """
     heroi = _buscar_personagem(db, current_user, user_input.session_id, "Sessão não encontrada.")
+    # Checado aqui, antes de `StreamingResponse` existir — depois que a
+    # stream abre, a rota não pode mais levantar `HTTPException` normal
+    # (ver a mesma observação nos frames `erro`/`state` mais abaixo).
+    _verificar_teto_diario(db, current_user)
 
     w_state = WorldState.model_validate(heroi.world_state or {})
     c_state = CombatState.model_validate(heroi.combat_state or {})
@@ -212,6 +273,13 @@ def chat_stream_endpoint(
 
     w_state.turno += 1
     hist = contexto_recente(list(heroi.historico_chat), n=4)
+
+    # Etapa 10 (A-6) — preenchido dentro de `gerar()`, lido por
+    # `_tarefa_pos_stream` depois que a resposta inteira já foi entregue
+    # (`background=` do `StreamingResponse`, não `BackgroundTasks`: a rota
+    # é `def`, não `async def`, e devolve a resposta antes do generator
+    # rodar — não há como injetar `BackgroundTasks` aqui do jeito normal).
+    resultado_pos_stream: dict = {}
 
     def gerar() -> Generator[str]:
         eventos_morte: list[str] = []
@@ -238,7 +306,8 @@ def chat_stream_endpoint(
                 yield _sse("token", {"texto": narrativa})
         else:
             resumo = ResumoRolante.model_validate(heroi.resumo_rolante or {})
-            memorias = memory.memorias_relevantes(db, heroi.id, user_input.action, w_state.turno)
+            with medir("memoria", personagem_id=heroi.id, turno=w_state.turno):
+                memorias = memory.memorias_relevantes(db, heroi.id, user_input.action, w_state.turno)
             regras_relevantes = rag_regras.regras_relevantes(user_input.action)
             nomes_na_cena = {i.nome for i in c_state.inimigos} | set(resumo.npcs_conhecidos)
             reputacoes = {nome: valor for nome, valor in heroi.reputacao_npcs.items() if nome in nomes_na_cena}
@@ -252,7 +321,10 @@ def chat_stream_endpoint(
 
             pedacos: list[str] = []
             erro_turno: str | None = None
-            with turno_span(personagem_id=heroi.id, usuario_id=current_user.id, turno=w_state.turno):
+            with (
+                turno_span(personagem_id=heroi.id, usuario_id=current_user.id, turno=w_state.turno),
+                medir("agente", personagem_id=heroi.id, turno=w_state.turno),
+            ):
                 for evento in executar_turno_stream(msgs, executor):
                     if evento.tipo == "token":
                         pedacos.append(evento.dados)
@@ -264,7 +336,17 @@ def chat_stream_endpoint(
                         yield _sse("erro", {"mensagem": erro_turno})
 
             if erro_turno is not None:
-                yield _sse("state", _resposta(heroi, c_state, q_state, narrativa=f"*({erro_turno})*", erro=True))
+                # O frame `erro` já mandou a mensagem estruturada, ao vivo
+                # (Etapa 7). Este `state` final não repete ela dentro de
+                # `narrativa` — era o único lugar que ainda sujava o texto
+                # persistido com `*(...)*` (Etapa 10, A-7).
+                yield _sse(
+                    "state",
+                    _resposta(
+                        heroi, c_state, q_state, narrativa="", erro=True,
+                        erro_mensagem=erro_turno, turno_mundo=w_state.turno,
+                    ),
+                )
                 return
 
             narrativa = "".join(pedacos)
@@ -281,6 +363,12 @@ def chat_stream_endpoint(
             corrigida = corrigir_narrativa(narrativa, violacoes, msgs)
             yield _sse("correcao", {"narrativa": corrigida})
             narrativa = corrigida
+        # Etapa 10 (A-7) — mesma limpeza do `/chat` síncrono, antes de
+        # persistir. O jogador já viu o texto cru ao vivo nos frames
+        # `token` (limpar aqui não reescreve a tela, só o que fica salvo
+        # e vira contexto futuro) — a limpeza leve *durante* o streaming
+        # é responsabilidade do cliente (GameChat.tsx).
+        narrativa = limpar_formatacao(narrativa)
 
         todos_eventos = eventos_morte + eventos_ferramentas
         if todos_eventos:
@@ -292,11 +380,13 @@ def chat_stream_endpoint(
         heroi.historico_chat = novo_hist
         heroi.combat_state = c_state.model_dump()
         heroi.world_state = w_state.model_dump()
-        memory.atualizar_resumo_rolante(heroi)
         db.commit()
 
-        memory.registrar_evento(
-            db, heroi.id, w_state.turno,
+        # Etapa 10 (A-6) — só agenda; quem executa é `_tarefa_pos_stream`,
+        # depois que o `state` abaixo já tiver saído pro jogador.
+        resultado_pos_stream.update(
+            heroi_id=heroi.id,
+            turno=w_state.turno,
             tipo="morte" if eventos_morte else "turno",
             texto=f"{user_input.action} → {narrativa[:300]}",
             personagens=[i.nome for i in c_state.inimigos],
@@ -304,7 +394,15 @@ def chat_stream_endpoint(
         telemetria.registrar_evento(db, current_user.id, "turno", personagem_id=heroi.id)
 
         yield _sse(
-            "state", _resposta(heroi, c_state, q_state, narrativa=narrativa, turno_index=len(heroi.historico_chat) - 1)
+            "state",
+            _resposta(
+                heroi, c_state, q_state, narrativa=narrativa,
+                turno_index=len(heroi.historico_chat) - 1, turno_mundo=w_state.turno,
+            ),
         )
 
-    return StreamingResponse(gerar(), media_type="text/event-stream")
+    def _tarefa_pos_stream() -> None:
+        if resultado_pos_stream:
+            _persistir_memoria_em_segundo_plano(**resultado_pos_stream)
+
+    return StreamingResponse(gerar(), media_type="text/event-stream", background=BackgroundTask(_tarefa_pos_stream))

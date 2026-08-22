@@ -10,7 +10,7 @@ Ver ADR-0006 para a decisão de arquitetura por trás desta separação."""
 
 import random
 
-from app.domain.eventos import DadosRolagem, EventoRolagem
+from app.domain.eventos import DadosRolagem, EventoRolagem, EventoStatus
 from app.domain.state import CombatState, Inimigo
 from app.infra.data_manager import regras
 from app.services import rules_engine as motor
@@ -19,17 +19,19 @@ NOME_ARMA_DESARMADA = "Ataque Desarmado"
 _ARMA_DESARMADA = {"dano": "1d1", "propriedades": []}
 
 
-def _mod_para_arma(atributos: dict, propriedades: list[str]) -> int:
+def _mod_para_arma(atributos: dict, propriedades: list[str]) -> tuple[int, str]:
     """Força é o padrão; armas "Sutil" (finesse) usam o melhor entre Força e
     Destreza, e armas de "Munição" (à distância) usam Destreza — regras reais
-    do PHB, não simplificação."""
+    do PHB, não simplificação. Devolve também QUAL atributo venceu, para o
+    card de rolagem poder mostrar "Destreza +2" em vez de um bônus sem
+    origem (Etapa 11, B-8)."""
     mod_forca = motor.calcular_modificador(atributos.get("forca", 10))
     mod_destreza = motor.calcular_modificador(atributos.get("destreza", 10))
     if "Sutil" in propriedades:
-        return max(mod_forca, mod_destreza)
+        return (mod_forca, "forca") if mod_forca >= mod_destreza else (mod_destreza, "destreza")
     if "Munição" in propriedades:
-        return mod_destreza
-    return mod_forca
+        return mod_destreza, "destreza"
+    return mod_forca, "forca"
 
 
 def escolher_arma(inventario: list[str], proposta: str | None) -> tuple[str, dict]:
@@ -153,8 +155,9 @@ def turno_jogador(
 
     alvo = next((i for i in vivos if i.nome == alvo_proposto), vivos[0])
     nome_arma, dados_arma = escolher_arma(inventario, arma_proposta)
-    mod_atributo = _mod_para_arma(atributos_heroi, dados_arma.get("propriedades", []))
-    bonus_ataque = motor.bonus_proficiencia(nivel) + mod_atributo
+    mod_atributo, attr_usado = _mod_para_arma(atributos_heroi, dados_arma.get("propriedades", []))
+    prof = motor.bonus_proficiencia(nivel)
+    bonus_ataque = prof + mod_atributo
 
     resultado = motor.resolver_ataque(bonus_ataque, alvo.ca, rng)
     linha = (
@@ -164,7 +167,11 @@ def turno_jogador(
     dados = DadosRolagem(
         tipo="ataque", quem="heroi", alvo=alvo.nome, d20=resultado.rolagem, bonus=bonus_ataque,
         total=resultado.total, ca=alvo.ca, sucesso=resultado.acerto, critico=resultado.critico,
-        falha_critica=resultado.falha_critica,
+        falha_critica=resultado.falha_critica, atributo=attr_usado, arma=nome_arma,
+        partes_bonus=[
+            {"rotulo": motor.ATRIBUTO_LABEL[attr_usado], "valor": mod_atributo},
+            {"rotulo": "Proficiência", "valor": prof},
+        ],
     )
     if not resultado.acerto:
         return [EventoRolagem(linha + "ERROU.", dados)]
@@ -181,7 +188,7 @@ def turno_jogador(
     dados.dano = dano
     eventos: list[str] = [EventoRolagem(linha, dados)]
     if alvo.hp == 0:
-        eventos.append(f"💀 {alvo.nome} cai morto.")
+        eventos.append(EventoRolagem(f"💀 {alvo.nome} cai morto.", EventoStatus(tipo="morte_inimigo", quem=alvo.nome)))
     return eventos
 
 

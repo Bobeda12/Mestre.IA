@@ -54,9 +54,24 @@ export async function postSse(url: string, body: unknown): Promise<AsyncGenerato
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
+    // Mesmo comportamento do axios em lib/api.ts (`withCredentials: true`)
+    // — sem isso, o cookie de sessão não vai quando front e back estão em
+    // origens diferentes (localhost:5173 → localhost:8000 em dev), e todo
+    // /chat/stream cai em 401 mesmo com sessão válida.
+    credentials: "include",
   });
   if (!resp.ok) {
-    throw new Error(`Falha ao abrir o stream (${resp.status})`);
+    // Etapa 10 (A-3) — o `detail` do backend já é uma frase pronta pro
+    // jogador ler (429 do teto diário, 404 de sessão sumida, etc.) — jogar
+    // isso fora e mostrar só o código escondia exatamente a mensagem
+    // honesta que o teto de custo existe para dar.
+    let detalhe: string | undefined;
+    try {
+      detalhe = (await resp.json()).detail;
+    } catch {
+      // Corpo não é JSON (ou stream já fechou) — sem detalhe, cai no genérico.
+    }
+    throw new Error(detalhe ?? `Falha ao abrir o stream (${resp.status})`);
   }
   return parseSseStream(resp);
 }

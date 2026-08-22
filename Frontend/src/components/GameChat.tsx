@@ -1,15 +1,19 @@
 import { useState, useEffect, useRef } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
+import { isAxiosError } from 'axios';
 import {
   Send, Scroll, Menu, X, Dices, User, Backpack, Map, Sword, Shield, AlertTriangle, Star, Coins, FlaskConical, BookOpen,
-  ThumbsUp, ThumbsDown
+  ThumbsUp, ThumbsDown, Crown, Loader2, Volume2, VolumeX
 } from 'lucide-react';
 import { Progress } from './ui/progress';
 import { api, API_URL } from '../lib/api';
 import { postSse } from '../lib/sse';
-import { getLocalImage } from '../lib/utils';
+import { getLocalImage, limparMarkdownLeve } from '../lib/utils';
+import { useAuth, useInvalidarAuth } from '../lib/auth';
+import { useTrilha, calcularTema } from '../lib/trilha';
 import RollCard, { type DadosRolagem } from './RollCard';
+import StatusCard, { type EventoStatus } from './StatusCard';
 
 type Message =
   // `turnoIndex` (Etapa 9) chega no frame SSE "state", junto do resto do
@@ -18,7 +22,9 @@ type Message =
   // POST /personagens/:id/feedback. `feedback` é só o que ESTE navegador já
   // votou, pra não deixar votar duas vezes na mesma aba.
   | { kind: 'texto'; role: 'user' | 'assistant' | 'system'; content: string; isError?: boolean; turnoIndex?: number; feedback?: 1 | -1 }
-  | { kind: 'rolagem'; dados: DadosRolagem };
+  // Etapa 10 (A-7): cura e morte de inimigo chegam pelo mesmo frame
+  // `tool_event` que ataque/teste, só com um `dados.tipo` diferente.
+  | { kind: 'rolagem'; dados: DadosRolagem | EventoStatus };
 
 // Espelha domain/state.py:Inimigo (só os campos que o HUD lê).
 interface Inimigo {
@@ -46,6 +52,10 @@ interface EstadoJogo {
   inimigos?: Inimigo[];
   missao?: unknown;
   turno_index?: number;
+  // Etapa 11 (B-6) — turno do MUNDO (world_state.turno), não o turno da
+  // rodada de combate (`turno_atual`, que reseta a cada luta): é o que a
+  // tela de morte usa pra mostrar "quantos turnos você viveu".
+  turno_mundo?: number;
 }
 
 interface CargaJogo extends EstadoJogo {
@@ -54,6 +64,7 @@ interface CargaJogo extends EstadoJogo {
   classe: string;
   local: string;
   atributos?: Record<string, number>;
+  imagem?: string | null;
 }
 
 // Ícone por palavra-chave no nome do item — não existe um campo "tipo" em
@@ -106,6 +117,7 @@ export default function GameChat() {
   const [enemies, setEnemies] = useState<Inimigo[]>([]);
   const [ordemIniciativa, setOrdemIniciativa] = useState<number[]>([]);
   const [turnoAtual, setTurnoAtual] = useState(0);
+  const [turnoMundo, setTurnoMundo] = useState(0);
   const [gameOver, setGameOver] = useState(false);
   // Dano flutuante (Etapa 7) — `idx` é a posição no array `enemies`, não o
   // nome (dois inimigos podem ter o mesmo nome).
@@ -114,6 +126,65 @@ export default function GameChat() {
   // EFEITOS
   const [shakeScreen, setShakeScreen] = useState(false);
   const [wasDamaged, setWasDamaged] = useState(false);
+
+  // CONVITE PRA REIVINDICAR (Etapa 10, A-1) — só aparece pra convidado
+  // (`usuario.email === null`), depois do primeiro momento bom: o primeiro
+  // combate resolvido sem morrer, ou 8 turnos jogados (proxy pro "fim da
+  // primeira cena"), o que vier primeiro. `combateFoiAtivoRef` é o que
+  // permite detectar "combate que acabou" sem um campo de vitória dedicado
+  // no backend — combatActive true → false, sem game over, é a transição.
+  const { usuario } = useAuth();
+  const invalidarAuth = useInvalidarAuth();
+  const ehConvidado = usuario !== null && usuario.email === null;
+  const combateFoiAtivoRef = useRef(false);
+  const [primeiroCombateResolvido, setPrimeiroCombateResolvido] = useState(false);
+  const [conviteDispensado, setConviteDispensado] = useState(
+    () => sessionStorage.getItem('mestre_ia_convite_reivindicar_dispensado') === '1'
+  );
+  const [modalReivindicarAberto, setModalReivindicarAberto] = useState(false);
+  const [reivindicarEmail, setReivindicarEmail] = useState('');
+  const [reivindicarSenha, setReivindicarSenha] = useState('');
+  const [reivindicarErro, setReivindicarErro] = useState<string | null>(null);
+  const [reivindicarEnviando, setReivindicarEnviando] = useState(false);
+
+  useEffect(() => {
+    if (combatActive) combateFoiAtivoRef.current = true;
+    else if (combateFoiAtivoRef.current && !gameOver) setPrimeiroCombateResolvido(true);
+  }, [combatActive, gameOver]);
+
+  // Etapa 11 (B-4) — trilha por tema. O tema é derivado do estado (combate,
+  // HP baixo, game over), nunca pedido ao modelo.
+  const temaMusical = calcularTema({ gameOver, combateAtivo: combatActive, hpAtual, hpMax });
+  const { mudo, alternarMudo } = useTrilha(temaMusical);
+
+  const maiorTurnoIndex = messages.reduce(
+    (max, m) => (m.kind === 'texto' && m.turnoIndex !== undefined ? Math.max(max, m.turnoIndex) : max),
+    -1
+  );
+  const mostrarConviteReivindicar =
+    ehConvidado && !conviteDispensado && !gameOver && (primeiroCombateResolvido || maiorTurnoIndex >= 8);
+
+  const dispensarConvite = () => {
+    setConviteDispensado(true);
+    sessionStorage.setItem('mestre_ia_convite_reivindicar_dispensado', '1');
+  };
+
+  const reivindicar = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setReivindicarEnviando(true);
+    setReivindicarErro(null);
+    try {
+      await api.post('/auth/reivindicar', { email: reivindicarEmail, senha: reivindicarSenha });
+      invalidarAuth();
+      setModalReivindicarAberto(false);
+      dispensarConvite();
+    } catch (err) {
+      const detalhe = isAxiosError<{ detail?: string }>(err) ? err.response?.data?.detail : undefined;
+      setReivindicarErro(detalhe ?? 'Não deu para criar a conta. Confira o e-mail e a senha.');
+    } finally {
+      setReivindicarEnviando(false);
+    }
+  };
 
   // Etapa 7, ADR-0013: TanStack Query no lugar do `useEffect` +
   // `try/catch` + `setNotFound` escritos à mão — a troca real não é
@@ -135,12 +206,11 @@ export default function GameChat() {
     setCharName(cargaJogo.nome);
     setCharRace(cargaJogo.raca);
     setCharClass(cargaJogo.classe);
-    // Etapa 8: o retrato gerado por IA na criação não é persistido no
-    // servidor (não existe coluna de imagem em Personagem) — só chegava
-    // aqui via `location.state` (criação) ou, antes, via localStorage
-    // (agora extinto). Entrando por "continuar", cai no retrato genérico
-    // da classe em vez de ficar sem imagem nenhuma.
-    if (!charImageFromNav) setCharImage(getLocalImage('classes', cargaJogo.classe));
+    // Etapa 11 (B-3): o retrato agora persiste em Personagem.imagem — a
+    // navegação (criação, primeiro paint) ainda tem prioridade porque
+    // chega mais rápido, mas recarregar a página usa o que o servidor
+    // guardou em vez de cair direto no retrato genérico da classe.
+    if (!charImageFromNav) setCharImage(cargaJogo.imagem || getLocalImage('classes', cargaJogo.classe));
     setHpAtual(cargaJogo.hp_atual);
     setHpMax(cargaJogo.hp_max ?? 10);
     setDefesa(cargaJogo.defesa ?? null);
@@ -155,6 +225,7 @@ export default function GameChat() {
     setEnemies(cargaJogo.inimigos || []);
     setOrdemIniciativa(cargaJogo.ordem_iniciativa || []);
     setTurnoAtual(cargaJogo.turno_atual ?? 0);
+    setTurnoMundo(cargaJogo.turno_mundo ?? 0);
 
     if (cargaJogo.hp_atual <= 0) setGameOver(true);
     setMessages([{ kind: 'texto', role: 'assistant', content: `Conectado ao mundo. Local: ${cargaJogo.local}.` }]);
@@ -172,7 +243,11 @@ export default function GameChat() {
       const ultima = prev[prev.length - 1];
       if (ultima && ultima.kind === 'texto' && ultima.role === 'assistant' && !ultima.isError === !isError) {
         const copia = [...prev];
-        copia[copia.length - 1] = { ...ultima, content: ultima.content + pedaco, isError };
+        // Etapa 10 (A-7): limpeza leve sobre o texto ACUMULADO, nunca só o
+        // pedaço novo — um `**` pode chegar partido entre dois frames SSE.
+        // A limpeza de verdade é no servidor, antes de persistir; isto é
+        // só pra tela não piscar o markdown cru por meio segundo.
+        copia[copia.length - 1] = { ...ultima, content: limparMarkdownLeve(ultima.content + pedaco), isError };
         return copia;
       }
       return [...prev, { kind: 'texto', role: 'assistant', content: pedaco, isError }];
@@ -191,7 +266,9 @@ export default function GameChat() {
         if (evt.event === 'token') {
           acrescentarTexto((evt.data as { texto: string }).texto);
         } else if (evt.event === 'tool_event') {
-          setMessages(prev => [...prev, { kind: 'rolagem', dados: evt.data as DadosRolagem }]);
+          // Etapa 10 (A-7): cura e morte de inimigo chegam pelo mesmo
+          // frame, discriminados por `dados.tipo` na hora de renderizar.
+          setMessages(prev => [...prev, { kind: 'rolagem', dados: evt.data as DadosRolagem | EventoStatus }]);
         } else if (evt.event === 'correcao') {
           // O guardrail reescreveu a narrativa depois de já ter sido
           // mostrada ao vivo — a versão persistida (memória futura) é a
@@ -209,7 +286,10 @@ export default function GameChat() {
             return copia;
           });
         } else if (evt.event === 'erro') {
-          acrescentarTexto(`*(${(evt.data as { mensagem: string }).mensagem})*`, true);
+          // Etapa 10 (A-7): mensagem de sistema, sem `*(...)*` — a bolha
+          // com `isError=true` já é visualmente distinta (ícone e cor
+          // âmbar), não precisa de asterisco pra parecer "fora da narração".
+          acrescentarTexto((evt.data as { mensagem: string }).mensagem, true);
         } else if (evt.event === 'state') {
           const d = evt.data as EstadoJogo;
           if (d.hp_atual !== undefined && d.hp_atual < hpAtual) {
@@ -239,6 +319,7 @@ export default function GameChat() {
           setEnemies(novosInimigos);
           setOrdemIniciativa(d.ordem_iniciativa || []);
           setTurnoAtual(d.turno_atual ?? 0);
+          if (d.turno_mundo !== undefined) setTurnoMundo(d.turno_mundo);
           if (d.missao) setQuest(d.missao);
           if (d.hp_atual <= 0) setGameOver(true);
 
@@ -258,8 +339,12 @@ export default function GameChat() {
           }
         }
       }
-    } catch {
-      acrescentarTexto("*(Não consegui falar com o servidor. Confira sua conexão e tente de novo.)*", true);
+    } catch (err) {
+      // Etapa 10 (A-3): `postSse` agora propaga o `detail` do backend
+      // quando existe (teto diário, sessão sumida...) — só cai no genérico
+      // quando o problema é mesmo de rede/conexão, sem resposta nenhuma.
+      const mensagem = err instanceof Error && err.message ? err.message : "Não consegui falar com o servidor. Confira sua conexão e tente de novo.";
+      acrescentarTexto(`*(${mensagem})*`, true);
     }
     finally { setLoading(false); }
   };
@@ -267,10 +352,17 @@ export default function GameChat() {
   // 👍/👎 por narração (Etapa 9) — sinal humano pro LLM-as-a-judge (ADR-0011)
   // e dataset de preferência. Otimista: marca o voto na hora, sem esperar
   // a resposta do servidor — um turno de RPG não é um formulário crítico.
-  const enviarFeedback = (idx: number, turnoIndex: number, valor: 1 | -1) => {
+  const enviarFeedback = (idx: number, turnoIndex: number, valor: 1 | -1, comentario?: string) => {
     setMessages(prev => prev.map((m, i) => (i === idx && m.kind === 'texto' ? { ...m, feedback: valor } : m)));
-    api.post(`/personagens/${sessionId}/feedback`, { turno_index: turnoIndex, valor }).catch(() => {});
+    api.post(`/personagens/${sessionId}/feedback`, { turno_index: turnoIndex, valor, comentario }).catch(() => {});
   };
+
+  // "Isso ficou estranho" (Etapa 10, A-4) — o 👎 abre um campo opcional em
+  // vez de mandar direto: um clique continua funcionando (botão "Pular"),
+  // mas quem quiser dizer *o quê* incomodou tem onde. Só uma bolha por vez
+  // tem o campo aberto.
+  const [comentarioAbertoIdx, setComentarioAbertoIdx] = useState<number | null>(null);
+  const [comentarioTexto, setComentarioTexto] = useState('');
 
   const handleSendMessage = () => { if (!input.trim()) return; sendAction(input); setInput(""); };
   const handleKeyDown = (e: React.KeyboardEvent) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendMessage(); } };
@@ -291,7 +383,50 @@ export default function GameChat() {
 
       <div className={`absolute inset-0 z-50 bg-red-600 pointer-events-none transition-opacity duration-200 ${wasDamaged ? 'opacity-20' : 'opacity-0'}`} />
 
-      {gameOver && <div className="absolute inset-0 z-[100] bg-black/95 flex flex-col items-center justify-center"><h1 className="text-5xl font-rpg text-red-600">GAME OVER</h1><button onClick={() => navigate('/')} className="mt-4 border px-4 py-2 text-gray-400">Voltar</button></div>}
+      {gameOver && (
+        <div className="absolute inset-0 z-[100] bg-black/95 flex flex-col items-center justify-center px-6 text-center overflow-y-auto py-10">
+          <h1 className="text-5xl font-rpg text-red-600 tracking-widest">GAME OVER</h1>
+          <p className="text-gray-500 mt-2 font-serif italic">{charName || 'O herói'} não resistiu.</p>
+
+          <div className="grid grid-cols-3 gap-8 mt-8">
+            <div>
+              <div className="text-2xl font-rpg text-rpg-gold">{turnoMundo}</div>
+              <div className="text-[10px] uppercase tracking-widest text-gray-500 mt-1">Turnos</div>
+            </div>
+            <div>
+              <div className="text-2xl font-rpg text-rpg-gold">{nivel}</div>
+              <div className="text-[10px] uppercase tracking-widest text-gray-500 mt-1">Nível</div>
+            </div>
+            <div>
+              <div className="text-2xl font-rpg text-rpg-gold flex items-center justify-center gap-1">
+                <Coins size={16} className="shrink-0" />{ouro}
+              </div>
+              <div className="text-[10px] uppercase tracking-widest text-gray-500 mt-1">Ouro</div>
+            </div>
+          </div>
+
+          {quest?.nome_missao && (
+            <p className="text-xs text-gray-500 mt-6 max-w-sm italic">
+              Missão inacabada: "{quest.nome_missao}"
+            </p>
+          )}
+
+          {/* Etapa 12b (C-4): aqui entra a retrospectiva gerada por IA sobre
+              esta run (memórias mais marcantes + epitáfio de uma linha) —
+              por enquanto o placar acima é tudo que existe. */}
+          <div className="mt-8 border-t border-gray-800 pt-4 w-full max-w-sm">
+            <p className="text-[10px] uppercase tracking-widest text-gray-600">O relato do mestre</p>
+            <p className="text-sm text-gray-500 italic mt-1">Em breve, o mestre vai contar como termina esta jornada.</p>
+          </div>
+
+          <button
+            onClick={() => navigate('/')}
+            className="mt-8 border border-gray-700 px-4 py-2 rounded text-gray-400 hover:text-white hover:border-gray-500 transition-colors"
+          >
+            Voltar
+          </button>
+        </div>
+      )}
 
       {/* Fundo escurecido atrás da ficha em telas estreitas (Etapa 7) — no
           desktop a ficha empurra o layout ao lado; no mobile ela vira uma
@@ -319,11 +454,19 @@ export default function GameChat() {
       >
           <div className="p-4 border-b border-gray-800 flex justify-between items-center bg-black/20">
               <h2 className="font-rpg text-lg text-rpg-gold flex items-center gap-2"><Scroll size={18}/> FICHA</h2>
-              <button
-                  onClick={() => setShowSidebar(false)}
-                  aria-label="Fechar ficha do personagem"
-                  className="text-gray-500 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rpg-gold rounded"
-              ><X size={18}/></button>
+              <div className="flex items-center gap-3">
+                  <button
+                      onClick={alternarMudo}
+                      aria-label={mudo ? "Ativar música" : "Silenciar música"}
+                      title={mudo ? "Ativar música" : "Silenciar música"}
+                      className="text-gray-500 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rpg-gold rounded"
+                  >{mudo ? <VolumeX size={18}/> : <Volume2 size={18}/>}</button>
+                  <button
+                      onClick={() => setShowSidebar(false)}
+                      aria-label="Fechar ficha do personagem"
+                      className="text-gray-500 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rpg-gold rounded"
+                  ><X size={18}/></button>
+              </div>
           </div>
 
           <div className="p-4 space-y-6 overflow-y-auto custom-scrollbar flex-1">
@@ -414,6 +557,74 @@ export default function GameChat() {
             ><Menu size={20}/></button>
         )}
 
+        {/* Convite pra reivindicar (Etapa 10, A-1) — aparece só pro
+            convidado, depois do primeiro momento bom. Fica embaixo, longe
+            do HUD de combate lá em cima, e some sozinho se o jogador
+            dispensar (não volta na mesma aba). */}
+        {mostrarConviteReivindicar && !modalReivindicarAberto && (
+            <div className="absolute bottom-24 left-1/2 -translate-x-1/2 z-40 w-[calc(100%-2rem)] max-w-md animate-fade-in">
+                <div className="bg-gray-900/95 border border-rpg-gold/40 rounded-lg p-3 flex items-center gap-3 shadow-xl backdrop-blur-sm">
+                    <Crown size={20} className="text-rpg-gold shrink-0" />
+                    <p className="text-xs text-gray-300 flex-1">Curtindo? Crie uma conta pra não perder esse herói.</p>
+                    <button
+                        onClick={() => setModalReivindicarAberto(true)}
+                        className="text-xs font-bold text-black bg-rpg-gold hover:bg-white px-3 py-1.5 rounded shrink-0"
+                    >
+                        Criar conta
+                    </button>
+                    <button onClick={dispensarConvite} aria-label="Dispensar convite" className="text-gray-500 hover:text-white shrink-0">
+                        <X size={16} />
+                    </button>
+                </div>
+            </div>
+        )}
+
+        {modalReivindicarAberto && (
+            <div className="absolute inset-0 z-[90] bg-black/80 flex items-center justify-center p-4">
+                <form onSubmit={reivindicar} className="bg-gray-900 border border-gray-700 rounded-lg p-6 w-full max-w-sm">
+                    <h2 className="font-rpg text-lg text-rpg-gold mb-1">Criar conta</h2>
+                    <p className="text-xs text-gray-500 mb-4">{charName} continua exatamente como está — só ganha um dono de verdade.</p>
+                    <div className="flex flex-col gap-3">
+                        <input
+                            type="email"
+                            required
+                            autoFocus
+                            placeholder="seu@email.com"
+                            className="bg-black/60 border border-gray-700 rounded px-3 py-2 text-white text-sm outline-none focus:border-rpg-gold"
+                            value={reivindicarEmail}
+                            onChange={(e) => setReivindicarEmail(e.target.value)}
+                        />
+                        <input
+                            type="password"
+                            required
+                            minLength={8}
+                            placeholder="Mínimo 8 caracteres"
+                            className="bg-black/60 border border-gray-700 rounded px-3 py-2 text-white text-sm outline-none focus:border-rpg-gold"
+                            value={reivindicarSenha}
+                            onChange={(e) => setReivindicarSenha(e.target.value)}
+                        />
+                        {reivindicarErro && <p className="text-red-500 text-xs">{reivindicarErro}</p>}
+                        <div className="flex gap-2 mt-1">
+                            <button
+                                type="button"
+                                onClick={() => setModalReivindicarAberto(false)}
+                                className="flex-1 border border-gray-700 text-gray-400 hover:text-white rounded py-2 text-sm"
+                            >
+                                Cancelar
+                            </button>
+                            <button
+                                type="submit"
+                                disabled={reivindicarEnviando}
+                                className="flex-1 bg-rpg-gold hover:bg-white text-black font-bold rounded py-2 text-sm disabled:opacity-50"
+                            >
+                                {reivindicarEnviando ? <Loader2 size={16} className="animate-spin mx-auto" /> : 'Salvar'}
+                            </button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        )}
+
         {/* HUD Inimigos — ordem de iniciativa real (Etapa 7, Fase 1): a
             posição vem de `ordemIniciativa` (índices em `enemies`, -1 é o
             herói), calculada uma vez por `combat.iniciar_combate`. Clicar
@@ -469,7 +680,13 @@ export default function GameChat() {
             <div className="h-12"></div>
             {messages.map((msg, idx) => {
                 if (msg.kind === 'rolagem') {
-                    return <RollCard key={idx} dados={msg.dados} />;
+                    // Etapa 10 (A-7): cura/morte de inimigo usam o card de
+                    // status; o resto (ataque, teste, dano, morte do herói)
+                    // continua no RollCard de sempre.
+                    if (msg.dados.tipo === 'cura' || msg.dados.tipo === 'morte_inimigo') {
+                        return <StatusCard key={idx} dados={msg.dados} />;
+                    }
+                    return <RollCard key={idx} dados={msg.dados as DadosRolagem} />;
                 }
 
                 const isUser = msg.role === 'user';
@@ -507,22 +724,60 @@ export default function GameChat() {
                             }`}>
                             <p className="whitespace-pre-wrap break-words">{msg.content}</p>
                             {!isUser && !msg.isError && msg.turnoIndex !== undefined && (
-                                <div className="flex gap-2 mt-2 -mb-1">
-                                    <button
-                                        type="button"
-                                        onClick={() => enviarFeedback(idx, msg.turnoIndex!, 1)}
-                                        disabled={msg.feedback !== undefined}
-                                        aria-label="Gostei desta narração"
-                                        className={`p-1 rounded transition-colors ${msg.feedback === 1 ? 'text-emerald-500' : 'text-gray-600 hover:text-emerald-500 disabled:hover:text-gray-600'}`}
-                                    ><ThumbsUp size={13}/></button>
-                                    <button
-                                        type="button"
-                                        onClick={() => enviarFeedback(idx, msg.turnoIndex!, -1)}
-                                        disabled={msg.feedback !== undefined}
-                                        aria-label="Não gostei desta narração"
-                                        className={`p-1 rounded transition-colors ${msg.feedback === -1 ? 'text-red-500' : 'text-gray-600 hover:text-red-500 disabled:hover:text-gray-600'}`}
-                                    ><ThumbsDown size={13}/></button>
-                                </div>
+                                comentarioAbertoIdx === idx ? (
+                                    <div className="mt-2 -mb-1 flex flex-col gap-1.5">
+                                        <input
+                                            type="text"
+                                            autoFocus
+                                            value={comentarioTexto}
+                                            onChange={(e) => setComentarioTexto(e.target.value)}
+                                            onKeyDown={(e) => {
+                                                if (e.key === 'Enter') {
+                                                    enviarFeedback(idx, msg.turnoIndex!, -1, comentarioTexto.trim() || undefined);
+                                                    setComentarioAbertoIdx(null);
+                                                    setComentarioTexto('');
+                                                }
+                                            }}
+                                            maxLength={500}
+                                            placeholder="O que ficou estranho? (opcional)"
+                                            aria-label="O que ficou estranho? Opcional."
+                                            className="bg-black/40 border border-gray-700 rounded px-2 py-1 text-xs text-gray-200 outline-none focus:border-red-700 w-full max-w-xs"
+                                        />
+                                        <div className="flex gap-2">
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    enviarFeedback(idx, msg.turnoIndex!, -1, comentarioTexto.trim() || undefined);
+                                                    setComentarioAbertoIdx(null);
+                                                    setComentarioTexto('');
+                                                }}
+                                                className="text-[11px] font-bold text-red-400 hover:text-red-300"
+                                            >Enviar</button>
+                                            <button
+                                                type="button"
+                                                onClick={() => { setComentarioAbertoIdx(null); setComentarioTexto(''); }}
+                                                className="text-[11px] text-gray-500 hover:text-gray-300"
+                                            >Cancelar</button>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div className="flex gap-2 mt-2 -mb-1">
+                                        <button
+                                            type="button"
+                                            onClick={() => enviarFeedback(idx, msg.turnoIndex!, 1)}
+                                            disabled={msg.feedback !== undefined}
+                                            aria-label="Gostei desta narração"
+                                            className={`p-1 rounded transition-colors ${msg.feedback === 1 ? 'text-emerald-500' : 'text-gray-600 hover:text-emerald-500 disabled:hover:text-gray-600'}`}
+                                        ><ThumbsUp size={13}/></button>
+                                        <button
+                                            type="button"
+                                            onClick={() => { if (msg.feedback === undefined) setComentarioAbertoIdx(idx); }}
+                                            disabled={msg.feedback !== undefined}
+                                            aria-label="Não gostei desta narração"
+                                            className={`p-1 rounded transition-colors ${msg.feedback === -1 ? 'text-red-500' : 'text-gray-600 hover:text-red-500 disabled:hover:text-gray-600'}`}
+                                        ><ThumbsDown size={13}/></button>
+                                    </div>
+                                )
                             )}
                         </div>
                     </div>

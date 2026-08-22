@@ -30,6 +30,30 @@ class DadosRolagem:
     critico: bool = False
     falha_critica: bool = False
     dano: int | None = None
+    # Etapa 11 (B-8) — "de onde vem o bônus": qual atributo/arma originou a
+    # rolagem, e a decomposição do bônus somado (ex: Destreza +2,
+    # Proficiência +2, em vez de só "+4"). `None` quando não há o que
+    # decompor (ex: ataque de monstro, que já vem com um bônus fixo do
+    # bestiário).
+    atributo: str | None = None
+    arma: str | None = None
+    partes_bonus: list[dict] | None = None
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+
+@dataclass
+class EventoStatus:
+    """Etapa 10 (A-7) — cura e morte de inimigo: não são rolagem de d20
+    (sem acerto/erro, sem CD/CA), mas mereciam o mesmo tratamento de card
+    que `DadosRolagem` já dá a ataque/teste, em vez de ficarem como texto
+    solto com emoji dentro da narrativa. Dataclass separado de propósito —
+    os campos de rolagem não fazem sentido aqui."""
+
+    tipo: Literal["cura", "morte_inimigo"]
+    quem: str
+    valor: int | None = None  # cura: quanto de PV recuperou. morte_inimigo: sem valor.
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -40,9 +64,9 @@ class EventoRolagem(str):
     que a gerou. `dados` é `None` para eventos que não vêm de uma rolagem
     (movimento, item, ouro, reputação) — só quem rola dado carrega card."""
 
-    dados: DadosRolagem | None
+    dados: DadosRolagem | EventoStatus | None
 
-    def __new__(cls, texto: str, dados: DadosRolagem | None = None) -> "EventoRolagem":
+    def __new__(cls, texto: str, dados: DadosRolagem | EventoStatus | None = None) -> "EventoRolagem":
         obj = super().__new__(cls, texto)
         obj.dados = dados
         return obj

@@ -164,5 +164,7 @@ def montar_contexto(
     resultado. Depois de usar as ferramentas que a cena pedir, narre o
     resultado em prosa, num tom sombrio e sensorial (visão, som, cheiro — a
     bíblia acima exige isso). Não responda em JSON: a resposta final é só o
-    texto da narrativa.
+    texto da narrativa — prosa corrida, sem markdown (sem asterisco, sem
+    cerquilha de título, sem lista com marcador, sem bloco de código);
+    ênfase pela escolha da palavra, nunca pela tipografia.
     """
