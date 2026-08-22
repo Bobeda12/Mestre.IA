@@ -106,6 +106,43 @@ class EventoMemoria(Base):
     personagem: Mapped["Personagem"] = relationship(back_populates="eventos_memoria")
 
 
+class EventoTelemetria(Base):
+    """Telemetria de produto (Etapa 9) — granularidade mínima: um evento por
+    fato, sem dashboard nenhum embutido aqui. Sessões criadas, turnos por
+    sessão, retenção D1/D7 e ponto de abandono são consulta sobre esta
+    tabela (ver `scripts/telemetria_resumo.py`), não uma feature de runtime.
+    `personagem_id` é `None` só em eventos que não têm um personagem
+    associado (nenhum hoje, mas o tipo já vem opcional para não fechar essa
+    porta)."""
+
+    __tablename__ = "eventos_telemetria"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    usuario_id: Mapped[int] = mapped_column(ForeignKey("usuarios.id"), index=True)
+    personagem_id: Mapped[int | None] = mapped_column(ForeignKey("personagens.id"), index=True, default=None)
+    # "sessao_criada" | "turno" | "personagem_arquivado" — string solta em
+    # vez de enum: mesma escolha de EventoMemoria.tipo acima, um tipo novo
+    # não deve exigir migration.
+    tipo: Mapped[str]
+    criado_em: Mapped[datetime] = mapped_column(default=lambda: datetime.now(UTC), index=True)
+
+
+class FeedbackNarracao(Base):
+    """👍/👎 por narração (Etapa 9) — sinal humano para validar o
+    LLM-as-a-judge (ADR-0011) e dataset de preferência próprio.
+    `historico_chat` é uma coluna JSON de lista (`Personagem.historico_chat`),
+    não uma tabela por mensagem — o vínculo com a narração é por índice
+    nessa lista, não por FK de linha."""
+
+    __tablename__ = "feedback_narracoes"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    personagem_id: Mapped[int] = mapped_column(ForeignKey("personagens.id"), index=True)
+    turno_index: Mapped[int]
+    valor: Mapped[int]  # +1 ou -1
+    criado_em: Mapped[datetime] = mapped_column(default=lambda: datetime.now(UTC))
+
+
 _connect_args = {"check_same_thread": False} if settings.database_url.startswith("sqlite") else {}
 engine = create_engine(settings.database_url, connect_args=_connect_args)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

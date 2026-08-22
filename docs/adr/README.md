@@ -20,7 +20,7 @@ Template: [`0000-template.md`](0000-template.md) · Sistema completo: [`../READM
 | [0012](0012-sse-em-vez-de-websocket-ou-polling.md) | SSE em vez de WebSocket ou polling, fallback só antes do 1º chunk | 7 | ✅ aceito | 21/08/2026 |
 | [0013](0013-tanstack-query-em-vez-de-redux.md) | TanStack Query para estado de servidor | 7 | ✅ aceito | 21/08/2026 |
 | [0014](0014-senha-com-google-opcional.md) | Login por senha (PBKDF2) com Google OAuth opcional, cookie assinado à mão | 8 | ✅ aceito | 22/08/2026 |
-| 0015 | Escolha de hospedagem | 9 | 🕓 previsto | — |
+| [0015](0015-hospedagem-fly-vercel-neon.md) | Hospedagem: Fly.io + Vercel + Neon, proxy em vez de cookie cross-site | 9 | ✅ aceito | 22/08/2026 |
 
 **Legenda:** 🕓 previsto · ✅ aceito · ⛔ substituído
 

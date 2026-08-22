@@ -1,4 +1,4 @@
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 
 def _valida_formato_email(valor: str) -> str:
@@ -10,8 +10,11 @@ def _valida_formato_email(valor: str) -> str:
 
 
 class RegistrarRequest(BaseModel):
-    email: str
-    senha: str
+    email: str = Field(max_length=254)  # limite do próprio protocolo de e-mail (RFC 5321)
+    # Sem limite de tamanho aqui (Etapa 9), uma senha de alguns MB chegava
+    # inteira ao PBKDF2 (260 mil iterações sobre a string inteira) antes de
+    # qualquer validação rejeitar — negação de serviço barata.
+    senha: str = Field(max_length=256)
 
     @field_validator("email")
     @classmethod
@@ -27,8 +30,8 @@ class RegistrarRequest(BaseModel):
 
 
 class LoginRequest(BaseModel):
-    email: str
-    senha: str
+    email: str = Field(max_length=254)
+    senha: str = Field(max_length=256)
 
     @field_validator("email")
     @classmethod

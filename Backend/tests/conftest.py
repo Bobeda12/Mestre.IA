@@ -83,3 +83,17 @@ def _embeddings_sem_rede(monkeypatch):
 
     monkeypatch.setattr(embeddings, "embed_um", _embedding_falso)
     monkeypatch.setattr(embeddings, "embed", lambda textos: [_embedding_falso(t) for t in textos])
+
+
+@pytest.fixture(autouse=True)
+def _rate_limit_zerado():
+    """O `Limiter` do slowapi (Etapa 9, app/infra/rate_limit.py) guarda
+    contagem em memória por todo o processo — sem isto, os ~214 testes do
+    processo inteiro dividiriam o mesmo orçamento de "10/minuto" em
+    `/auth/login` (todos batem do mesmo IP de teste), e testes no fim da
+    suíte começariam a levar 429 por causa de testes completamente
+    não relacionados no início."""
+    from app.infra.rate_limit import limiter
+
+    limiter.reset()
+    yield

@@ -2,7 +2,8 @@ import { useState, useEffect, useRef } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
-  Send, Scroll, Menu, X, Dices, User, Backpack, Map, Sword, Shield, AlertTriangle, Star, Coins, FlaskConical, BookOpen
+  Send, Scroll, Menu, X, Dices, User, Backpack, Map, Sword, Shield, AlertTriangle, Star, Coins, FlaskConical, BookOpen,
+  ThumbsUp, ThumbsDown
 } from 'lucide-react';
 import { Progress } from './ui/progress';
 import { api, API_URL } from '../lib/api';
@@ -11,7 +12,12 @@ import { getLocalImage } from '../lib/utils';
 import RollCard, { type DadosRolagem } from './RollCard';
 
 type Message =
-  | { kind: 'texto'; role: 'user' | 'assistant' | 'system'; content: string; isError?: boolean }
+  // `turnoIndex` (Etapa 9) chega no frame SSE "state", junto do resto do
+  // HUD — é a posição desta narração em `historico_chat` no servidor
+  // (Personagem.historico_chat), o que o botão 👍/👎 manda pra
+  // POST /personagens/:id/feedback. `feedback` é só o que ESTE navegador já
+  // votou, pra não deixar votar duas vezes na mesma aba.
+  | { kind: 'texto'; role: 'user' | 'assistant' | 'system'; content: string; isError?: boolean; turnoIndex?: number; feedback?: 1 | -1 }
   | { kind: 'rolagem'; dados: DadosRolagem };
 
 // Espelha domain/state.py:Inimigo (só os campos que o HUD lê).
@@ -39,6 +45,7 @@ interface EstadoJogo {
   combat_active: boolean;
   inimigos?: Inimigo[];
   missao?: unknown;
+  turno_index?: number;
 }
 
 interface CargaJogo extends EstadoJogo {
@@ -234,12 +241,35 @@ export default function GameChat() {
           setTurnoAtual(d.turno_atual ?? 0);
           if (d.missao) setQuest(d.missao);
           if (d.hp_atual <= 0) setGameOver(true);
+
+          if (d.turno_index !== undefined) {
+            const turnoIndex = d.turno_index;
+            setMessages(prev => {
+              const copia = [...prev];
+              for (let i = copia.length - 1; i >= 0; i--) {
+                const m = copia[i];
+                if (m.kind === 'texto' && m.role === 'assistant') {
+                  copia[i] = { ...m, turnoIndex };
+                  break;
+                }
+              }
+              return copia;
+            });
+          }
         }
       }
     } catch {
       acrescentarTexto("*(Não consegui falar com o servidor. Confira sua conexão e tente de novo.)*", true);
     }
     finally { setLoading(false); }
+  };
+
+  // 👍/👎 por narração (Etapa 9) — sinal humano pro LLM-as-a-judge (ADR-0011)
+  // e dataset de preferência. Otimista: marca o voto na hora, sem esperar
+  // a resposta do servidor — um turno de RPG não é um formulário crítico.
+  const enviarFeedback = (idx: number, turnoIndex: number, valor: 1 | -1) => {
+    setMessages(prev => prev.map((m, i) => (i === idx && m.kind === 'texto' ? { ...m, feedback: valor } : m)));
+    api.post(`/personagens/${sessionId}/feedback`, { turno_index: turnoIndex, valor }).catch(() => {});
   };
 
   const handleSendMessage = () => { if (!input.trim()) return; sendAction(input); setInput(""); };
@@ -476,6 +506,24 @@ export default function GameChat() {
                                 : 'bg-gray-900/60 border border-gray-800 text-gray-300 rounded-tl-none'
                             }`}>
                             <p className="whitespace-pre-wrap break-words">{msg.content}</p>
+                            {!isUser && !msg.isError && msg.turnoIndex !== undefined && (
+                                <div className="flex gap-2 mt-2 -mb-1">
+                                    <button
+                                        type="button"
+                                        onClick={() => enviarFeedback(idx, msg.turnoIndex!, 1)}
+                                        disabled={msg.feedback !== undefined}
+                                        aria-label="Gostei desta narração"
+                                        className={`p-1 rounded transition-colors ${msg.feedback === 1 ? 'text-emerald-500' : 'text-gray-600 hover:text-emerald-500 disabled:hover:text-gray-600'}`}
+                                    ><ThumbsUp size={13}/></button>
+                                    <button
+                                        type="button"
+                                        onClick={() => enviarFeedback(idx, msg.turnoIndex!, -1)}
+                                        disabled={msg.feedback !== undefined}
+                                        aria-label="Não gostei desta narração"
+                                        className={`p-1 rounded transition-colors ${msg.feedback === -1 ? 'text-red-500' : 'text-gray-600 hover:text-red-500 disabled:hover:text-gray-600'}`}
+                                    ><ThumbsDown size={13}/></button>
+                                </div>
+                            )}
                         </div>
                     </div>
                 );

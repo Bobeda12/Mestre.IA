@@ -13,6 +13,14 @@ import axios from 'axios';
 // o pedido vira cross-site e o navegador recusa devolver o cookie (mesmo
 // content ele aceite receber o Set-Cookie). `curl` não pega isso porque
 // não aplica SameSite — só apareceu testando no navegador de verdade.
+// Em produção (Etapa 9), VITE_API_URL = "/api" — um caminho relativo, não a
+// URL do Fly.io direto. `vercel.json` reescreve "/api/*" para o backend nos
+// bastidores, então o navegador só enxerga a origem da própria Vercel. Isso
+// mantém o cookie de sessão first-party (mesmo site do ponto de vista do
+// SameSite) mesmo com front e API hospedados em domínios diferentes —
+// apontar direto pro `*.fly.dev` reabriria o mesmo tipo de problema de
+// cookie cross-site descrito acima, só que sem solução tão simples quanto
+// trocar o host (front e back nunca serão o mesmo domínio em produção).
 export const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
 // Etapa 8 (ADR-0014): a sessão vive num cookie httpOnly, não mais em token

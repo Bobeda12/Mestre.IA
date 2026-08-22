@@ -1,0 +1,6 @@
+{
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": "https://mestre-ia-backend.fly.dev/$1" },
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
+}

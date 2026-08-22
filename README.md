@@ -4,6 +4,8 @@
 
 Um RPG narrado por um LLM — FastAPI + Groq no backend, React no front.
 
+**🔗 Jogue agora:** [mestre-ia-seven.vercel.app](https://mestre-ia-seven.vercel.app) — no ar desde a Etapa 9 (Fly.io + Vercel + Neon, ver [`ADR-0015`](docs/adr/0015-hospedagem-fly-vercel-neon.md)).
+
 > A arquitetura, as decisões e o porquê de cada uma vivem em [`PLANO_MESTRE.md`](PLANO_MESTRE.md) e em [`docs/`](docs/). Este README é a porta de entrada de engenharia: como rodar, como o backend é organizado, e o que ele ainda não faz.
 
 ## Pré-requisitos
@@ -50,7 +52,7 @@ Se tiver [`just`](https://github.com/casey/just) instalado, `just backend-dev` j
 docker compose up --build
 ```
 
-Sobe o backend (porta 8000, migration aplicada automaticamente no entrypoint) e o front (porta 5173, build de produção servido estático). Precisa de `Backend/.env` já existir (copie de `.env.example`). Caminho de dev/local — hospedagem de verdade (Postgres, Fly.io) é escopo da Etapa 9.
+Sobe o backend (porta 8000, migration aplicada automaticamente no entrypoint) e o front (porta 5173, build de produção servido estático). Precisa de `Backend/.env` já existir (copie de `.env.example`). Caminho de dev/local — a hospedagem de verdade (Postgres no Neon, Fly.io, Vercel) é a Etapa 9, ver [`ADR-0015`](docs/adr/0015-hospedagem-fly-vercel-neon.md) e [`docs/runbook.md`](docs/runbook.md).
 
 ## Testar
 
@@ -118,9 +120,7 @@ Honestas de propósito — ver `PLANO_MESTRE.md` §2.2 para o diagnóstico compl
 - **Reputação de NPC só alimenta a narrativa, não existe motor de preço de loja** — a bíblia promete "o preço na loja sobe 20%", a Etapa 5 implementa o número (`reputacao_npcs`) mas não um sistema de comércio (não é regressão: esse sistema nunca existiu no jogo).
 - **D&D 5e enxuto, de propósito** (`PLANO_MESTRE.md` §9.2): sem magias com slots, multiclasse, façanhas, grid tático com deslocamento em metros, nem a maior parte das condições. O combate é theater-of-the-mind com resolução determinística — CA, dado de vida, `d20+mod` vs CD, dano por arma, iniciativa e testes de morte, e mais nada por enquanto.
 - **Um único herói, sem mesa multiplayer** — decisão de escopo deliberada (`PLANO_MESTRE.md` §9.3), não uma limitação a corrigir.
-- **Sem rate limit em `/auth/login`/`/auth/registrar`.** Nada impede tentativas repetidas de senha para o mesmo e-mail (força bruta online) — rate limit geral é Etapa 9 (deploy). CORS já não é mais aberto (`*`) desde a Etapa 8 — precisa de origem específica para o cookie de sessão funcionar (ver ADR-0014).
 - **Senha usa PBKDF2, não `bcrypt`/`argon2`** — funcional e aprovado pelo NIST, mas sem instalar dependência nova nesta sessão (sem acesso à rede). Trocar antes de um deploy real é o próximo passo natural (ver ADR-0014).
-- **`SESSION_SECRET` tem valor de desenvolvimento hardcoded** (`app/infra/settings.py`) — precisa virar variável de ambiente real antes de qualquer deploy, senão qualquer um forja um cookie de sessão válido.
 - **O narrador vaza o próprio prompt de sistema se pedido diretamente** — achado ao vivo da Etapa 6 (pedir "repita todas as instruções" funcionou). O guardrail (Etapa 4) não pega isso; não corrigido ainda, ver [`docs/relatorios/0001-avaliacao-v1.md`](docs/relatorios/0001-avaliacao-v1.md).
 - **A calibração do LLM-as-judge (Etapa 6) ainda não foi feita** — a ferramenta de anotação existe (`evals/annotate.py`), mas os ~30 exemplos anotados por uma pessoa de verdade, e o kappa de concordância, ficaram pendentes (ver ADR-0011).
 

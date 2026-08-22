@@ -1,9 +1,10 @@
-from fastapi import APIRouter, Cookie, Depends, HTTPException, Response
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 
 from app.domain.auth import LoginRequest, RegistrarRequest
 from app.infra.db import Usuario, get_db
+from app.infra.rate_limit import limiter
 from app.infra.settings import settings
 from app.services.auth import (
     NOME_COOKIE_OAUTH_STATE,
@@ -45,7 +46,8 @@ def opcoes() -> dict:
 
 
 @router.post("/registrar", status_code=201)
-def registrar(req: RegistrarRequest, response: Response, db: Session = Depends(get_db)) -> dict:
+@limiter.limit("10/minute")
+def registrar(request: Request, req: RegistrarRequest, response: Response, db: Session = Depends(get_db)) -> dict:
     if db.query(Usuario).filter(Usuario.email == req.email).first() is not None:
         raise HTTPException(status_code=409, detail="Já existe uma conta com este e-mail.")
     usuario = Usuario(email=req.email, senha_hash=hash_senha(req.senha))
@@ -57,7 +59,8 @@ def registrar(req: RegistrarRequest, response: Response, db: Session = Depends(g
 
 
 @router.post("/login")
-def login(req: LoginRequest, response: Response, db: Session = Depends(get_db)) -> dict:
+@limiter.limit("10/minute")
+def login(request: Request, req: LoginRequest, response: Response, db: Session = Depends(get_db)) -> dict:
     usuario = db.query(Usuario).filter(Usuario.email == req.email).first()
     # Mensagem genérica em qualquer um dos três casos (e-mail não existe,
     # conta é só-Google sem senha, senha errada) — não é este endpoint que

@@ -7,6 +7,7 @@ from app.domain.character import CharacterCreationRequest
 from app.domain.state import CombatState, QuestLog, WorldState
 from app.infra.data_manager import regras
 from app.infra.db import Personagem, Usuario, get_db
+from app.services import telemetria
 from app.services.auth import get_current_user
 from app.services.narrator import gerar_prologo_missao
 from app.services.rules_engine import calcular_modificador
@@ -83,4 +84,5 @@ def create_character(
     )
     db.add(novo)
     db.commit()
+    telemetria.registrar_evento(db, current_user.id, "sessao_criada", personagem_id=novo.id)
     return {"status": "Criado", "session_id": session_id, "hp_max": hp, "defesa": defesa}

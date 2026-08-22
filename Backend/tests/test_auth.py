@@ -254,3 +254,19 @@ def test_arquivar_personagem_de_outro_usuario_devolve_403(dois_clientes, monkeyp
     resp_dono = cliente_a.patch(f"/personagens/{session_id}/arquivar")
     assert resp_dono.status_code == 200
     assert all(p["nome"] != "HeroiArquivavel" for p in cliente_a.get("/personagens").json())
+
+
+# ---------------------------------------------------------------------------
+# Rate limit (Etapa 9) — força bruta em /auth/login
+# ---------------------------------------------------------------------------
+
+
+def test_login_tem_rate_limit_por_ip(client):
+    """`app/infra/rate_limit.py` limita `/auth/login` a 10/minuto por IP —
+    sem isto, a verificação de senha aceitava tentativas ilimitadas."""
+    for _ in range(10):
+        resp = client.post("/auth/login", json={"email": "ninguem@teste.com", "senha": "tentativa-errada"})
+        assert resp.status_code == 401
+
+    resp = client.post("/auth/login", json={"email": "ninguem@teste.com", "senha": "tentativa-errada"})
+    assert resp.status_code == 429

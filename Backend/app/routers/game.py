@@ -1,7 +1,7 @@
 import json
 from collections.abc import Generator
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
@@ -11,7 +11,9 @@ from app.domain.state import CombatState, QuestLog, WorldState
 from app.infra.data_manager import regras
 from app.infra.db import Personagem, Usuario, get_db
 from app.infra.llm_client import ErroMestre, chamar_com_fallback
-from app.services import combat, memory, rag_regras, rules_engine
+from app.infra.rate_limit import limiter
+from app.infra.tracing import turno_span
+from app.services import combat, memory, rag_regras, rules_engine, telemetria
 from app.services.agent_loop import executar_turno, executar_turno_stream
 from app.services.auth import get_current_user
 from app.services.guardrail import corrigir_narrativa, validar_narrativa
@@ -76,8 +78,12 @@ def load_game(
 
 
 @router.post("/chat")
+@limiter.limit("20/minute")
 async def chat_endpoint(
-    user_input: UserAction, current_user: Usuario = Depends(get_current_user), db: Session = Depends(get_db)
+    request: Request,
+    user_input: UserAction,
+    current_user: Usuario = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ) -> dict:
     heroi = _buscar_personagem(db, current_user, user_input.session_id, "Sessão não encontrada.")
 
@@ -102,7 +108,8 @@ async def chat_endpoint(
         )
         msgs = [{"role": "system", "content": prompt_morte}] + hist + [{"role": "user", "content": user_input.action}]
         try:
-            resp = chamar_com_fallback(msgs)
+            with turno_span(personagem_id=heroi.id, usuario_id=current_user.id, turno=w_state.turno):
+                resp = chamar_com_fallback(msgs)
             narrativa = resp.choices[0].message.content or ""
         except ErroMestre:
             narrativa = ""
@@ -131,7 +138,8 @@ async def chat_endpoint(
         msgs = [{"role": "system", "content": prompt}] + hist + [{"role": "user", "content": user_input.action}]
         executor = ToolExecutor(heroi, c_state, w_state)
         try:
-            narrativa, eventos_ferramentas, _chamadas = executar_turno(msgs, executor)
+            with turno_span(personagem_id=heroi.id, usuario_id=current_user.id, turno=w_state.turno):
+                narrativa, eventos_ferramentas, _chamadas = executar_turno(msgs, executor)
         except ErroMestre as e:
             return _resposta(heroi, c_state, q_state, narrativa=f"*({e.mensagem})*", erro=True)
 
@@ -162,8 +170,9 @@ async def chat_endpoint(
         texto=f"{user_input.action} → {narrativa[:300]}",
         personagens=[i.nome for i in c_state.inimigos],
     )
+    telemetria.registrar_evento(db, current_user.id, "turno", personagem_id=heroi.id)
 
-    return _resposta(heroi, c_state, q_state, narrativa=narrativa)
+    return _resposta(heroi, c_state, q_state, narrativa=narrativa, turno_index=len(heroi.historico_chat) - 1)
 
 
 def _sse(evento: str, dados: dict) -> str:
@@ -171,8 +180,12 @@ def _sse(evento: str, dados: dict) -> str:
 
 
 @router.post("/chat/stream")
+@limiter.limit("20/minute")
 def chat_stream_endpoint(
-    user_input: UserAction, current_user: Usuario = Depends(get_current_user), db: Session = Depends(get_db)
+    request: Request,
+    user_input: UserAction,
+    current_user: Usuario = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ) -> StreamingResponse:
     """Versão em streaming de `/chat` (Etapa 7, ADR-0012) — mesma regra de
     jogo, mesma persistência, só a entrega ao cliente muda. Duplica a
@@ -216,7 +229,8 @@ def chat_stream_endpoint(
                 [{"role": "system", "content": prompt_morte}] + hist + [{"role": "user", "content": user_input.action}]
             )
             try:
-                resp = chamar_com_fallback(msgs)
+                with turno_span(personagem_id=heroi.id, usuario_id=current_user.id, turno=w_state.turno):
+                    resp = chamar_com_fallback(msgs)
                 narrativa = resp.choices[0].message.content or ""
             except ErroMestre:
                 narrativa = ""
@@ -238,15 +252,16 @@ def chat_stream_endpoint(
 
             pedacos: list[str] = []
             erro_turno: str | None = None
-            for evento in executar_turno_stream(msgs, executor):
-                if evento.tipo == "token":
-                    pedacos.append(evento.dados)
-                    yield _sse("token", {"texto": evento.dados})
-                elif evento.tipo == "tool_event":
-                    yield _sse("tool_event", evento.dados)
-                elif evento.tipo == "erro":
-                    erro_turno = evento.dados
-                    yield _sse("erro", {"mensagem": erro_turno})
+            with turno_span(personagem_id=heroi.id, usuario_id=current_user.id, turno=w_state.turno):
+                for evento in executar_turno_stream(msgs, executor):
+                    if evento.tipo == "token":
+                        pedacos.append(evento.dados)
+                        yield _sse("token", {"texto": evento.dados})
+                    elif evento.tipo == "tool_event":
+                        yield _sse("tool_event", evento.dados)
+                    elif evento.tipo == "erro":
+                        erro_turno = evento.dados
+                        yield _sse("erro", {"mensagem": erro_turno})
 
             if erro_turno is not None:
                 yield _sse("state", _resposta(heroi, c_state, q_state, narrativa=f"*({erro_turno})*", erro=True))
@@ -286,7 +301,10 @@ def chat_stream_endpoint(
             texto=f"{user_input.action} → {narrativa[:300]}",
             personagens=[i.nome for i in c_state.inimigos],
         )
+        telemetria.registrar_evento(db, current_user.id, "turno", personagem_id=heroi.id)
 
-        yield _sse("state", _resposta(heroi, c_state, q_state, narrativa=narrativa))
+        yield _sse(
+            "state", _resposta(heroi, c_state, q_state, narrativa=narrativa, turno_index=len(heroi.historico_chat) - 1)
+        )
 
     return StreamingResponse(gerar(), media_type="text/event-stream")

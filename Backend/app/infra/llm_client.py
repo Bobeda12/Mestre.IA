@@ -7,6 +7,8 @@ serviços (`services/agent_loop.py`) precisam levantá-lo sem importar de
 `services/narrator.py`, o que violaria a direção de dependência do
 ADR-0003 (routers → services → domain/infra)."""
 
+import contextlib
+import time
 from collections.abc import Iterator
 from typing import Any
 
@@ -14,6 +16,7 @@ import groq
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 from app.infra.settings import settings
+from app.infra.tracing import langfuse_client
 
 MODEL_NAME = settings.model_name
 MODELOS = [settings.model_name, *settings.modelos_fallback]
@@ -70,8 +73,35 @@ def _chamar_modelo(
     if response_format:
         kwargs["response_format"] = response_format
     if stream:
+        # Sem `stream_options={"include_usage": True}` aqui de propósito: o
+        # SDK da Groq instalado (0.37) não aceita esse parâmetro — tentei
+        # (Etapa 9) e quebrava toda chamada em streaming com TypeError, só
+        # apareceu testando ao vivo contra a API de verdade, não em teste
+        # nenhum. `chamar_stream_com_fallback` não reporta tokens ao
+        # Langfuse por isso; o resto da trace (modelo, texto, latência)
+        # continua valendo.
         kwargs["stream"] = True
-    return client.chat.completions.create(**kwargs)  # type: ignore[union-attr]
+        return client.chat.completions.create(**kwargs)  # type: ignore[union-attr]
+
+    # Etapa 9: uma trace por chamada de verdade ao modelo — não por turno,
+    # porque um turno com ferramentas encadeia várias chamadas (ADR-0007).
+    # `app/infra/tracing.py` é `None` sem conta no Langfuse configurada,
+    # aqui só isso já desliga o tracing (mesmo padrão de `client`/`groq_api_key`).
+    if langfuse_client is None:
+        return client.chat.completions.create(**kwargs)  # type: ignore[union-attr]
+
+    inicio = time.monotonic()
+    with langfuse_client.start_as_current_observation(
+        as_type="generation", name="groq-chat", model=modelo, input=msgs
+    ) as geracao:
+        resp = client.chat.completions.create(**kwargs)  # type: ignore[union-attr]
+        uso = getattr(resp, "usage", None)
+        geracao.update(
+            output=resp.choices[0].message.content if resp.choices else None,
+            usage_details={"input": uso.prompt_tokens, "output": uso.completion_tokens} if uso else None,
+            metadata={"latencia_s": round(time.monotonic() - inicio, 3)},
+        )
+    return resp
 
 
 def chamar_modelo_unico(
@@ -161,16 +191,47 @@ def chamar_stream_com_fallback(
             continue
 
         comprometido = False
-        try:
-            for chunk in stream:
-                comprometido = True
-                yield chunk
-            return
-        except _ERROS_TRANSITORIOS as e:
-            if comprometido:
-                raise ErroMestre("A conexão com a IA caiu no meio da resposta.") from e
-            ultimo_erro = e
-            continue
+        pedacos: list[str] = []
+        uso: Any = None
+        inicio = time.monotonic()
+        # Etapa 9: mesma trace por chamada de `_chamar_modelo`, só que aqui a
+        # chamada só termina quando o stream inteiro é consumido — por isso
+        # o `with` envolve o `for` (e não só a abertura da conexão).
+        gerenciador = (
+            langfuse_client.start_as_current_observation(
+                as_type="generation", name="groq-chat-stream", model=modelo, input=msgs
+            )
+            if langfuse_client is not None
+            else contextlib.nullcontext()
+        )
+        with gerenciador as geracao:
+            try:
+                for chunk in stream:
+                    comprometido = True
+                    # `getattr` em cascata (Etapa 9): evita depender do
+                    # formato exato do objeto de chunk — os testes usam
+                    # dublês simples (strings) no lugar do chunk real da
+                    # Groq, e a extração de texto/uso é só para a trace,
+                    # nunca deve derrubar o turno se o formato não bater.
+                    choices = getattr(chunk, "choices", None)
+                    delta = getattr(choices[0], "delta", None) if choices else None
+                    if delta is not None and getattr(delta, "content", None):
+                        pedacos.append(delta.content)
+                    if getattr(chunk, "usage", None):
+                        uso = chunk.usage
+                    yield chunk
+                if geracao is not None:
+                    geracao.update(
+                        output="".join(pedacos),
+                        usage_details={"input": uso.prompt_tokens, "output": uso.completion_tokens} if uso else None,
+                        metadata={"latencia_s": round(time.monotonic() - inicio, 3)},
+                    )
+                return
+            except _ERROS_TRANSITORIOS as e:
+                if comprometido:
+                    raise ErroMestre("A conexão com a IA caiu no meio da resposta.") from e
+                ultimo_erro = e
+                continue
 
     raise ErroMestre(
         "Todos os modelos configurados falharam ao responder. Tente de novo em instantes."

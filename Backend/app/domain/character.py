@@ -1,16 +1,20 @@
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 from app.services.rules_engine import ATRIBUTOS_VALIDOS, validar_point_buy
 
 
 class CharacterCreationRequest(BaseModel):
-    nome: str
-    raca: str
-    classe: str
-    alinhamento: str
-    background: str
-    objetivo: str
-    historia_texto: str = ""
+    # Limites de tamanho (Etapa 9) — estes campos vão direto pro prompt do
+    # narrador (services/narrator.py); sem limite, um texto gigante inflava
+    # o custo/contexto de cada chamada à Groq sem passar por nenhuma
+    # validação antes.
+    nome: str = Field(max_length=60)
+    raca: str = Field(max_length=60)  # validado contra o catálogo em routers/character.py
+    classe: str = Field(max_length=60)  # idem
+    alinhamento: str = Field(max_length=60)
+    background: str = Field(max_length=500)
+    objetivo: str = Field(max_length=500)
+    historia_texto: str = Field(default="", max_length=4000)
     # O cliente PROPÕE estes valores; o servidor sempre revalida (ver
     # routers/character.py). Ver ADR-0002 (Etapa 1).
     atributos: dict[str, int]
@@ -35,7 +39,9 @@ class CharacterCreationRequest(BaseModel):
 
 class UserAction(BaseModel):
     session_id: str
-    action: str
+    # 2000 caracteres é generoso para uma ação de turno — sem limite, uma
+    # mensagem gigante entrava direto no prompt do narrador (Etapa 9).
+    action: str = Field(max_length=2000)
 
 
 class LoadRequest(BaseModel):

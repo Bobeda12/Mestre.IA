@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Lição 10 — Do localhost à internet</title>
+<link rel="stylesheet" href="../assets/curso.css">
+</head>
+<body>
+<main class="page">
+
+<p class="kicker">Lição 10 · Mestre.IA</p>
+<h1>Do localhost à internet — o que muda quando não é mais a sua máquina</h1>
+<p class="standfirst">Até a Etapa 8, front e back sempre foram o mesmo site — <code>localhost</code>, portas diferentes. A Lição 09 já tinha achado um bug ali (<code>localhost</code> × <code>127.0.0.1</code> contam como sites diferentes para <code>SameSite</code>), mas o conserto foi simples: alinhar os dois no mesmo hostname. Em produção essa saída não existe — <code>*.vercel.app</code> e <code>*.fly.dev</code> nunca vão ser o mesmo domínio. Esta lição é sobre o que isso muda de verdade, e sobre uma coleção de bugs que só apareceram testando contra a internet de verdade, não em nenhum teste automatizado.</p>
+<div class="tagline">
+  <span>~12 minutos</span>
+  <span>Arquivos: <code>Frontend/vercel.json</code> · <code>Backend/app/infra/settings.py</code> · <code>Backend/app/infra/llm_client.py</code></span>
+  <span><a href="0009-sessao-cookie-e-token.html">Lição 9 — sessão, cookie e token ↗</a></span>
+</div>
+
+<h2>O problema que o deploy criou (e localhost nunca teve)</h2>
+
+<p>O cookie de sessão do Mestre.IA (Lição 09) é <code>httpOnly</code>, <code>SameSite=Lax</code>, sem <code>Secure</code>. Em <code>localhost</code>, alinhar front e API no mesmo hostname bastava para o navegador tratar as duas origens como <b>mesmo site</b> — portas diferentes não importam para <code>SameSite</code>. Em produção, front (<code>mestre-ia-seven.vercel.app</code>) e API (<code>mestre-ia-backend.fly.dev</code>) são domínios registráveis diferentes de verdade. Não existe hostname comum para alinhar — a saída da Lição 09 não se aplica mais.</p>
+
+<p><code>SameSite=Lax</code> não é enviado numa requisição cross-site que não é navegação de topo — e todo <code>fetch</code>/<code>axios</code> do front cai nessa categoria. O sintoma seria idêntico ao da Lição 09: <code>POST /auth/login</code> volta <code>200</code> com o cookie visível na resposta, e o próximo pedido autenticado volta <code>401</code>, como se o cookie nunca tivesse existido.</p>
+
+<h2>Duas saídas — e por que este projeto escolheu a menos óbvia</h2>
+
+<p>A correção "óbvia" seria trocar <code>samesite="lax"</code> por <code>samesite="none"</code> e adicionar <code>secure=True</code> nas três chamadas de <code>set_cookie</code> em <code>routers/auth.py</code>. Isso resolveria o <code>401</code> — mas abriria uma porta nova: navegadores com <i>tracking prevention</i> agressivo (Safari ITP, e o Chrome vem endurecendo isso) podem bloquear cookies de terceiro mesmo com <code>SameSite=None; Secure</code> corretamente configurado, porque do ponto de vista deles um cookie setado por um domínio diferente do que está na barra de endereço é exatamente o padrão que rastreamento entre sites usa.</p>
+
+<p>Este projeto escolheu a outra saída: <b>fazer a Vercel agir como proxy</b> de <code>/api/*</code> para o Fly.io.</p>
+
+<pre><code>// Frontend/vercel.json
+{
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": "https://mestre-ia-backend.fly.dev/$1" },
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
+}</code></pre>
+
+<p>Com isso, o navegador só enxerga <code>https://mestre-ia-seven.vercel.app/api/...</code> — nunca o domínio do Fly.io diretamente. Front e API viram a <b>mesma origem</b> do ponto de vista do navegador, o cookie volta a ser <i>first-party</i>, e <code>SameSite=Lax</code> continua funcionando sem tocar em <code>routers/auth.py</code> nenhuma linha. A segunda regra do <code>vercel.json</code> (reescrever qualquer outra rota para <code>index.html</code>) resolve um problema separado: sem ela, navegar direto para <code>/entrar</code> (em vez de clicar num link dentro do app) dava <code>404</code> — a Vercel não sabia que essa rota pertence ao React Router, uma <i>single-page app</i> só tem um HTML de verdade.</p>
+
+<div class="note"><b>Por que isso não é só "trocar o sintoma pela causa"</b>O proxy elimina a categoria de bug inteira, não só o <code>401</code> específico. <code>SameSite=None; Secure</code> resolveria o teste manual de hoje e deixaria uma dependência de comportamento de navegador que pode mudar (tracking prevention vem ficando mais agressivo com o tempo, não menos). Proxy não depende de nenhuma política de terceiro continuar do jeito que está.</div>
+
+<h2>CORS e cookie cross-site são dois problemas diferentes</h2>
+
+<p>É fácil confundir os dois porque os sintomas se parecem — um pedido "não funciona" entre dois domínios. Mas resolvem coisas diferentes: <b>CORS</b> é o navegador perguntando ao servidor "esta origem tem permissão para ler a resposta desta chamada?" (<code>allow_origins</code> em <code>app/main.py</code>). <b>SameSite</b> é o navegador decidindo, por conta própria, se <i>envia</i> o cookie numa chamada cross-site — o servidor não participa dessa decisão. Configurar CORS certinho e ainda assim tomar <code>401</code> por causa de <code>SameSite</code> é o sintoma clássico de confundir os dois. Com o proxy, CORS deixa de ser um problema também: front e API são a mesma origem, então nem existe mais uma chamada cross-origin para o navegador negociar.</p>
+
+<h2>Uma coleção de bugs que só existem fora do localhost</h2>
+
+<p>Nenhum dos bugs abaixo apareceu em <code>pytest</code>, <code>ruff</code>, ou <code>mypy</code> — os 215+ testes do backend continuaram verdes o tempo inteiro. Todos só apareceram testando contra os serviços reais.</p>
+
+<h3>1. JSON num secret de linha de comando</h3>
+
+<p><code>cors_origins</code> era um <code>list[str]</code> — pydantic-settings exige JSON estrito (<code>["a","b"]</code>) para preencher esse tipo a partir de uma variável de ambiente. Passar isso pelo PowerShell (<code>fly secrets set 'CORS_ORIGINS=["https://..."]'</code>) chegou corrompido no servidor: o backend crashava na inicialização com <code>SettingsError</code> ao tentar decodificar o JSON mastigado pelo shell. A correção não foi só escapar melhor as aspas — foi trocar o tipo do campo para uma string simples separada por vírgula, parseada por uma <code>@property</code> (<code>cors_origins_list</code>). Um formato mais simples de passar por linha de comando é uma robustez de produção, não só um jeito de evitar um bug específico.</p>
+
+<pre><code># app/infra/settings.py
+cors_origins: str = "http://localhost:5173"
+
+@property
+def cors_origins_list(self) -> list[str]:
+    return [o.strip() for o in self.cors_origins.split(",") if o.strip()]</code></pre>
+
+<h3>2. O Git Bash "corrigindo" um caminho que não era caminho nenhum</h3>
+
+<p>Configurar <code>VITE_API_URL=/api</code> na Vercel pelo Git Bash (MSYS) no Windows produziu, sem nenhum erro visível, o valor <code>C:/Program Files/Git/api</code> — o MSYS reescreve automaticamente argumentos de linha de comando que <i>parecem</i> um caminho absoluto do Unix (começam com <code>/</code>) para o caminho Windows equivalente, mesmo quando o argumento não é um caminho de arquivo, é só uma string que por acaso começa com barra. A correção: <code>MSYS_NO_PATHCONV=1</code> antes do comando, para desligar essa conversão só para aquela chamada.</p>
+
+<div class="warn"><b>Por que isso é traiçoeiro</b>Não deu erro nenhum — o comando "funcionou", só que salvou o valor errado silenciosamente. Só apareceu porque o build seguinte ainda continha a string <code>localhost:8000</code> (o valor de fallback do código) em vez de <code>/api</code> — um `curl`/inspeção do bundle gerado é o que revelou o valor real salvo.</div>
+
+<h3>3. Um parâmetro que o SDK simplesmente não tem</h3>
+
+<p>Pedir <code>stream_options={"include_usage": True}</code> na chamada da Groq (para capturar tokens no streaming, para o Langfuse) parecia inofensivo — é um parâmetro padrão em APIs compatíveis com OpenAI. O SDK da Groq instalado (<code>groq==0.37</code>) não aceita esse parâmetro, e a chamada falhava com <code>TypeError</code> — <b>quebrando todo turno em streaming</b>, o caminho principal que o jogo usa desde a Etapa 7. Um teste local ao vivo contra a API de verdade (não contra um <i>double</i>/mock) pegou isso antes do deploy; a correção foi remover o parâmetro e aceitar que o streaming não reporta tokens ao Langfuse (o resto da trace — modelo, texto, latência — continua valendo).</p>
+
+<h3>4. A chave certa, a região errada</h3>
+
+<p>O Langfuse Cloud tem regiões separadas (EU e US) com hosts diferentes — e chaves de uma região não autenticam na outra. Usar o host padrão (EU, <code>cloud.langfuse.com</code>) com uma chave de uma conta US devolveu <code>401 Unauthorized</code> silencioso no exportador de traces, sem derrubar o app (o SDK do Langfuse falha "por fora", sem quebrar a chamada real ao modelo — desenhado assim de propósito, tracing não deveria nunca poder derrubar o produto). <code>Langfuse.auth_check()</code> contra os dois hosts foi o que revelou qual região a conta realmente usava.</p>
+
+<h2>O padrão por trás dos quatro</h2>
+
+<p>Nenhum desses bugs é sobre lógica de negócio errada — são todos sobre a <b>borda entre o código e o ambiente que o executa</b>: um shell reescrevendo um argumento, um SDK sem um parâmetro que a documentação de outro serviço sugeria existir, uma região de conta que não é a assumida por padrão. Esse tipo de bug é estruturalmente invisível a <code>pytest</code> — testes automatizados rodam contra <i>doubles</i> e mocks, exatamente para não depender do estado de rede/ambiente de quem roda. É o mesmo princípio que a Etapa 4 já tinha achado para chamadas de LLM, e a Etapa 8 para o cookie de sessão: **testar contra o serviço real, cedo, antes de considerar a etapa pronta** — não só ao final, e não só com <code>curl</code>/<code>httpx</code> quando o que importa é o comportamento de um navegador de verdade (a Lição 09 já tinha essa mesma ressalva).</p>
+
+<h2>Teste rápido</h2>
+<p>Sem olhar para cima. O objetivo aqui é lembrar, não acertar de primeira.</p>
+
+<div id="quiz"></div>
+<p class="score" id="score"></p>
+
+<div class="next">
+  <h4>Fonte primária desta lição</h4>
+  <ul>
+    <li><a href="https://web.dev/articles/samesite-cookies-explained">web.dev — SameSite cookies explained</a> — por que <code>SameSite=None</code> cross-site ainda pode ser bloqueado por <i>tracking prevention</i>.</li>
+    <li><a href="https://vercel.com/docs/edge-network/rewrites">Vercel — Rewrites</a> — o mecanismo do proxy <code>/api/*</code> usado nesta etapa.</li>
+    <li><a href="https://developer.mozilla.org/en-US/docs/Web/HTTP/CORS">MDN — CORS</a> — por que CORS e <code>SameSite</code> são dois mecanismos diferentes, resolvendo problemas diferentes.</li>
+    <li><a href="../../docs/adr/0015-hospedagem-fly-vercel-neon.md">ADR-0015</a> — a decisão completa, com as alternativas descartadas.</li>
+  </ul>
+  <div class="ask">Travou em algo, ou uma explicação ficou pela metade? Me pergunta — eu sou o seu professor aqui, e é melhor desentortar agora do que seguir com um modelo mental torto.</div>
+</div>
+
+</main>
+
+<script>
+const QUESTIONS = [
+ {q:"Front em `mestre-ia-seven.vercel.app` e API em `mestre-ia-backend.fly.dev`. Por que o cookie de sessão (SameSite=Lax) parava de funcionar em produção, se ele já funcionava em localhost (Lição 09)?",
+  o:["Em localhost, alinhar o hostname (localhost em vez de 127.0.0.1) resolvia — mas em produção os dois domínios são registráveis DIFERENTES de verdade, não existe hostname comum para alinhar; SameSite=Lax não é enviado em fetch/axios cross-site","O cookie expirou","HTTPS não suporta cookies httpOnly","O Fly.io bloqueia cookies por padrão"], a:0,
+  fb:"A saída da Lição 09 (alinhar hostname) só funciona quando os dois lados podem, de fato, compartilhar o mesmo domínio registrável. *.vercel.app e *.fly.dev nunca vão ser o mesmo site."},
+
+ {q:"Por que este projeto escolheu um proxy (`vercel.json`, rewrite de /api/*) em vez da correção mais direta (`SameSite=None; Secure` no cookie)?",
+  o:["SameSite=None; Secure resolveria o 401, mas cookies de terceiro ainda podem ser bloqueados por tracking prevention agressivo (Safari ITP, Chrome) mesmo configurados corretamente — o proxy torna o cookie first-party de verdade, eliminando a categoria de problema","SameSite=None não existe como valor válido","Secure exige um certificado pago","O proxy é mais rápido em latência de rede"], a:0,
+  fb:"Proxy faz o navegador enxergar front e API como a mesma origem — o cookie nunca precisa lidar com política de terceiro nenhuma."},
+
+ {q:"CORS e a política SameSite de cookies resolvem o mesmo problema?",
+  o:["Não — CORS é o navegador perguntando ao SERVIDOR se uma origem pode LER a resposta de uma chamada; SameSite é o navegador decidindo, por conta própria, se ENVIA o cookie — o servidor não participa dessa segunda decisão","Sim, são exatamente a mesma coisa com nomes diferentes","CORS é só para imagens; SameSite é só para JSON","SameSite substituiu CORS em navegadores modernos"], a:0,
+  fb:"É comum confundir os dois porque os sintomas se parecem (algo 'não funciona' entre domínios) — mas são mecanismos independentes, resolvendo perguntas diferentes."},
+
+ {q:"O bug do Git Bash: `VITE_API_URL=/api` virou `C:/Program Files/Git/api` sem erro nenhum. O que causou isso?",
+  o:["O MSYS (Git Bash no Windows) reescreve automaticamente argumentos de linha de comando que PARECEM um caminho absoluto do Unix (começam com /) para o caminho Windows equivalente — mesmo quando o argumento não é um caminho de arquivo de verdade","O Vercel CLI tem um bug conhecido nesse comando","'/api' é uma palavra reservada no PowerShell","A internet estava instável no momento do comando"], a:0,
+  fb:"É a conversão automática de path do MSYS — motivo pelo qual o fix foi `MSYS_NO_PATHCONV=1` antes do comando, não uma correção no código do projeto."},
+
+ {q:"Por que pedir `stream_options={\"include_usage\": true}` na chamada da Groq quebrou TODO o streaming do jogo, não só a contagem de tokens?",
+  o:["O SDK da Groq instalado não aceita esse parâmetro — a chamada inteira falhava com TypeError antes de sequer abrir a conexão, derrubando o /chat/stream inteiro, não só a métrica que o parâmetro tentava habilitar","O parâmetro só funciona com autenticação por API key, não por OAuth","stream_options exige uma versão paga da Groq","O parâmetro conflitava com tool_choice='auto'"], a:0,
+  fb:"Um parâmetro extra que o SDK não reconhece pode derrubar a chamada inteira, não só a funcionalidade que ele tentava ligar — só um teste ao vivo contra a API de verdade revelou isso antes do deploy."},
+
+ {q:"Por que usar a chave certa do Langfuse contra o host errado (EU em vez de US) não derrubou o jogo, só o tracing?",
+  o:["O SDK do Langfuse foi desenhado para falhar 'por fora' — um erro de export de trace (401, rede, etc.) não deveria nunca poder quebrar a chamada real ao modelo, que é o que o jogador realmente precisa funcionar","Não é possível errar a região do Langfuse, o SDK detecta automaticamente","O Langfuse não faz chamada de rede nenhuma, só grava local","A chave era inválida, não só a região"], a:0,
+  fb:"Observabilidade que pode derrubar o produto observado é pior que não ter observabilidade nenhuma — por isso o export de trace falha silenciosamente (logado, mas não propagado) em vez de lançar."},
+];
+
+let answered=0, right=0;
+const host=document.getElementById('quiz');
+QUESTIONS.forEach((item,i)=>{
+  const order=item.o.map((t,k)=>k);
+  for(let k=order.length-1;k>0;k--){const j=Math.floor(Math.random()*(k+1));[order[k],order[j]]=[order[j],order[k]];}
+  const el=document.createElement('div');
+  el.className='quiz';
+  el.innerHTML=`<p class="q">${i+1}. ${item.q}</p>
+    <div class="opts">${order.map(k=>`<button data-k="${k}">${item.o[k]}</button>`).join('')}</div>
+    <p class="fb">${item.fb}</p>`;
+  el.querySelectorAll('button').forEach(b=>{
+    b.addEventListener('click',()=>{
+      if(el.dataset.done) return;
+      el.dataset.done='1'; answered++;
+      const ok = Number(b.dataset.k)===item.a;
+      if(ok) right++;
+      el.querySelectorAll('button').forEach(x=>{
+        x.disabled=true;
+        if(Number(x.dataset.k)===item.a) x.classList.add('right');
+      });
+      if(!ok) b.classList.add('wrong');
+      el.querySelector('.fb').classList.add('on');
+      document.getElementById('score').textContent =
+        `${right} de ${answered} respondidas corretamente` +
+        (answered===QUESTIONS.length ? (right===QUESTIONS.length
+          ? " — você sabe defender essa fronteira." : " — reveja as perguntas que escaparam.") : "");
+    });
+  });
+  host.appendChild(el);
+});
+</script>
+
+</body>
+</html>
