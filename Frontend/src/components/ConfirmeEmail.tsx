@@ -21,6 +21,10 @@ export default function ConfirmeEmail({ email }: { email: string }) {
         Mandamos um link de confirmação para <span className="text-gray-200">{email}</span>. Clique nele para
         continuar jogando.
       </p>
+      <p className="text-gray-600 text-xs max-w-sm mt-3">
+        Não achou? Dá uma olhada na caixa de spam/lixo eletrônico — e-mail automático de conta nova costuma
+        cair lá. Encontrando, marque como "não é spam" pra facilitar da próxima vez.
+      </p>
       <button
         onClick={() => reenviar.mutate()}
         disabled={reenviar.isPending || reenviado}

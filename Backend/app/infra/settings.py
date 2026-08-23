@@ -75,10 +75,25 @@ class Settings(BaseSettings):
     teto_turnos_convidado: int = 20
 
     # Etapa 10 (A-2) — confirmação de e-mail bloqueante. Mesmo padrão
-    # condicional do Google/Langfuse: sem RESEND_API_KEY configurada, o
-    # link de confirmação só é logado (`app/infra/email.py`) — dev continua
-    # funcionando sem conta nenhuma. `onboarding@resend.dev` é o remetente
-    # de teste do Resend, que funciona sem verificar domínio próprio.
+    # condicional do Google/Langfuse: sem nenhum dos dois métodos abaixo
+    # configurado, o link de confirmação só é logado (`app/infra/email.py`)
+    # — dev continua funcionando sem conta nenhuma.
+    #
+    # SMTP do Gmail é o método preferido (checado primeiro): o remetente de
+    # teste do Resend (`onboarding@resend.dev`) é compartilhado entre
+    # milhares de contas, sem SPF/DKIM alinhado a este projeto — cai em
+    # spam quase sempre. Deliverability de verdade pediria um domínio
+    # próprio verificado no Resend, que custa dinheiro; a alternativa sem
+    # custo é autenticar como uma conta Gmail de verdade (a reputação é da
+    # conta, não do provedor de e-mail transacional).
+    smtp_email: str | None = None
+    smtp_senha_app: str | None = None  # "senha de app" do Google, não a senha normal da conta
+    smtp_host: str = "smtp.gmail.com"
+    smtp_porta: int = 587
+
+    # Resend como alternativa/fallback — mantido por se um domínio próprio
+    # for verificado lá no futuro. `onboarding@resend.dev` funciona sem
+    # verificar domínio, mas com o problema de deliverability acima.
     resend_api_key: str | None = None
     resend_from_email: str = "Mestre.IA <onboarding@resend.dev>"
     confirmacao_email_url: str = "http://localhost:8000/auth/confirmar"
