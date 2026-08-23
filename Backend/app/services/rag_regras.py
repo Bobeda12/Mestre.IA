@@ -4,9 +4,10 @@ arquivo é pequeno hoje, mas é exatamente o padrão que não escala (e o que o
 PLANO_MESTRE.md pede para medir). A bíblia é quebrada em seções pelos
 próprios cabeçalhos `[EM CAIXA ALTA]` que ela já usa.
 
-Nem toda seção é "regra consultável": a lei da verossimilhança, o motor
-sensorial e o protocolo de arbitragem definem COMO narrar em qualquer cena,
-não uma regra específica de uma situação — ficam sempre presentes.
+Nem toda seção é "regra consultável": a lei da verossimilhança, a voz do
+mestre (Etapa 11, B-9), os momentos de alto impacto e o protocolo de
+arbitragem definem COMO narrar em qualquer cena, não uma regra específica
+de uma situação — ficam sempre presentes.
 `COMBATE TÁTICO E LETAL`, `SISTEMA DE CONSEQUÊNCIA SOCIAL` e `GESTÃO DE
 TEMPO E CLIMA` são situacionais: só entram quando relevantes para a ação do
 turno, via a mesma busca híbrida de services/memory.py (ver ADR-0010)."""
@@ -25,7 +26,8 @@ _TITULO = re.compile(r"^\[([^\]]+)\]")
 # sempre no contexto. O resto da bíblia é o corpus consultável por RAG.
 _SECOES_SEMPRE = {
     "DIRETRIZ PRIMEIRA: A LEI DA VEROSSIMILHANÇA",
-    "O MOTOR SENSORIAL",
+    "A VOZ DO MESTRE",
+    "MOMENTOS DE ALTO IMPACTO",
     "PROTOCOLO DE ARBITRAGEM",
 }
 

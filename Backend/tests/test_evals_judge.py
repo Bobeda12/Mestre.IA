@@ -55,7 +55,7 @@ def test_julgar_com_json_valido():
         {
             "aderencia_regras": 5,
             "consistencia_memoria": 4,
-            "qualidade_sensorial": 3,
+            "impacto_narrativo": 3,
             "sem_alucinacao_inventario": 5,
             "justificativa": "boa narrativa",
         }
@@ -76,7 +76,7 @@ def test_julgar_com_nota_fora_do_range_devolve_none():
         {
             "aderencia_regras": 9,  # fora de 1-5
             "consistencia_memoria": 4,
-            "qualidade_sensorial": 3,
+            "impacto_narrativo": 3,
             "sem_alucinacao_inventario": 5,
         }
     )
@@ -105,7 +105,7 @@ def test_julgar_com_erro_mestre_devolve_none():
 
 def test_julgar_lote_e_metricas_agregadas():
     conteudo_ok = json.dumps(
-        {"aderencia_regras": 4, "consistencia_memoria": 4, "qualidade_sensorial": 4, "sem_alucinacao_inventario": 4}
+        {"aderencia_regras": 4, "consistencia_memoria": 4, "impacto_narrativo": 4, "sem_alucinacao_inventario": 4}
     )
     resultados = [_resultado(), _resultado()]
     resultados[0].cenario.id = "a"
@@ -117,7 +117,7 @@ def test_julgar_lote_e_metricas_agregadas():
     assert judge.media_por_eixo(notas) == {
         "aderencia_regras": 4.0,
         "consistencia_memoria": 4.0,
-        "qualidade_sensorial": 4.0,
+        "impacto_narrativo": 4.0,
         "sem_alucinacao_inventario": 4.0,
     }
 

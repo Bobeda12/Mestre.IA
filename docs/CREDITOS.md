@@ -18,3 +18,35 @@ do [OpenGameArt.org](https://opengameart.org):
 
 **Nota sobre "Dungeon 05" (CC-BY-SA 4.0):** compartilhar-igual se aplica a
 *adaptações* do arquivo — ele é usado aqui sem edição, só com atribuição.
+
+## Sprites de raça/classe/monstro (Etapa 11, B-1)
+
+Os 26 sprites em `Frontend/public/assets/{races,classes,monstros}/` vêm de
+dois pacotes CC0 feitos para serem compatíveis entre si (mesmo estilo
+16×16, mesma paleta fechada), sem geração por IA:
+
+| Pacote | Autor | Licença | Fonte |
+|---|---|---|---|
+| Tiny Dungeon | Kenney | [CC0](https://creativecommons.org/publicdomain/zero/1.0/) | [opengameart.org/content/tiny-dungeon](https://opengameart.org/content/tiny-dungeon) |
+| Tiny Creatures | Clint Bellanger (com permissão da Kenney) | [CC0](https://creativecommons.org/publicdomain/zero/1.0/) | [opengameart.org/content/tiny-creatures](https://opengameart.org/content/tiny-creatures) |
+
+Nenhuma das duas licenças exige atribuição — está aqui por educação, e para
+rastrear de onde cada sprite veio caso precise trocar depois.
+
+**Substituições sem correspondência direta no D&D 5e** (nenhum pacote
+gratuito tem draconato/tiefling/meio-orco prontos — mais próximo disponível,
+mantendo o mesmo estilo em vez de misturar fontes):
+
+| Precisa de | Usei o sprite de | Por quê |
+|---|---|---|
+| Draconato | "dragonkin" (Tiny Creatures) | humanoide com cabeça de dragão — o mais literal possível |
+| Tiefling | "devil" (Tiny Creatures) | chifres + pele vermelha, a codificação visual clássica |
+| Meio-Orc | "orc" (Tiny Creatures) | pele verde + presas |
+| Halfling | "leprechaun" (Tiny Creatures) | povo pequeno, estatura baixa |
+| Gnomo | "pixie" (Tiny Creatures) | diminuto, traços simples |
+
+**Encaixes fracos, aceitos por falta de opção melhor no mesmo estilo**
+(Elfo, Clérigo, Monge usam sprites de aldeão genérico do Tiny Dungeon — sem
+orelha pontuda, símbolo sagrado ou traje de monge visível a 16px; nenhuma
+fonte CC0/CC-BY encontrada tinha esses três SEM quebrar a consistência
+visual com o resto do conjunto).

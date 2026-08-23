@@ -25,23 +25,26 @@ RUBRICA = """Você é um juiz avaliando a resposta de um mestre de RPG de IA. D�
    de regras (sem inventar sucesso/falha, sem conceder algo que nenhuma ferramenta concedeu)?
 2. consistencia_memoria: a narrativa é coerente com os fatos/eventos/reputação de
    memória fornecidos, sem contradizer nem ignorar o que já é sabido?
-3. qualidade_sensorial: a narrativa usa pelo menos 3 sentidos (visão, audição,
-   olfato/tato), como a bíblia do mestre exige?
+3. impacto_narrativo: a narrativa tem tensão e ritmo (frase curta no perigo, mais longa
+   na exploração), termina em movimento (nunca em cenário parado), e — em momentos de
+   alto impacto (vida por um fio, chefe, golpe decisivo, prólogo) — deixa a emoção
+   crescer em vez de ficar contida? Nota baixa também para prosa inchada ou clichê
+   ("o ar estava pesado", "um silêncio ensurdecedor").
 4. sem_alucinacao_inventario: a narrativa não menciona itens, ouro ou HP que não
    vieram do estado/ferramentas fornecidos?
 
 Responda APENAS em JSON, sem texto fora do JSON:
-{"aderencia_regras": N, "consistencia_memoria": N, "qualidade_sensorial": N,
+{"aderencia_regras": N, "consistencia_memoria": N, "impacto_narrativo": N,
  "sem_alucinacao_inventario": N, "justificativa": "1-2 frases"}
 """
 
-EIXOS = ("aderencia_regras", "consistencia_memoria", "qualidade_sensorial", "sem_alucinacao_inventario")
+EIXOS = ("aderencia_regras", "consistencia_memoria", "impacto_narrativo", "sem_alucinacao_inventario")
 
 
 class NotaJuiz(BaseModel):
     aderencia_regras: int = Field(ge=1, le=5)
     consistencia_memoria: int = Field(ge=1, le=5)
-    qualidade_sensorial: int = Field(ge=1, le=5)
+    impacto_narrativo: int = Field(ge=1, le=5)
     sem_alucinacao_inventario: int = Field(ge=1, le=5)
     justificativa: str = ""
 

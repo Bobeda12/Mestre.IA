@@ -61,6 +61,11 @@ class DataManager:
     def get_monstros_nivel_1(self) -> list[str]:
         return list(self.monsters.get("Nivel_1", {}).keys())
 
+    def get_monstros_chefe(self) -> list[str]:
+        """Etapa 11 (B-9) — quem é "chefe" vira um dos gatilhos de momento de
+        alto impacto na narração (narrator.py:montar_contexto)."""
+        return list(self.monsters.get("Chefe", {}).keys())
+
     def get_weapon(self, nome: str) -> dict | None:
         for grupo in self.weapons.values():
             if nome in grupo:

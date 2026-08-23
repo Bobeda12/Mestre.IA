@@ -58,6 +58,12 @@ class Personagem(Base):
     # prompt e a URL do pollinations.ai (precisa do nome pro seed, que só
     # existe no navegador); o servidor só guarda o resultado, não gera nada.
     imagem: Mapped[str | None] = mapped_column(default=None)
+    # Etapa 11 (B-7, resolve P-4) — até aqui, o texto que o jogador escreve
+    # na criação (`CharacterCreationRequest.historia_texto`) entrava no
+    # prompt do prólogo (narrator.gerar_prologo_missao) e nunca era
+    # gravado: existia por uma chamada ao modelo e depois sumia. Agora é a
+    # fonte da tela de abertura, e o primeiro EventoMemoria do personagem.
+    historia_texto: Mapped[str | None] = mapped_column(default=None)
 
     hp_atual: Mapped[int]
     hp_max: Mapped[int]

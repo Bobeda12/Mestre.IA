@@ -155,6 +155,52 @@ def test_imagem_persiste_e_volta_no_load_game(monkeypatch):
     assert dados["imagem"] == "https://image.pollinations.ai/prompt/teste"
 
 
+def test_historia_texto_persiste_e_volta_no_load_game(monkeypatch):
+    # Etapa 11 (B-7, resolve P-4): antes, historia_texto entrava no prompt
+    # do prólogo e nunca era gravado — a tela de abertura precisa dele.
+    monkeypatch.setattr(narrator, "client", None)
+    payload = _payload_base(historia_texto="Nasceu numa vila que o fogo levou.")
+    resp = client.post("/create_character", json=payload)
+    assert resp.status_code == 200
+    dados = client.post("/load_game", json={"session_id": resp.json()["session_id"]}).json()
+    assert dados["historia_texto"] == "Nasceu numa vila que o fogo levou."
+
+
+def test_historia_texto_vira_primeiro_evento_de_memoria(monkeypatch):
+    monkeypatch.setattr(narrator, "client", None)
+    payload = _payload_base(nome="TesteMemoriaHistoria", historia_texto="Um segredo que ninguém mais sabe.")
+    resp = client.post("/create_character", json=payload)
+    session_id = resp.json()["session_id"]
+
+    from app.infra.db import EventoMemoria, Personagem, SessionLocal
+
+    db = SessionLocal()
+    try:
+        heroi = db.query(Personagem).filter(Personagem.session_id == session_id).first()
+        evento = db.query(EventoMemoria).filter(EventoMemoria.personagem_id == heroi.id).first()
+        assert evento is not None
+        assert evento.tipo == "historia_pessoal"
+        assert evento.texto == "Um segredo que ninguém mais sabe."
+    finally:
+        db.close()
+
+
+def test_historia_texto_vazia_nao_cria_evento_de_memoria(monkeypatch):
+    monkeypatch.setattr(narrator, "client", None)
+    payload = _payload_base(nome="TesteSemHistoria")
+    resp = client.post("/create_character", json=payload)
+    session_id = resp.json()["session_id"]
+
+    from app.infra.db import EventoMemoria, Personagem, SessionLocal
+
+    db = SessionLocal()
+    try:
+        heroi = db.query(Personagem).filter(Personagem.session_id == session_id).first()
+        assert db.query(EventoMemoria).filter(EventoMemoria.personagem_id == heroi.id).count() == 0
+    finally:
+        db.close()
+
+
 def test_imagem_sem_url_valida_e_rejeitada():
     payload = _payload_base(imagem="javascript:alert(1)")
     resp = client.post("/create_character", json=payload)

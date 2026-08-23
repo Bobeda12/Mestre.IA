@@ -107,7 +107,9 @@ def load_game(
     return _resposta(
         heroi, c_state, q_state,
         nome=heroi.nome, raca=heroi.raca, classe=heroi.classe, local=w_state.local, missao=heroi.quest_log,
-        imagem=heroi.imagem, turno_mundo=w_state.turno,
+        imagem=heroi.imagem, turno_mundo=w_state.turno, clima=w_state.clima,
+        background=heroi.background, objetivo=heroi.objetivo, historia_texto=heroi.historia_texto,
+        historico_chat=heroi.historico_chat,
     )
 
 
@@ -140,7 +142,8 @@ async def chat_endpoint(
         heroi.hp_atual = hp_morte
         prompt_morte = (
             f"{regras.get_biblia()}\n[HEROI] {heroi.nome} está inconsciente, a 0 PV, lutando contra a morte. "
-            "Narre isso em 1-2 frases sombrias — sem diálogo de combate, sem números, sem ferramentas."
+            "[MOMENTO DE ALTO IMPACTO] — a vida por um fio, o momento mais tenso do jogo. Deixe a "
+            "cena crescer, sem diálogo de combate, sem números, sem ferramentas."
         )
         msgs = [{"role": "system", "content": prompt_morte}] + hist + [{"role": "user", "content": user_input.action}]
         try:
@@ -291,7 +294,8 @@ def chat_stream_endpoint(
             heroi.hp_atual = hp_morte
             prompt_morte = (
                 f"{regras.get_biblia()}\n[HEROI] {heroi.nome} está inconsciente, a 0 PV, lutando contra a morte. "
-                "Narre isso em 1-2 frases sombrias — sem diálogo de combate, sem números, sem ferramentas."
+                "[MOMENTO DE ALTO IMPACTO] — a vida por um fio, o momento mais tenso do jogo. Deixe a "
+                "cena crescer, sem diálogo de combate, sem números, sem ferramentas."
             )
             msgs = (
                 [{"role": "system", "content": prompt_morte}] + hist + [{"role": "user", "content": user_input.action}]

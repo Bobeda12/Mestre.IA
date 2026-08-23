@@ -6,7 +6,6 @@ import {
   Send, Scroll, Menu, X, Dices, User, Backpack, Map, Sword, Shield, AlertTriangle, Star, Coins, FlaskConical, BookOpen,
   ThumbsUp, ThumbsDown, Crown, Loader2, Volume2, VolumeX
 } from 'lucide-react';
-import { Progress } from './ui/progress';
 import { api, API_URL } from '../lib/api';
 import { postSse } from '../lib/sse';
 import { getLocalImage, limparMarkdownLeve } from '../lib/utils';
@@ -14,6 +13,8 @@ import { useAuth, useInvalidarAuth } from '../lib/auth';
 import { useTrilha, calcularTema } from '../lib/trilha';
 import RollCard, { type DadosRolagem } from './RollCard';
 import StatusCard, { type EventoStatus } from './StatusCard';
+import PixelBar from './PixelBar';
+import Prologo from './Prologo';
 
 type Message =
   // `turnoIndex` (Etapa 9) chega no frame SSE "state", junto do resto do
@@ -65,6 +66,12 @@ interface CargaJogo extends EstadoJogo {
   local: string;
   atributos?: Record<string, number>;
   imagem?: string | null;
+  // Etapa 11 (B-7) — tela de abertura da campanha.
+  clima?: string | null;
+  background?: string | null;
+  objetivo?: string | null;
+  historia_texto?: string | null;
+  historico_chat?: { role: string; content: string }[];
 }
 
 // Ícone por palavra-chave no nome do item — não existe um campo "tipo" em
@@ -119,6 +126,11 @@ export default function GameChat() {
   const [turnoAtual, setTurnoAtual] = useState(0);
   const [turnoMundo, setTurnoMundo] = useState(0);
   const [gameOver, setGameOver] = useState(false);
+  // Etapa 11 (B-7) — a tela de abertura aparece só na primeira visita
+  // (historico_chat ainda com só o prólogo, nenhum turno jogado) e some
+  // pro resto da sessão assim que o jogador clica "Começar" — não volta a
+  // cada re-render, só se a página for recarregada antes do 1º turno.
+  const [prologoConcluido, setPrologoConcluido] = useState(false);
   // Dano flutuante (Etapa 7) — `idx` é a posição no array `enemies`, não o
   // nome (dois inimigos podem ter o mesmo nome).
   const [danosFlutuantes, setDanosFlutuantes] = useState<{ id: number; valor: number; idx: number }[]>([]);
@@ -378,6 +390,27 @@ export default function GameChat() {
     );
   }
 
+  // Etapa 11 (B-7) — só o primeiro carregamento (nenhum turno jogado
+  // ainda) mostra a tela de abertura; `historico_chat[0]` é sempre o
+  // prólogo (routers/character.py:create_character).
+  const primeiroTurno = (cargaJogo?.historico_chat?.length ?? 0) === 1;
+  if (cargaJogo && primeiroTurno && !prologoConcluido && !gameOver) {
+    return (
+      <Prologo
+        nome={cargaJogo.nome}
+        raca={cargaJogo.raca}
+        classe={cargaJogo.classe}
+        local={cargaJogo.local}
+        clima={cargaJogo.clima}
+        background={cargaJogo.background}
+        objetivo={cargaJogo.objetivo}
+        charImage={charImage || getLocalImage('classes', cargaJogo.classe)}
+        texto={cargaJogo.historico_chat![0].content}
+        onComecar={() => setPrologoConcluido(true)}
+      />
+    );
+  }
+
   return (
     <div className={`flex h-screen w-screen bg-black text-gray-100 font-sans overflow-hidden relative ${shakeScreen ? 'animate-shake' : ''}`}>
 
@@ -385,7 +418,7 @@ export default function GameChat() {
 
       {gameOver && (
         <div className="absolute inset-0 z-[100] bg-black/95 flex flex-col items-center justify-center px-6 text-center overflow-y-auto py-10">
-          <h1 className="text-5xl font-rpg text-red-600 tracking-widest">GAME OVER</h1>
+          <h1 className="text-3xl md:text-5xl font-pixel-title text-red-600 tracking-widest leading-relaxed">GAME OVER</h1>
           <p className="text-gray-500 mt-2 font-serif italic">{charName || 'O herói'} não resistiu.</p>
 
           <div className="grid grid-cols-3 gap-8 mt-8">
@@ -453,7 +486,7 @@ export default function GameChat() {
               transition-all duration-300 bg-gray-900 border-r border-gray-800 flex flex-col shrink-0 overflow-hidden`}
       >
           <div className="p-4 border-b border-gray-800 flex justify-between items-center bg-black/20">
-              <h2 className="font-rpg text-lg text-rpg-gold flex items-center gap-2"><Scroll size={18}/> FICHA</h2>
+              <h2 className="font-pixel-title text-sm text-rpg-gold flex items-center gap-2"><Scroll size={18}/> FICHA</h2>
               <div className="flex items-center gap-3">
                   <button
                       onClick={alternarMudo}
@@ -471,7 +504,7 @@ export default function GameChat() {
 
           <div className="p-4 space-y-6 overflow-y-auto custom-scrollbar flex-1">
               {/* Foto */}
-              <div className="w-full aspect-[3/4] bg-black rounded border border-gray-800 relative shadow-lg overflow-hidden">
+              <div className="pixel-frame w-full aspect-[3/4] bg-black relative shadow-lg overflow-hidden">
                    <img src={charImage} className="w-full h-full object-cover opacity-90" onError={(e) => (e.currentTarget.src = "https://via.placeholder.com/300x400")}/>
                    <div className="absolute bottom-0 w-full bg-gradient-to-t from-black via-black/80 to-transparent p-3 pt-8">
                        <p className="text-white font-rpg text-lg">{charName}</p>
@@ -483,19 +516,17 @@ export default function GameChat() {
               <div className="bg-gray-800/30 p-3 rounded border border-gray-700 space-y-3">
                   <div>
                     <div className="flex justify-between text-xs font-bold uppercase mb-1"><span>Vida</span><span>{hpAtual}/{hpMax}</span></div>
-                    <Progress
-                      value={Math.max(0, Math.min(100, (hpAtual / hpMax) * 100))}
-                      className="h-1.5 bg-gray-900 [&_[data-slot=progress-indicator]]:bg-red-700 [&_[data-slot=progress-indicator]]:transition-all [&_[data-slot=progress-indicator]]:duration-500"
-                    />
+                    <PixelBar value={hpAtual} max={hpMax} colorClass="bg-red-600" />
                   </div>
                   <div>
                     <div className="flex justify-between text-xs font-bold uppercase mb-1">
                       <span className="flex items-center gap-1"><Star size={11} className="text-rpg-gold"/> Nível {nivel}</span>
                       <span>{xpProximoNivel != null ? `${xp}/${xpProximoNivel} XP` : "XP máximo"}</span>
                     </div>
-                    <Progress
-                      value={xpProximoNivel != null ? Math.max(0, Math.min(100, (xp / xpProximoNivel) * 100)) : 100}
-                      className="h-1.5 bg-gray-900"
+                    <PixelBar
+                      value={xpProximoNivel != null ? xp : 1}
+                      max={xpProximoNivel != null ? xpProximoNivel : 1}
+                      colorClass="bg-rpg-gold"
                     />
                   </div>
                   <div className="flex justify-between items-center pt-2 border-t border-gray-800/50">
@@ -661,6 +692,15 @@ export default function GameChat() {
                                         {posicao + 1}
                                     </span>
                                 )}
+                                {/* Etapa 11 (B-1) — sprite do monstro pelo nome; bestiário
+                                    fora do catálogo simplesmente não mostra imagem
+                                    (onError some com o ícone em vez de quebrar o layout). */}
+                                <img
+                                    src={getLocalImage('monstros', en.nome)}
+                                    alt=""
+                                    className="w-4 h-4 shrink-0"
+                                    onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                                />
                                 <span className="text-[10px] font-bold text-red-100 truncate">{en.nome}</span>
                             </div>
                             <div className="h-1 bg-gray-800 rounded-full overflow-hidden"><div className="h-full bg-red-600 transition-all duration-300" style={{ width: `${(en.hp / en.max_hp) * 100}%` }}></div></div>

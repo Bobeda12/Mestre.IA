@@ -18,6 +18,38 @@ const formatAttribute = (key: string) => {
 };
 const getPointCost = (score: number) => { if (score <= 8) return 0; const costs: Record<number, number> = {9:1, 10:2, 11:3, 12:4, 13:5, 14:7, 15:9}; return costs[score] || 99; };
 
+// O modelo de imagem foi treinado majoritariamente em inglês — mandar o
+// nome da raça/classe em português ("Draconato", "Meio-Orc") não significa
+// nada pra ele, e é a causa mais provável da arte não bater com o
+// personagem. Estes descritores existem só para o prompt de imagem; o
+// resto do app continua em português (ver Backend/data/races.json).
+const RACE_VISUAL_EN: Record<string, string> = {
+  "Anão": "dwarf, short and stocky build, thick braided beard",
+  "Elfo": "elf, tall and slender, pointed ears, elegant features",
+  "Halfling": "halfling, very short stature, curly hair, cheerful round face",
+  "Humano": "human",
+  "Draconato": "dragonborn, reptilian scaled skin, dragon-like head, no hair",
+  "Gnomo": "gnome, tiny stature, large expressive eyes, pointed ears",
+  "Meio-Elfo": "half-elf, slightly pointed ears, human build with elven grace",
+  "Meio-Orc": "half-orc, greenish-gray skin, prominent lower tusks, muscular build",
+  "Tiefling": "tiefling, small horns, thin tail, reddish or violet skin",
+};
+
+const CLASS_VISUAL_EN: Record<string, string> = {
+  "Bárbaro": "barbarian wielding a greataxe, fur and leather",
+  "Bardo": "bard with a lute, flamboyant light armor",
+  "Clérigo": "cleric in chainmail holding a holy symbol",
+  "Druida": "druid with a wooden shield and natural adornments",
+  "Guerreiro": "warrior in chainmail with a longsword and shield",
+  "Monge": "monk in simple robes, hands ready, no weapon",
+  "Paladino": "paladin in gleaming plate armor with a shield",
+  "Patrulheiro": "ranger in scale armor with a longbow",
+  "Ladino": "rogue in leather armor with daggers, hooded",
+  "Feiticeiro": "sorcerer with an arcane focus, flowing robes",
+  "Bruxo": "warlock in dark leather armor with an eerie arcane focus",
+  "Mago": "wizard in robes holding a staff and spellbook",
+};
+
 export default function CharacterCreation({ onCharacterCreated }: CharacterCreationProps) {
   const navigate = useNavigate();
   const [step, setStep] = useState(1);
@@ -68,11 +100,14 @@ export default function CharacterCreation({ onCharacterCreated }: CharacterCreat
   // Gerador de Imagem (IA)
   useEffect(() => {
     if (step === 4 && name && gender && selectedRace && selectedClass) {
-        const prompt = `fantasy rpg character portrait of a ${gender} ${selectedRace} ${selectedClass}, ${background}, highly detailed face, looking at camera, dnd art style, masterpiece, sharp focus, dark fantasy background`;
-        const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=500&height=750&nologo=true&seed=${name.length + 123}`;
+        const genderEn = gender === "Feminino" ? "female" : gender === "Masculino" ? "male" : "androgynous";
+        const raceVisual = RACE_VISUAL_EN[selectedRace] || selectedRace;
+        const classVisual = CLASS_VISUAL_EN[selectedClass] || selectedClass;
+        const prompt = `fantasy rpg character portrait of a ${genderEn} ${raceVisual}, ${classVisual}, highly detailed face, looking at camera, dnd art style, masterpiece, sharp focus, dark fantasy background`;
+        const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=500&height=750&nologo=true&model=flux&seed=${name.length + 123}`;
         setFinalImageUrl(url);
     }
-  }, [step, name, gender, selectedRace, selectedClass, background]);
+  }, [step, name, gender, selectedRace, selectedClass]);
 
   // Lógica de Atributos
   const handleAttributeChange = (attr: string, delta: number) => {
@@ -120,11 +155,17 @@ export default function CharacterCreation({ onCharacterCreated }: CharacterCreat
       // atributos escolhidos para o ponto livre da raça — o servidor
       // recalcula tudo e é ele quem decide o valor final. Ver ADR-0002.
       const atributosLivreEscolhidos = Object.keys(freePointsAllocation).filter(attr => freePointsAllocation[attr] === 1);
+      // Etapa 11 (B-3): manda a MESMA imagem que a Ficha Final mostrou —
+      // se o retrato IA nunca carregou, não manda nada (o servidor guarda
+      // "sem imagem" em vez de salvar o retrato genérico da classe, que já
+      // é o fallback natural de quem não tem imagem nenhuma).
+      const imageToSend = finalImageUrl || "";
 
       const res = await api.post("/create_character", {
         nome: name, raca: selectedRace, classe: selectedClass,
         alinhamento: alignment, background: background, objetivo: goal,
         historia_texto: history,
+        imagem: imageToSend,
         atributos: attributes,
         atributos_livre: atributosLivreEscolhidos,
       });
@@ -134,8 +175,7 @@ export default function CharacterCreation({ onCharacterCreated }: CharacterCreat
 
       // Etapa 8: a lista de heróis (Home.tsx) vem do servidor via
       // GET /personagens — não existe mais save local pra escrever aqui.
-      const imageToSend = finalImageUrl || getLocalImage('classes', selectedClass);
-      navigate(`/jogar/${sessionId}`, { state: { charImage: imageToSend } });
+      navigate(`/jogar/${sessionId}`, { state: { charImage: imageToSend || getLocalImage('classes', selectedClass) } });
 
     } catch (err: any) {
       const detalhe = err?.response?.data?.detail;
@@ -155,7 +195,7 @@ export default function CharacterCreation({ onCharacterCreated }: CharacterCreat
 
       <div className="w-1/3 h-full flex flex-col bg-gray-900 border-r border-gray-800 z-20 shadow-2xl relative">
         <div className="p-6 border-b border-gray-800 bg-black/40 mt-10">
-           <h1 className="text-3xl font-rpg text-rpg-gold flex items-center gap-2"><Crown className="text-red-600"/> CRIAÇÃO</h1>
+           <h1 className="text-xl font-pixel-title text-rpg-gold flex items-center gap-2"><Crown className="text-red-600"/> CRIAÇÃO</h1>
            <div className="flex justify-between mt-4 px-2">{[1,2,3,4,5].map(s => (<button key={s} disabled={s > step && s !== step + 1} onClick={() => { if (step === 5 || (s < step)) setStep(s); }} className={`h-1 flex-1 mx-1 rounded transition-all duration-300 ${step >= s ? 'bg-rpg-gold cursor-pointer hover:h-2' : 'bg-gray-800 cursor-not-allowed'}`}/>))}</div>
            <p className="text-xs text-gray-500 mt-1 uppercase tracking-widest text-right">{step === 5 ? "Ficha Final" : `Passo ${step}/5`}</p>
         </div>
@@ -233,7 +273,18 @@ export default function CharacterCreation({ onCharacterCreated }: CharacterCreat
       <div className="flex-1 h-full relative bg-gray-900 overflow-hidden flex items-center justify-center p-8 bg-[url('https://www.transparenttextures.com/patterns/dark-matter.png')]">
          <div className="relative z-30 w-full max-w-5xl h-[600px] flex bg-[#121212] border-2 border-rpg-gold rounded-xl shadow-2xl overflow-hidden animate-scale-in">
              <div className="w-[45%] h-full relative border-r border-rpg-gold/30 bg-black">
-                 <img src={activeImage} className="w-full h-full object-cover object-top" alt="Visual" onError={(e) => (e.currentTarget.src = "https://via.placeholder.com/500x750?text=...")}/>
+                 {/* Etapa 11 (B-1): passos 1/2 mostram um sprite de 16×16
+                     (raça/classe) — `object-contain` com respiro em vez de
+                     `object-cover` esticando um sprite pequeno pra
+                     preencher um painel de ~560px, o que vira um borrão de
+                     pixels gigantes. O retrato gerado por IA (passo 5)
+                     continua em `object-cover`, feito pra esse tamanho. */}
+                 <img
+                     src={activeImage}
+                     className={(step === 1 || step === 2) ? "w-full h-full object-contain object-top p-16" : "w-full h-full object-cover object-top"}
+                     alt="Visual"
+                     onError={(e) => (e.currentTarget.src = "https://via.placeholder.com/500x750?text=...")}
+                 />
                  <div className="absolute bottom-0 w-full bg-gradient-to-t from-black via-black/80 to-transparent p-6 pt-12">
                      <h2 className="text-3xl font-rpg text-white text-center drop-shadow-md">{activeTitle}</h2>
                      {step === 5 && <p className="text-rpg-gold text-center font-bold text-xs uppercase tracking-widest opacity-80">{selectedRace} • {selectedClass}</p>}
@@ -285,4 +336,4 @@ export default function CharacterCreation({ onCharacterCreated }: CharacterCreat
   );
 }
 
-function OptionButton({ label, active, onClick, image }: any) { return <button onClick={onClick} className={`w-full text-left flex items-center gap-4 p-2 rounded border transition-all group relative overflow-hidden ${active ? 'bg-gray-800 border-rpg-gold shadow-lg' : 'bg-black/20 border-gray-800 hover:bg-gray-800 hover:border-gray-600'}`}><div className={`w-12 h-12 rounded bg-black shrink-0 overflow-hidden border ${active ? 'border-rpg-gold' : 'border-gray-700'}`}><img src={image} onError={(e) => (e.currentTarget.src = "https://via.placeholder.com/50?text=?")} className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity" /></div><div className="flex-1 z-10"><span className={`font-rpg text-base block ${active ? 'text-rpg-gold text-glow' : 'text-gray-400 group-hover:text-gray-200'}`}>{label}</span></div>{active && <div className="absolute inset-0 bg-gradient-to-r from-rpg-gold/10 to-transparent pointer-events-none"/>}</button>; }
+function OptionButton({ label, active, onClick, image }: any) { return <button onClick={onClick} className={`w-full text-left flex items-center gap-4 p-2 border transition-all group relative overflow-hidden ${active ? 'bg-gray-800 border-rpg-gold shadow-lg' : 'bg-black/20 border-gray-800 hover:bg-gray-800 hover:border-gray-600'}`}><div className={`pixel-frame w-12 h-12 bg-black shrink-0 overflow-hidden ${active ? '' : 'opacity-80'}`}><img src={image} onError={(e) => (e.currentTarget.src = "https://via.placeholder.com/50?text=?")} className="w-full h-full object-contain group-hover:opacity-100 transition-opacity" /></div><div className="flex-1 z-10"><span className={`font-rpg text-base block ${active ? 'text-rpg-gold text-glow' : 'text-gray-400 group-hover:text-gray-200'}`}>{label}</span></div>{active && <div className="absolute inset-0 bg-gradient-to-r from-rpg-gold/10 to-transparent pointer-events-none"/>}</button>; }

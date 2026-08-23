@@ -5,6 +5,7 @@ import groq
 from app.domain.character import CharacterCreationRequest
 from app.domain.memoria import ResumoRolante
 from app.domain.state import CombatState, QuestLog, WorldState
+from app.infra.data_manager import regras
 from app.infra.db import Personagem
 from app.infra.llm_client import MODEL_NAME, ErroMestre, client
 
@@ -43,9 +44,19 @@ def chamar_mestre(msgs: list[dict]) -> dict:
 
 
 def gerar_prologo_missao(char: CharacterCreationRequest) -> dict:
+    # Etapa 11 (B-7, resolve P-5) — o local sempre vem do catálogo real
+    # (data/locations.json), nunca inventado. `mover` (services/tools.py)
+    # já validava contra esse catálogo; até aqui só o prólogo escapava
+    # dessa regra, porque criava o herói ANTES de qualquer ferramenta
+    # existir. "Vila de Phandalin" é o default determinístico — um vilarejo
+    # é o único tipo de local aqui que faz sentido como ponto de partida
+    # neutro, sem pressupor perigo imediato nem viagem já em andamento.
+    locais_validos = regras.get_locations_list()
+    local_padrao = "Vila de Phandalin" if "Vila de Phandalin" in locais_validos else locais_validos[0]
+
     if not client:
         return {
-            "local_inicial": "Estrada Real",
+            "local_inicial": local_padrao,
             "clima_inicial": "Nublado",
             "nome_missao": "Jornada Inicial",
             "objetivo_missao": "Chegar à cidade.",
@@ -56,15 +67,28 @@ def gerar_prologo_missao(char: CharacterCreationRequest) -> dict:
     historia_extra = f"\n    História contada pelo próprio jogador: {char.historia_texto}" if tem_historia else ""
     conexao = " e à história que ele contou" if tem_historia else ""
 
+    # Etapa 11 (B-9) — o prólogo não herdava a bíblia (é a única chamada do
+    # projeto em modo JSON solto, fora de montar_contexto). Como ele agora
+    # é a primeira tela que o jogador vê (Etapa 11, B-7), precisa da mesma
+    # voz do resto do jogo — e é, por natureza, um momento de alto impacto:
+    # aqui a prosa pode crescer, não precisa do teto de palavras do dia a dia.
     prompt = f"""
-    Crie um prólogo de RPG Dark Fantasy para:
-    Nome: {char.nome} ({char.raca} {char.classe})
+    {regras.get_biblia()}
+
+    Crie o prólogo de {char.nome} ({char.raca} {char.classe}) — a primeira cena que
+    ele vive, e a primeira coisa que o jogador vai ler no jogo.
     Passado: {char.background} | Objetivo: {char.objetivo} | Alinhamento: {char.alinhamento}{historia_extra}
 
-    O prólogo deve começar 'in media res' (já na ação), conectado ao passado dele{conexao}.
+    O prólogo começa 'in media res' (já na ação), conectado ao passado dele{conexao}.
+    Siga [A VOZ DO MESTRE] da bíblia acima, mas trate isto como um [MOMENTO DE ALTO
+    IMPACTO]: é a abertura do jogo, pode crescer além do teto de palavras normal.
+
+    "local_inicial" TEM que ser exatamente um destes nomes, sem variação —
+    são os únicos locais que o resto do jogo reconhece: {", ".join(locais_validos)}.
+
     Responda APENAS JSON:
     {{
-        "local_inicial": "Nome do Local",
+        "local_inicial": "Nome do Local (um da lista acima, exato)",
         "clima_inicial": "Clima atmosférico",
         "nome_missao": "Título da Missão Atual",
         "objetivo_missao": "O que ele deve fazer agora (curto)",
@@ -72,16 +96,25 @@ def gerar_prologo_missao(char: CharacterCreationRequest) -> dict:
     }}
     """
     try:
-        return chamar_mestre([{"role": "user", "content": prompt}])
+        roteiro = chamar_mestre([{"role": "user", "content": prompt}])
     except ErroMestre as e:
         print("ERRO NO PRÓLOGO:", e.mensagem)
         return {
-            "local_inicial": "Taverna",
+            "local_inicial": local_padrao,
             "clima_inicial": "Chuvoso",
             "nome_missao": "Desconhecido",
             "objetivo_missao": "Sobreviver",
             "intro_narrativa": "Você acorda...",
         }
+
+    # A instrução acima é a primeira linha (ADR-0002); esta checagem é a
+    # que vale — pedir com educação não impede o modelo de inventar um
+    # nome (já aconteceu ao vivo: "Ruínas de Gralhoth" e "Ruínas de
+    # Acheron", nenhum dos dois no catálogo). Sem isso, `mover` recusaria
+    # o próprio local onde o herói nasceu.
+    if roteiro.get("local_inicial") not in locais_validos:
+        roteiro["local_inicial"] = local_padrao
+    return roteiro
 
 
 def montar_contexto(
@@ -127,14 +160,31 @@ def montar_contexto(
         secao_memoria += f"[REPUTAÇÃO DO HERÓI COM NPCS PRESENTES]\n{linhas_reputacao}\n"
 
     if c_state.ativo:
-        vivos = [i.model_dump() for i in c_state.inimigos if i.hp > 0]
+        inimigos_vivos = [i for i in c_state.inimigos if i.hp > 0]
+        vivos = [i.model_dump() for i in inimigos_vivos]
+        # Etapa 11 (B-9) — gatilhos de "momento de alto impacto": o modelo
+        # narra a INTENÇÃO antes de saber o resultado do dado (ver a regra
+        # logo abaixo), então o único jeito honesto de avisar "isso é
+        # decisivo" é pelo que já está no contexto ANTES da rolagem — HP
+        # crítico (de qualquer lado) ou a presença de um chefe do bestiário.
+        # Ver [MOMENTOS DE ALTO IMPACTO] na bíblia.
+        heroi_critico = heroi.hp_max > 0 and heroi.hp_atual / heroi.hp_max < 0.25
+        inimigo_critico = any(i.max_hp > 0 and i.hp / i.max_hp < 0.25 for i in inimigos_vivos)
+        e_chefe = any(i.nome in regras.get_monstros_chefe() for i in inimigos_vivos)
+        aviso_impacto = (
+            "\n    [MOMENTO DE ALTO IMPACTO] Vida por um fio, o golpe que pode "
+            "decidir o combate, ou um chefe — deixe a cena crescer aqui (ver "
+            "[MOMENTOS DE ALTO IMPACTO] na bíblia)."
+            if heroi_critico or inimigo_critico or e_chefe
+            else ""
+        )
         secao_combate = f"""[COMBATE ATIVO] Inimigos vivos: {json.dumps(vivos, ensure_ascii=False)}
     O jogador está em combate. Chame a ferramenta "atacar" com o alvo (e a
     arma, se o jogador escolheu uma) para resolver a ação dele. Narre só a
     INTENÇÃO da ação, num parágrafo curto — nunca peça ao jogador para rolar
     um dado ou informar um resultado, e não escreva números de ataque, dano
     ou PV: o resultado real da ferramenta aparece automaticamente logo
-    depois da sua narrativa."""
+    depois da sua narrativa.{aviso_impacto}"""
     else:
         secao_combate = """Se a cena pedir um confronto, chame a ferramenta "iniciar_combate" com os
     nomes dos monstros do bestiário que encaixam na cena (ex: ["Goblin"]).
@@ -162,9 +212,10 @@ def montar_contexto(
     escreva "role um teste de X" ou peça ao jogador para rolar um dado; o
     jogador não rola dado nenhum, só decide a ação, e a ferramenta decide o
     resultado. Depois de usar as ferramentas que a cena pedir, narre o
-    resultado em prosa, num tom sombrio e sensorial (visão, som, cheiro — a
-    bíblia acima exige isso). Não responda em JSON: a resposta final é só o
-    texto da narrativa — prosa corrida, sem markdown (sem asterisco, sem
-    cerquilha de título, sem lista com marcador, sem bloco de código);
-    ênfase pela escolha da palavra, nunca pela tipografia.
+    resultado em prosa seguindo [A VOZ DO MESTRE] da bíblia acima — direto,
+    com peso, um detalhe sensorial escolhido, não uma lista de três. Não
+    responda em JSON: a resposta final é só o texto da narrativa — prosa
+    corrida, sem markdown (sem asterisco, sem cerquilha de título, sem
+    lista com marcador, sem bloco de código); ênfase pela escolha da
+    palavra, nunca pela tipografia.
     """

@@ -22,6 +22,7 @@ Template: [`0000-template.md`](0000-template.md) · Sistema completo: [`../READM
 | [0014](0014-senha-com-google-opcional.md) | Login por senha (PBKDF2) com Google OAuth opcional, cookie assinado à mão | 8 | ✅ aceito | 22/08/2026 |
 | [0015](0015-hospedagem-fly-vercel-neon.md) | Hospedagem: Fly.io + Vercel + Neon, proxy em vez de cookie cross-site | 9 | ✅ aceito | 22/08/2026 |
 | [0016](0016-convidado-e-confirmacao-de-email-bloqueante.md) | Convidado como `Usuario` sem e-mail; confirmação de e-mail bloqueante | 10 | ✅ aceito | 22/08/2026 |
+| [0017](0017-identidade-visual-pixel-art-rota-2.md) | Identidade visual 8-bit: Rota 2 (sprites reais), fonte única CC0 | 11 | ✅ aceito | 23/08/2026 |
 
 **Legenda:** 🕓 previsto · ✅ aceito · ⛔ substituído
 

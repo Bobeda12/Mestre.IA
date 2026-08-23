@@ -89,7 +89,10 @@ export default function Home() {
             <div className="mb-4 flex justify-center">
                 <Crown size={60} className="text-rpg-gold animate-pulse-slow drop-shadow-[0_0_15px_rgba(197,160,89,0.5)]" />
             </div>
-            <h1 className="text-6xl md:text-8xl font-rpg text-white drop-shadow-lg tracking-wider mb-2">
+            {/* Etapa 11 (B-1) — Press Start 2P é bem mais larga por letra que
+                a Cinzel antiga; texto menor que o tamanho original pra não
+                estourar a tela em telas estreitas. */}
+            <h1 className="text-3xl md:text-6xl font-pixel-title text-white drop-shadow-lg tracking-wider mb-4 leading-relaxed">
             MESTRE<span className="text-red-600">.IA</span>
             </h1>
             <p className="text-gray-400 font-hand text-xl">Aventure-se no desconhecido.</p>

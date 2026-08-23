@@ -13,5 +13,25 @@
     "descricao": "Árvores retorcidas que bloqueiam a luz do sol.",
     "perigos": ["Lobos", "Corujas-Urso", "Bandidos"],
     "clima": "Sempre neblina e frio."
+  },
+  "Forte de Dunhollow": {
+    "descricao": "Um forte de pedra escura, meio soterrado, tomado por goblins e kobolds desde que a guarnição real o abandonou.",
+    "perigos": ["Goblins", "Kobolds", "Armadilhas de Cerco Abandonadas"],
+    "tesouros": ["Armamento militar enferrujado", "Selo do antigo comandante"]
+  },
+  "Porto de Maré Negra": {
+    "descricao": "Um porto de pescadores cercado por névoa constante, onde os barcos voltam com menos gente do que saíram.",
+    "pontos_interesse": ["Taverna O Polvo Encalhado", "Cais dos Contrabandistas", "Farol Apagado"],
+    "npcs": ["Rensa (Mestra de Portos)", "Vell (Contrabandista)"]
+  },
+  "Pântano Podre": {
+    "descricao": "Água parada, cheiro de coisa morta e luzes que piscam entre as árvores retorcidas — ninguém que mora perto entra depois do anoitecer.",
+    "perigos": ["Vermes Gigantes", "Bandidos Emboscados", "Areia Movediça"],
+    "clima": "Úmido e abafado, com neblina baixa o dia inteiro."
+  },
+  "Criptas de Ashgrave": {
+    "descricao": "Um cemitério antigo cujas tumbas foram abertas de dentro para fora — os mortos daqui não ficam deitados.",
+    "perigos": ["Esqueletos", "Armadilhas Funerárias", "Ar Viciado"],
+    "tesouros": ["Relicários selados", "Moedas de eras esquecidas"]
   }
 }

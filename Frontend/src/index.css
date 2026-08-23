@@ -10,8 +10,17 @@
    `@theme`, que gera as MESMAS utilities de antes (`text-rpg-gold`,
    `font-rpg`, etc.) direto a partir de variáveis CSS. */
 @theme {
-  --font-rpg: "Cinzel", serif;
-  --font-hand: "MedievalSharp", cursive;
+  /* Etapa 11 (B-1) — `font-rpg` vira VT323: mesmo token usado em ~40
+     lugares (títulos, números de ficha, rótulos), então a fonte precisa
+     continuar legível em texto curto E longo — Press Start 2P não serve
+     pra isso (fica ilegível/quebra layout acima de ~15 caracteres). VT323
+     dá o ar de terminal/8-bit em todo lugar sem esse risco.
+     `font-pixel-title` é a Press Start 2P de verdade, só pros títulos
+     grandes e curtos (ver .font-pixel-title abaixo) — é o instrumento mais
+     "arcade" da paleta tipográfica, usado com moderação de propósito. */
+  --font-rpg: "VT323", monospace;
+  --font-hand: "VT323", monospace;
+  --font-pixel-title: "Press Start 2P", monospace;
 
   --color-rpg-dark: #0f0e0b;
   --color-rpg-darker: #050505;
@@ -19,6 +28,21 @@
   --color-rpg-crimson: #8a1c1c;
   --color-rpg-parchment: #d4c5a9;
   --color-rpg-leather: #4a3b2a;
+}
+
+.font-pixel-title {
+  font-family: var(--font-pixel-title);
+}
+
+/* Etapa 11 (B-1) — moldura de linha dupla, cantos retos: o jeito mais
+   barato de dar ar "pixel/arcade" a uma caixa existente sem reestruturar
+   o JSX em componente — troca `rounded`/`rounded-*` (que a Tailwind seta
+   por utility) por cantos quadrados, e adiciona a borda dourada dupla que
+   telas de RPG 8-bit costumam usar em vez de sombra suave. `!important`
+   porque a ordem das classes Tailwind no HTML não garante que esta vença. */
+.pixel-frame {
+  border-radius: 0 !important;
+  box-shadow: 0 0 0 2px #000, 0 0 0 4px var(--color-rpg-gold);
 }
 
 /* --- ESTILOS PERSONALIZADOS RPG --- */
@@ -33,6 +57,30 @@ body {
 /* Efeito de Brilho Dourado para Textos Épicos */
 .text-glow {
   text-shadow: 0 0 10px rgba(197, 160, 89, 0.5);
+}
+
+/* Etapa 11 (B-1) — sprites pixel art (raça/classe/monstro, ver
+   docs/CREDITOS.md) não podem ser suavizados ao escalar, ou os contornos
+   de 1px viram borrão. O seletor por caminho pega qualquer <img> desses
+   três diretórios, sem precisar de uma classe em cada call site — o
+   retrato gerado por IA (pollinations.ai) ou o `background-default.jpg`
+   nunca batem nesse prefixo, então continuam suavizados normalmente. */
+img[src^="/assets/races/"],
+img[src^="/assets/classes/"],
+img[src^="/assets/monstros/"] {
+  image-rendering: pixelated;
+}
+
+/* Um sprite de 16×16 esticado por `object-cover` num container grande vira
+   um borrão de blocos gigantes. `object-contain` com respiro mantém o
+   sprite no tamanho que ele foi desenhado pra ter, centralizado, com o
+   fundo do card ao redor — como uma tela de seleção de personagem de
+   verdade, não uma foto cortada. */
+img[src^="/assets/races/"],
+img[src^="/assets/classes/"] {
+  object-fit: contain !important;
+  padding: 8%;
+  box-sizing: border-box;
 }
 
 /* Scrollbar personalizada (Parece feita de ferro) */
