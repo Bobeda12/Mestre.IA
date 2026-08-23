@@ -11,6 +11,7 @@ export default function Login() {
   const [modo, setModo] = useState<'entrar' | 'criar'>('entrar');
   const [email, setEmail] = useState('');
   const [senha, setSenha] = useState('');
+  const [confirmarSenha, setConfirmarSenha] = useState('');
   // Etapa 10 (A-2) — depois de criar conta, mostra a tela de confirmação
   // na hora, em vez de navegar pro jogo pra só então travar em /criar.
   const [emailRecemRegistrado, setEmailRecemRegistrado] = useState<string | null>(null);
@@ -31,6 +32,8 @@ export default function Login() {
     queryKey: ['auth-opcoes'],
     queryFn: async () => (await api.get<{ google_disponivel: boolean }>('/auth/opcoes')).data,
   });
+
+  const senhasConferem = modo === 'entrar' || senha === confirmarSenha;
 
   const entrar = useMutation({
     mutationFn: async () => {
@@ -105,7 +108,9 @@ export default function Login() {
         )}
 
         <div className="flex items-center gap-3 my-6 text-gray-600 text-xs uppercase tracking-widest">
-          <div className="flex-1 h-px bg-gray-800" /> ou crie uma conta <div className="flex-1 h-px bg-gray-800" />
+          <div className="flex-1 h-px bg-gray-800" />
+          {modo === 'entrar' ? 'ou entre com e-mail e senha' : 'ou crie uma conta'}
+          <div className="flex-1 h-px bg-gray-800" />
         </div>
 
         <form
@@ -115,6 +120,7 @@ export default function Login() {
           }}
           className="mt-8 flex flex-col gap-4"
         >
+          <label className="text-left text-xs text-gray-500 uppercase tracking-wide -mb-2">E-mail</label>
           <div className="flex items-center bg-gray-900/80 border border-gray-700 rounded px-3 focus-within:border-rpg-gold">
             <Mail size={18} className="text-gray-500" />
             <input
@@ -122,11 +128,14 @@ export default function Login() {
               required
               autoFocus
               placeholder="seu@email.com"
+              aria-label="E-mail"
               className="bg-transparent text-white px-3 py-3 outline-none w-full"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
             />
           </div>
+
+          <label className="text-left text-xs text-gray-500 uppercase tracking-wide -mb-2">Senha</label>
           <div className="flex items-center bg-gray-900/80 border border-gray-700 rounded px-3 focus-within:border-rpg-gold">
             <Lock size={18} className="text-gray-500" />
             <input
@@ -134,15 +143,41 @@ export default function Login() {
               required
               minLength={modo === 'criar' ? 8 : undefined}
               placeholder={modo === 'criar' ? 'Mínimo 8 caracteres' : 'Sua senha'}
+              aria-label="Senha"
               className="bg-transparent text-white px-3 py-3 outline-none w-full"
               value={senha}
               onChange={(e) => setSenha(e.target.value)}
             />
           </div>
+
+          {modo === 'criar' && (
+            <>
+              <label className="text-left text-xs text-gray-500 uppercase tracking-wide -mb-2">Confirmar senha</label>
+              <div className={`flex items-center bg-gray-900/80 border rounded px-3 focus-within:border-rpg-gold ${
+                confirmarSenha && !senhasConferem ? 'border-red-700' : 'border-gray-700'
+              }`}>
+                <Lock size={18} className="text-gray-500" />
+                <input
+                  type="password"
+                  required
+                  minLength={8}
+                  placeholder="Digite a senha de novo"
+                  aria-label="Confirmar senha"
+                  className="bg-transparent text-white px-3 py-3 outline-none w-full"
+                  value={confirmarSenha}
+                  onChange={(e) => setConfirmarSenha(e.target.value)}
+                />
+              </div>
+              {confirmarSenha && !senhasConferem && (
+                <p className="text-red-500 text-xs text-left -mt-2">As senhas não são iguais.</p>
+              )}
+            </>
+          )}
+
           <button
             type="submit"
-            disabled={entrar.isPending || !email || !senha}
-            className="bg-rpg-gold hover:bg-white text-black font-bold py-3 rounded flex items-center justify-center gap-2 transition-all disabled:opacity-50"
+            disabled={entrar.isPending || !email || !senha || !senhasConferem}
+            className="bg-rpg-gold hover:bg-white text-black font-bold py-3 rounded flex items-center justify-center gap-2 transition-all disabled:opacity-50 mt-2"
           >
             {entrar.isPending ? <Loader2 size={18} className="animate-spin" /> : modo === 'entrar' ? 'Entrar' : 'Criar conta'}
           </button>
@@ -152,6 +187,8 @@ export default function Login() {
         <button
           onClick={() => {
             entrar.reset();
+            setSenha('');
+            setConfirmarSenha('');
             setModo(modo === 'entrar' ? 'criar' : 'entrar');
           }}
           className="mt-4 text-gray-500 hover:text-rpg-gold text-sm underline decoration-gray-700"
