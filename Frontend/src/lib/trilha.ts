@@ -74,6 +74,20 @@ export function useTrilha(tema: TemaMusical) {
 
     return () => {
       cancelado = true;
+      // Sem esta linha a faixa toca MUDA, e foi exatamente o bug relatado
+      // ("cliquei no som e não sai nada"): o áudio ficava `paused: false`,
+      // `muted: false`, com o tempo correndo — e `volume: 0`.
+      //
+      // A armadilha é a combinação do guard lá em cima com o cleanup aqui:
+      // o efeito começa a rampa de fade-in em volume 0, o cleanup a cancela
+      // no meio (o StrictMode monta/desmonta/monta em desenvolvimento, e uma
+      // remontagem de rota faz o mesmo em produção), e na segunda execução o
+      // guard `temaAtualRef.current === tema` retorna cedo — ou seja, ninguém
+      // recomeça a rampa e o volume fica parado onde a rampa morreu.
+      //
+      // Encerrar a rampa levando o volume ao alvo torna o resultado o mesmo
+      // com ou sem interrupção: o fade é um enfeite, o volume final não é.
+      novo.volume = VOLUME_ALVO;
     };
   }, [tema]);
 

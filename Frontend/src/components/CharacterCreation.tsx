@@ -193,7 +193,11 @@ export default function CharacterCreation({ onCharacterCreated }: CharacterCreat
   // Painel grande usa o RETRATO (arte de 48×48 gerada e pixelizada, ADR-0025);
   // a lista da esquerda continua no sprite de 16×16 do Kenney, que é o que se
   // lê num ícone pequeno. Ver `getRetrato` em lib/utils.ts.
-  const activeImage = step === 5 && finalImageUrl ? finalImageUrl : step === 2 && selectedClass ? getRetrato('classes', selectedClass) : step === 1 && selectedRace ? getRetrato('races', selectedRace) : "/assets/backgrounds/mapa-mundo.png";
+  // Nada escolhido ainda mostra um "?" em moldura tracejada. Antes caía no
+  // mapa de fundo, que lia como "já escolhi e o resultado é uma paisagem" em
+  // vez de "falta escolher".
+  const activeImage = step === 5 && finalImageUrl ? finalImageUrl : step === 2 && selectedClass ? getRetrato('classes', selectedClass) : step === 1 && selectedRace ? getRetrato('races', selectedRace) : "/assets/placeholder-selecao.png";
+  const semSelecao = !(step === 5 && finalImageUrl) && !(step === 2 && selectedClass) && !(step === 1 && selectedRace);
   const activeTitle = step === 5 ? name : step === 1 ? (selectedRace || "Linhagem") : step === 2 ? (selectedClass || "Vocação") : step === 3 ? "Identidade" : "Atributos";
   const currentDetails = step === 1 ? raceData : step === 2 ? classData : null;
 
@@ -298,7 +302,7 @@ export default function CharacterCreation({ onCharacterCreated }: CharacterCreat
                      minúsculo de antes e só deixava a imagem menor. */}
                  <img
                      src={activeImage}
-                     className="w-full h-full object-cover object-top"
+                     className={semSelecao ? "w-full h-full object-contain p-20 opacity-70" : "w-full h-full object-cover object-top"}
                      alt=""
                      onError={(e) => (e.currentTarget.style.display = 'none')}
                  />
