@@ -36,28 +36,11 @@ jobs:
             --cov=app/domain --cov=app/services --cov=evals \
             --cov-report=term-missing --cov-fail-under=60
 
-  deploy-backend:
-    # Etapa 9 (ADR-0015): deploy automático no Fly.io a cada push em `main`
-    # que passar no job `backend` acima — não em PR (`needs` já garante que
-    # só roda depois dos testes, e a condição abaixo garante que só roda em
-    # push direto em `main`, nunca em pull_request). Pré-requisito: o
-    # secret `FLY_API_TOKEN` (token de deploy escopado ao app
-    # `mestre-ia-backend`, gerado com `fly tokens create deploy`).
-    needs: backend
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: Backend
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: superfly/flyctl-actions/setup-flyctl@master
-
-      - name: Deploy no Fly.io
-        env:
-          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
-        run: flyctl deploy --remote-only
+  # Deploy do backend NÃO é mais um job daqui (ADR-0016: migração Fly.io →
+  # Render.com). O Render tem GitHub App próprio: builda e implanta sozinho
+  # a cada push em `main`, sem precisar de token nem step nenhum aqui. Esta
+  # Action só continua garantindo que lint/tipos/testes passam antes disso
+  # — o Render não sabe rodar essa checagem, só faz deploy do que chegar.
 
   avaliacao:
     # Etapa 6 (ADR-0011): gate de avaliação real contra a Groq — manual, não

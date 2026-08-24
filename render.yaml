@@ -1,0 +1,44 @@
+services:
+  - name: mestre-ia-backend
+    type: web
+    runtime: docker
+    plan: free
+    dockerfilePath: Backend/Dockerfile
+    dockerContext: Backend
+    healthCheckPath: /health
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: CORS_ORIGINS
+        value: https://mestre-ia-seven.vercel.app
+      - key: FRONTEND_URL
+        value: https://mestre-ia-seven.vercel.app
+      # Neon (console.neon.tech) — string de conexão do projeto Postgres.
+      - key: DATABASE_URL
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      # console.cloud.google.com/apis/credentials — GOOGLE_REDIRECT_URI usa
+      # a própria URL deste serviço (confirmar depois do 1º deploy, em
+      # Settings, se o nome "mestre-ia-backend" foi mesmo o escolhido).
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: GOOGLE_REDIRECT_URI
+        value: https://mestre-ia-backend.onrender.com/auth/google/callback
+      # Senha de app do Gmail (não a senha normal da conta) — SMTP de
+      # confirmação de e-mail (ver settings.py).
+      - key: SMTP_EMAIL
+        sync: false
+      - key: SMTP_SENHA_APP
+        sync: false
+      - key: CONFIRMACAO_EMAIL_URL
+        value: https://mestre-ia-backend.onrender.com/auth/confirmar
+      # Langfuse Cloud (região US) — opcional, tracing fica desligado sem isto.
+      - key: LANGFUSE_PUBLIC_KEY
+        sync: false
+      - key: LANGFUSE_SECRET_KEY
+        sync: false
