@@ -11,10 +11,9 @@ compartilhada entre todos os jogadores — sendo drenada por uma única
 pessoa martelando `/chat`.
 """
 
-from starlette.requests import Request
-
 from slowapi import Limiter
 from slowapi.util import get_remote_address
+from starlette.requests import Request
 
 
 def _ip_do_cliente(request: Request) -> str:
