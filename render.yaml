@@ -20,15 +20,18 @@ services:
         sync: false
       - key: GROQ_API_KEY
         sync: false
-      # console.cloud.google.com/apis/credentials — GOOGLE_REDIRECT_URI usa
-      # a própria URL deste serviço (confirmar depois do 1º deploy, em
-      # Settings, se o nome "mestre-ia-backend" foi mesmo o escolhido).
+      # console.cloud.google.com/apis/credentials
       - key: GOOGLE_CLIENT_ID
         sync: false
       - key: GOOGLE_CLIENT_SECRET
         sync: false
+      # NÃO aponta pro backend direto (mestre-ia-backend.onrender.com) —
+      # precisa passar pelo proxy da Vercel (Frontend/vercel.json,
+      # rewrite de /api/*) pro cookie de sessão sobreviver ao redirect do
+      # Google (mesma razão do ADR-0015: SameSite=Lax exige mesma origem
+      # do ponto de vista do navegador).
       - key: GOOGLE_REDIRECT_URI
-        value: https://mestre-ia-backend.onrender.com/auth/google/callback
+        value: https://mestre-ia-seven.vercel.app/api/auth/google/callback
       # Senha de app do Gmail (não a senha normal da conta) — SMTP de
       # confirmação de e-mail (ver settings.py).
       - key: SMTP_EMAIL
