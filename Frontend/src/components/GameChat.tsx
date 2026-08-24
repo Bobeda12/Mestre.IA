@@ -107,6 +107,7 @@ export default function GameChat() {
   const [loading, setLoading] = useState(false);
   const [showSidebar, setShowSidebar] = useState(true);
   const [abaAtiva, setAbaAtiva] = useState<AbaFicha>('status');
+  const [retratoAberto, setRetratoAberto] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // FICHA — sempre a verdade que vem do backend (load_game / chat)
@@ -487,7 +488,7 @@ export default function GameChat() {
           se move. `left`/`-left-80` é uma propriedade física comum, sem
           essa dependência. */}
       <div
-          className={`${showSidebar ? 'w-80 left-0' : 'w-80 -left-80 md:left-0 md:w-0'}
+          className={`${showSidebar ? 'w-80 md:w-96 left-0' : 'w-80 -left-80 md:left-0 md:w-0'}
               fixed md:relative top-0 bottom-0 z-50 md:z-auto
               transition-all duration-300 bg-gray-900 border-r border-gray-800 flex flex-col shrink-0 overflow-hidden`}
       >
@@ -508,21 +509,24 @@ export default function GameChat() {
               </div>
           </div>
 
-          {/* Retrato + nome: fica FORA das abas, sempre visível. É a âncora de
-              identidade do menu — em JRPG o retrato não some quando você troca
-              de aba, só o conteúdo abaixo dele muda. */}
-          <div className="p-3 pb-0 shrink-0">
-              {/* 3:4 e nao 4:3: o retrato gerado vem em 500x750 (retrato).
-                  Numa moldura deitada o `object-cover` recortava tudo menos a
-                  faixa dos olhos. */}
-              <div className="pixel-frame w-full aspect-[3/4] bg-black relative overflow-hidden">
-                   <RetratoPixelado src={charImage} alt={`Retrato de ${charName}`} className="w-full h-full object-cover object-top opacity-90" />
-                   <div className="absolute bottom-0 w-full bg-gradient-to-t from-black via-black/85 to-transparent p-2 pt-8">
-                       <p className="text-white font-rpg text-lg leading-tight">{charName}</p>
-                       <p className="text-[10px] text-gray-300 uppercase tracking-wide font-rpg">{charRace} {charClass}</p>
-                   </div>
+          {/* Retrato COMPACTO. O busto grande ocupava 343px de altura — mais
+              que todo o conteúdo da aba STATUS junto (293px, medido), e num
+              notebook de 768px sobrava pouco pro resto. Em linha ele custa
+              ~88px e continua sendo a âncora de identidade do menu; quem
+              quiser ver grande clica e abre em tela cheia. */}
+          <button
+              onClick={() => setRetratoAberto(true)}
+              className="shrink-0 m-3 mb-0 flex items-center gap-3 p-2 border-2 border-gray-700 hover:border-rpg-gold bg-black/50 transition-colors text-left focus-visible:outline-none focus-visible:border-rpg-gold"
+              aria-label={`Ver retrato de ${charName} em tamanho grande`}
+          >
+              <div className="pixel-frame w-16 h-16 shrink-0 bg-black overflow-hidden">
+                  <RetratoPixelado src={charImage} alt="" className="w-full h-full object-cover object-top" />
               </div>
-          </div>
+              <div className="min-w-0">
+                  <p className="text-white font-rpg text-lg leading-tight truncate">{charName}</p>
+                  <p className="text-[10px] text-gray-300 uppercase tracking-wide font-rpg truncate">{charRace} {charClass}</p>
+              </div>
+          </button>
 
           {/* Abas. A ficha inteira empilhada numa coluna de 320px ficava
               espremida e obrigava a rolar pra achar qualquer coisa; separada em
@@ -560,28 +564,10 @@ export default function GameChat() {
           >
               {abaAtiva === 'status' && (
                 <div className="space-y-4 animate-fade-in">
-                  <div className="bg-black/50 p-3 border-2 border-gray-700 space-y-3">
-                      <div>
-                        <div className="flex justify-between text-xs font-bold uppercase mb-1 font-rpg"><span>Vida</span><span>{hpAtual}/{hpMax}</span></div>
-                        <PixelBar value={hpAtual} max={hpMax} colorClass="bg-red-600" />
-                      </div>
-                      <div>
-                        <div className="flex justify-between text-xs font-bold uppercase mb-1 font-rpg">
-                          <span className="flex items-center gap-1"><PixelIcon name="estrela" size={11}/> Nível {nivel}</span>
-                          <span>{xpProximoNivel != null ? `${xp}/${xpProximoNivel} XP` : "XP máximo"}</span>
-                        </div>
-                        <PixelBar
-                          value={xpProximoNivel != null ? xp : 1}
-                          max={xpProximoNivel != null ? xpProximoNivel : 1}
-                          colorClass="bg-rpg-gold"
-                        />
-                      </div>
-                      <div className="flex justify-between items-center pt-2 border-t-2 border-gray-700">
-                         <span className="flex items-center gap-2 text-xs text-gray-200 font-bold uppercase font-rpg"><PixelIcon name="escudo" size={14}/> Defesa</span>
-                         <span className="text-blue-200 font-rpg text-lg">{defesa ?? "?"}</span>
-                      </div>
-                  </div>
-
+                  {/* Vida, nível e defesa NÃO estão mais aqui: viraram a faixa
+                      sobre o chat (HudVitais). São o que se precisa olhar no
+                      meio da luta, e ali ficam visíveis com a ficha fechada.
+                      Esta aba guarda o que é consulta, não urgência. */}
                   {/* Os SEIS atributos. Antes só FOR/DES/INT apareciam, fixos
                       no código, embora o backend sempre mandasse os seis em
                       `atributos` — quem jogava de Clérigo ou Bardo não via o
@@ -623,8 +609,61 @@ export default function GameChat() {
           </div>
       </div>
 
+      {/* Retrato em tamanho grande, sob demanda. A ficha mostra a versão
+          compacta pra não gastar 343px de altura com algo que se olha uma vez;
+          quem quiser admirar clica e vem parar aqui. */}
+      {retratoAberto && (
+          <div
+              className="fixed inset-0 z-[60] bg-black/85 flex items-center justify-center p-6 animate-fade-in"
+              onClick={() => setRetratoAberto(false)}
+              role="dialog"
+              aria-modal="true"
+              aria-label={`Retrato de ${charName}`}
+          >
+              <div className="pixel-frame bg-black max-w-sm w-full aspect-[3/4] relative overflow-hidden" onClick={(e) => e.stopPropagation()}>
+                  <RetratoPixelado src={charImage} alt={`Retrato de ${charName}`} className="w-full h-full object-cover object-top" />
+                  <div className="absolute bottom-0 w-full bg-gradient-to-t from-black via-black/85 to-transparent p-3 pt-10">
+                      <p className="text-white font-rpg text-xl leading-tight">{charName}</p>
+                      <p className="text-[11px] text-gray-300 uppercase tracking-wide font-rpg">{charRace} {charClass}</p>
+                  </div>
+                  <button
+                      onClick={() => setRetratoAberto(false)}
+                      aria-label="Fechar retrato"
+                      className="absolute top-2 right-2 p-1 bg-black/70 border-2 border-gray-600 hover:border-rpg-gold focus-visible:outline-none focus-visible:border-rpg-gold"
+                  ><PixelIcon name="fechar" size={16}/></button>
+              </div>
+          </div>
+      )}
+
       {/* CHAT AREA */}
       <div className="flex-1 flex flex-col relative bg-[#050505]">
+        {/* Vitais sobre a área de jogo, não dentro da ficha: vida, nível e
+            defesa são o que se olha NO MEIO da luta, e aqui continuam
+            visíveis mesmo com a ficha fechada — que é como jogo faz. De
+            quebra devolveram ~150px de altura pra barra lateral. */}
+        <div className="shrink-0 flex items-center gap-4 px-3 py-2 border-b-2 border-gray-800 bg-black/60">
+            <div className="flex items-center gap-2 min-w-0 flex-1">
+                <PixelIcon name="coracao" size={14} />
+                <span className="text-[11px] font-rpg text-gray-200 shrink-0">{hpAtual}/{hpMax}</span>
+                <div className="flex-1 min-w-[60px] max-w-[180px]"><PixelBar value={hpAtual} max={hpMax} colorClass="bg-red-600" /></div>
+            </div>
+            <div className="hidden sm:flex items-center gap-2 min-w-0 flex-1">
+                <PixelIcon name="estrela" size={14} />
+                <span className="text-[11px] font-rpg text-gray-200 shrink-0">Nv {nivel}</span>
+                <div className="flex-1 min-w-[60px] max-w-[180px]">
+                    <PixelBar
+                        value={xpProximoNivel != null ? xp : 1}
+                        max={xpProximoNivel != null ? xpProximoNivel : 1}
+                        colorClass="bg-rpg-gold"
+                    />
+                </div>
+            </div>
+            <div className="flex items-center gap-1 shrink-0">
+                <PixelIcon name="escudo" size={14} />
+                <span className="text-[11px] font-rpg text-blue-200">{defesa ?? "?"}</span>
+            </div>
+        </div>
+
         {!showSidebar && (
             <button
                 onClick={() => setShowSidebar(true)}
