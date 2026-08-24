@@ -27,7 +27,7 @@ Template: [`0000-template.md`](0000-template.md) · Sistema completo: [`../READM
 | [0022](0022-hospedagem-render-em-vez-de-fly-io.md) | Hospedagem do backend: Render.com em vez de Fly.io | 14 | ✅ aceito | 24/08/2026 |
 | [0023](0023-embeddings-via-api-gemini.md) | Embeddings via API (Gemini) em vez de modelo local (`fastembed`) | 14 | ✅ aceito | 24/08/2026 |
 | [0024](0024-cadeia-multi-provedor-groq-gemini.md) | Cadeia de fallback atravessando provedores (Groq + Gemini) | 14 | ✅ aceito | 24/08/2026 |
-| [0025](0025-retratos-por-ia-pixelizados-por-script.md) | Retratos de raça/classe: geração por IA pixelizada por script | 14 | ✅ aceito | 24/08/2026 |
+| [0025](0025-retratos-por-ia-pixelizados-por-script.md) | Retratos de raça/classe: sprites CC0 do Dungeon Crawl | 14 | ✅ aceito | 24/08/2026 |
 
 **Legenda:** 🕓 previsto · ✅ aceito · ⛔ substituído
 

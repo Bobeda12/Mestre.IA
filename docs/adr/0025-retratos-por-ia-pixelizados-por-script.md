@@ -1,4 +1,4 @@
-# ADR-0025 — Retratos de raça/classe: geração por IA pixelizada por script
+# ADR-0025 — Retratos de raça/classe: sprites CC0 do Dungeon Crawl
 
 **Data:** 24/08/2026
 **Status:** Aceito
@@ -24,40 +24,28 @@ As duas devolveram **ilustração digital pintada**, com anti-aliasing e milhare
 
 ## Decisão
 
-**Gerar solto e pixelizar por script**, em vez de tentar arrancar pixel art do prompt — e usar o resultado APENAS nos painéis grandes.
+**Usar o tileset do [Dungeon Crawl Stone Soup](https://opengameart.org/content/dungeon-crawl-32x32-tiles) (CC0, 32×32)** para os 21 retratos de raça e classe.
 
-**Dois conjuntos de arte, cada um no tamanho em que funciona.** Ver os 21 aplicados de uma vez mostrou que substituir tudo era errado: reduzidos a 48px na lista de seleção, os retratos de IA viram um amontoado ilegível, e várias classes ficaram parecidas entre si (meia dúzia delas saiu como a mesma mulher de cabelo escuro). Os sprites de 16×16 do Kenney são o inverso — toscos, porém identificáveis num relance, que é exatamente o trabalho de um ícone de lista. Então:
+A geração por IA foi tentada e **descartada depois de aplicada e vista no lote inteiro**. O pipeline funcionava tecnicamente (o resultado ERA pixel art, com grade e paleta fechada), mas o conteúdo não servia: meia dúzia de classes saiu como a mesma mulher de cabelo escuro, halfling e gnomo não liam como halfling e gnomo — o descritor deles é sobre estatura, e estatura não aparece num busto — e o draconato virou uma estátua de pedra. Diferenciação entre opções é requisito funcional numa tela de seleção de personagem, não preferência estética.
 
-| Onde | Arte | Por quê |
-|---|---|---|
-| Ícone da lista de seleção (48px) | sprite Kenney 16×16, CC0 | legível e distinto em tamanho pequeno |
-| Painel grande (~400px) | retrato gerado, pixelizado 48×48 | detalhe e presença que o sprite não tem nessa escala |
+O DCSS resolve isso porque são **personagens completos desenhados à mão**, com equipamento e silhueta própria, e o catálogo cobre exatamente os arquétipos que faltavam: draconiano alado (Draconato), *demonspawn* com chifres (Tiefling), orc armado (Meio-Orc) — os três "encaixes forçados" do ADR-0017 — além de mago, necromante, arqueiro élfico, ladrão encapuzado e sacerdote para as classes.
 
-Na prática são `getLocalImage` e `getRetrato` (`Frontend/src/lib/utils.ts`), e os arquivos vivem em `assets/{races,classes}/` e `assets/retratos/{races,classes}/`.
+**Uma fonte só para os dois tamanhos.** Houve uma fase intermediária com dois conjuntos (sprite Kenney de 16×16 no ícone, retrato de IA no painel) porque nenhuma fonte servia bem aos dois. Os 32×32 do DCSS têm resolução suficiente para o painel e legibilidade suficiente para o ícone de 48px, então o segundo caminho (`getRetrato`, `assets/retratos/`) foi removido em vez de virar duas pastas para manter em sincronia.
 
-O pipeline (`gerar_21.py`) é determinístico e reproduzível:
-
-1. **Gera** em 512×512 pelo mesmo provedor que o app já usa pro retrato do herói (image.pollinations.ai), com os **mesmos descritores em inglês** que `CharacterCreation.tsx` já mantinha (`RACE_VISUAL_EN`/`CLASS_VISUAL_EN`) — arte de catálogo e retrato do jogador descrevem a mesma coisa, de uma fonte só.
-2. **Satura** (+25%) antes de reduzir: paleta fechada lava a cor, e sprite de console é saturado de propósito.
-3. **Reduz para 48×48 com `BOX`** (média da área), não `LANCZOS` — reamostragem com lóbulo negativo deixa halo nas bordas, que é exatamente o que faz "pixel art falsa" parecer suja.
-4. **Quantiza para 24 cores com dither desligado** — dither espalha ruído de meio-tom, que em 48×48 lê como sujeira, não como sombreado.
-
-O enquadramento é fixo no prompt (busto, centralizado, de frente, fundo escuro) porque sem isso cada retrato volta num plano diferente e a tela de seleção fica desalinhada.
-
-**Nível 48px/24 cores** escolhido comparando três (48/24, 64/32, 96/48) lado a lado com o sprite Kenney: 96px lê mais como foto reduzida que como sprite; 48px é o mais próximo de arte de console.
+Detalhe de aplicação que importa: o painel grande usa `object-contain`, não `object-cover`. `cover` num sprite de corpo inteiro de 32×32 recorta a figura e amplia um pedaço até virar mancha — foi o primeiro resultado, e é o oposto do que se quer.
 
 ## Alternativas consideradas
 
 - **Manter os sprites Kenney** — coerentes e CC0, mas mantêm os encaixes fracos e o problema de escala que motivou o pedido.
-- **Usar a ilustração da IA crua** — mais bonita e detalhada, mas em outra linguagem visual; brigaria com a UI 8-bit ao redor (molduras 9-slice, fonte pixel, barras em blocos).
-- **Forçar contorno escuro na pixelização** — tentado e descartado: a detecção de bordas dispara também na textura interna (barba, escamas) e empasta o rosto. O resultado sem esse passo é melhor.
+- **Gerar por IA e pixelizar por script** — implementado por inteiro e revertido depois de ver o lote (motivo acima). O pipeline ficou registrado aqui porque a lição vale: quando o modelo não entrega o formato pedido por mais explícito que seja o prompt, transformar a saída com código determinístico funciona — o que falhou foi o CONTEÚDO gerado, não a conversão.
+- **Usar a ilustração da IA crua** — em outra linguagem visual; brigaria com a UI 8-bit ao redor.
+- **Forçar contorno escuro na pixelização** — a detecção de bordas dispara também na textura interna (barba, escamas) e empasta o rosto.
 
 ## Consequências
 
-- Os 21 retratos passam a ser **arte gerada**, o que o ADR-0017 excluía. Registrado aqui como reversão consciente, não como esquecimento.
-- **Não são CC0.** Saída de modelo generativo não tem a mesma clareza de licença dos pacotes Kenney. Para um projeto de portfólio single-player isso é aceitável; se o jogo virar produto distribuído, esta é a primeira dívida a revisitar.
-- Os sprites de monstro, ícones e moldura continuam CC0 e curados — a mistura é deliberada, não acidental.
-- O pipeline é **determinístico** (`seed=11` fixo): rodar de novo dá o mesmo resultado, e trocar um retrato isolado é regerar um arquivo, não refazer o lote.
+- **Continua tudo CC0.** A condição "sem geração por IA" do ADR-0017 acaba preservada na prática, por outro caminho: o que muda é a FONTE dos sprites, não o princípio. Some junto a dívida de licença que a arte gerada teria criado.
+- Passam a ser **três** pacotes de arte no projeto (Kenney Tiny Dungeon/Tiny Creatures para monstros e ícones, Kenney UI Pack para molduras, DCSS para retratos). Todos pixel art de contorno marcado, mas o DCSS é 32×32 contra 16×16 dos outros — a diferença aparece se um sprite DCSS for usado ao lado de um Kenney no mesmo tamanho.
+- Trocar um retrato é trocar um arquivo do pacote, sem regerar nada.
 
 ## Como saber que erramos
 
