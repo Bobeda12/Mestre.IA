@@ -92,7 +92,11 @@ export default function CharacterCreation({ onCharacterCreated }: CharacterCreat
   
   // UI
   const [loading, setLoading] = useState(false);
-  const [finalImageUrl, setFinalImageUrl] = useState(""); 
+  const [finalImageUrl, setFinalImageUrl] = useState("");
+  // Quantas vezes o jogador pediu outro retrato. Entra no seed, então cada
+  // clique é um sorteio novo — e como o seed continua derivado (não
+  // aleatório), o retrato escolhido se reproduz igual depois.
+  const [variacao, setVariacao] = useState(0);
 
   // Carregamento Inicial
   useEffect(() => {
@@ -112,7 +116,11 @@ export default function CharacterCreation({ onCharacterCreated }: CharacterCreat
 
   // Gerador de Imagem (IA)
   useEffect(() => {
-    if (step === 4 && name && gender && selectedRace && selectedClass) {
+    // Passo 4 E 5: o retrato nasce ao fechar os atributos (4), mas o botão
+    // "gerar outro" vive na ficha final (5). Com o guard só em `step === 4`
+    // o clique mudava `variacao` e nada regerava — a condição precisa cobrir
+    // a tela onde o botão está.
+    if ((step === 4 || step === 5) && name && gender && selectedRace && selectedClass) {
         const genderEn = gender === "Feminino" ? "female" : gender === "Masculino" ? "male" : "androgynous";
         const raceVisual = RACE_VISUAL_EN[selectedRace] || selectedRace;
         const classVisual = CLASS_VISUAL_EN[selectedClass] || selectedClass;
@@ -124,11 +132,11 @@ export default function CharacterCreation({ onCharacterCreated }: CharacterCreat
         // qualquer parte dela muda o resultado — e o mesmo herói continua
         // reproduzindo o mesmo retrato, que é o motivo de existir um seed
         // fixo em vez de aleatório.
-        const seed = hashSeed(`${name}|${gender}|${selectedRace}|${selectedClass}`);
+        const seed = hashSeed(`${name}|${gender}|${selectedRace}|${selectedClass}|${variacao}`);
         const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=500&height=750&nologo=true&model=flux&seed=${seed}`;
         setFinalImageUrl(url);
     }
-  }, [step, name, gender, selectedRace, selectedClass]);
+  }, [step, name, gender, selectedRace, selectedClass, variacao]);
 
   // Lógica de Atributos
   const handleAttributeChange = (attr: string, delta: number) => {
@@ -303,7 +311,10 @@ export default function CharacterCreation({ onCharacterCreated }: CharacterCreat
             {step === 4 && (<div className="p-4 space-y-6 animate-fade-in"><div className="bg-black/40 p-4 border-2 border-blue-900 text-center"><span className="block text-gray-400 text-xs uppercase tracking-widest">Pontos Restantes</span><span className={`text-4xl font-rpg ${pointsRemaining === 0 ? 'text-green-500' : 'text-blue-400'}`}>{pointsRemaining}/27</span></div>{maxFreePoints > 0 && (<div className={`p-3 border-2 text-center ${usedFreePoints === maxFreePoints ? 'bg-green-900/20 border-green-700' : 'bg-rpg-gold/10 border-rpg-gold'}`}><span className="text-sm font-bold text-gray-200 block mb-1 flex items-center justify-center gap-1"><PixelIcon name="estrela" size={12}/> Bônus Racial Extra</span><span className={`text-xl font-rpg ${usedFreePoints === maxFreePoints ? 'text-green-400' : 'text-rpg-gold'}`}>{usedFreePoints}/{maxFreePoints}</span></div>)}<div className="space-y-2">{Object.keys(attributes).map(attr => { const fixedBonus = raceData?.bonus_atributos?.[attr] || 0; const isFreeSelected = freePointsAllocation[attr] === 1; const isFreeAvailable = maxFreePoints > 0 && fixedBonus === 0; return (<div key={attr} className="flex items-center justify-between bg-gray-900/50 p-2 border-2 border-gray-800 hover:border-gray-600"><div className="w-20"><span className="font-bold text-sm text-gray-300 block">{formatAttribute(attr)}</span>{fixedBonus > 0 && <span className="text-[10px] text-blue-400 font-bold">+{fixedBonus} Raça</span>}{isFreeAvailable && (<button onClick={() => handleFreeAllocation(attr)} disabled={!isFreeSelected && usedFreePoints >= maxFreePoints} className={`text-[10px] px-1 border mt-1 transition-colors ${isFreeSelected ? 'bg-green-600 text-white border-green-500' : 'bg-black text-gray-500 border-gray-700 hover:border-gray-500'}`}>{isFreeSelected ? '+1 Extra' : '+ Adicionar'}</button>)}</div><div className="flex items-center gap-3"><button onClick={() => handleAttributeChange(attr, -1)} className="w-8 h-8 bg-gray-800 hover:bg-red-900 flex items-center justify-center disabled:opacity-30" disabled={attributes[attr] <= 8}><PixelIcon name="menos" size={14}/></button><span className="text-xl w-6 text-center font-mono">{attributes[attr]}</span><button onClick={() => handleAttributeChange(attr, 1)} className="w-8 h-8 bg-gray-800 hover:bg-green-900 flex items-center justify-center disabled:opacity-30" disabled={attributes[attr] >= 15 || pointsRemaining === 0}><PixelIcon name="mais" size={14}/></button></div><div className="text-[10px] text-gray-500 w-12 text-right">{attributes[attr] >= 15 ? 'MÁX' : `-${getPointCost(attributes[attr] + 1) - getPointCost(attributes[attr])}`}</div></div>); })}</div></div>)}
             
             {/* PASSO 5: RESUMO */}
-            {step === 5 && (<div className="p-6 h-full flex flex-col justify-center items-center text-center animate-fade-in"><PixelIcon name="coroa" size={48} className="mb-4 animate-pulse"/><h3 className="text-2xl font-rpg text-white mb-2">Destino Selado</h3><p className="text-gray-400 text-sm mb-8">Confirme os dados da ficha ao lado para iniciar.</p><PixelButton variant="dourado" onClick={handleFinish} disabled={loading} className="w-full py-5 text-lg flex items-center justify-center gap-3 hover:scale-105 mb-4">{loading ? "Iniciando..." : <>JOGAR AGORA <PixelIcon name="seta" /></>}</PixelButton><button onClick={() => setStep(4)} className="text-gray-500 hover:text-rpg-gold flex items-center gap-2 text-sm underline decoration-gray-700 hover:decoration-rpg-gold"><PixelIcon name="seta" size={14} className="rotate-180"/> Editar Atributos</button></div>)}
+            {step === 5 && (<div className="p-6 h-full flex flex-col justify-center items-center text-center animate-fade-in"><PixelIcon name="coroa" size={48} className="mb-4 animate-pulse"/><h3 className="text-2xl font-rpg text-white mb-2">Destino Selado</h3><p className="text-gray-400 text-sm mb-8">Confirme os dados da ficha ao lado para iniciar.</p><PixelButton variant="dourado" onClick={handleFinish} disabled={loading} className="w-full py-5 text-lg flex items-center justify-center gap-3 hover:scale-105 mb-4">{loading ? "Iniciando..." : <>JOGAR AGORA <PixelIcon name="seta" /></>}</PixelButton><div className="flex flex-col items-center gap-3">
+                    <button onClick={() => setVariacao(v => v + 1)} className="text-gray-300 hover:text-rpg-gold flex items-center gap-2 text-sm font-rpg border-2 border-gray-700 hover:border-rpg-gold px-3 py-2 transition-colors"><PixelIcon name="dado" size={14}/> Gerar outro retrato</button>
+                    <button onClick={() => setStep(4)} className="text-gray-400 hover:text-rpg-gold flex items-center gap-2 text-sm underline decoration-gray-700 hover:decoration-rpg-gold"><PixelIcon name="seta" size={14} className="rotate-180"/> Editar Atributos</button>
+                  </div></div>)}
         </div>
       </div>
 
