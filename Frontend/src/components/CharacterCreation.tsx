@@ -341,6 +341,7 @@ export default function CharacterCreation({ onCharacterCreated }: CharacterCreat
                      <RetratoPixelado
                          src={finalImageUrl}
                          alt={`Retrato de ${name}`}
+                         grade={120}
                          className="w-full h-full object-cover object-top"
                      />
                  ) : (

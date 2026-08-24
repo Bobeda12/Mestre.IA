@@ -493,7 +493,19 @@ export default function GameChat() {
               transition-all duration-300 bg-gray-900 border-r border-gray-800 flex flex-col shrink-0 overflow-hidden`}
       >
           <div className="p-4 border-b border-gray-800 flex justify-between items-center bg-black/20">
-              <h2 className="font-pixel-title text-sm text-rpg-gold flex items-center gap-2"><PixelIcon name="pergaminho" size={18}/> FICHA</h2>
+              {/* Voltar ao menu. Nao existia saida do jogo pela interface: so
+                  dava pra sair pelo botao do navegador ou editando a URL. O
+                  progresso e salvo no servidor a cada turno, entao sair nao
+                  perde nada e nao precisa de confirmacao. */}
+              <div className="flex items-center gap-2 min-w-0">
+                  <button
+                      onClick={() => navigate('/')}
+                      aria-label="Voltar ao menu inicial"
+                      title="Voltar ao menu inicial"
+                      className="flex items-center gap-1 px-2 py-1 border-2 border-gray-700 hover:border-rpg-gold text-gray-300 hover:text-rpg-gold font-rpg text-xs transition-colors focus-visible:outline-none focus-visible:border-rpg-gold shrink-0"
+                  ><PixelIcon name="seta" size={12} className="rotate-180"/> Menu</button>
+                  <h2 className="font-pixel-title text-sm text-rpg-gold flex items-center gap-2 truncate"><PixelIcon name="pergaminho" size={18}/> FICHA</h2>
+              </div>
               <div className="flex items-center gap-3">
                   <button
                       onClick={alternarMudo}
@@ -621,7 +633,7 @@ export default function GameChat() {
               aria-label={`Retrato de ${charName}`}
           >
               <div className="pixel-frame bg-black max-w-sm w-full aspect-[3/4] relative overflow-hidden" onClick={(e) => e.stopPropagation()}>
-                  <RetratoPixelado src={charImage} alt={`Retrato de ${charName}`} className="w-full h-full object-cover object-top" />
+                  <RetratoPixelado src={charImage} alt={`Retrato de ${charName}`} grade={110} className="w-full h-full object-cover object-top" />
                   <div className="absolute bottom-0 w-full bg-gradient-to-t from-black via-black/85 to-transparent p-3 pt-10">
                       <p className="text-white font-rpg text-xl leading-tight">{charName}</p>
                       <p className="text-[11px] text-gray-300 uppercase tracking-wide font-rpg">{charRace} {charClass}</p>

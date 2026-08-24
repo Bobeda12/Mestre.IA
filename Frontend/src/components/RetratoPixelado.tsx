@@ -27,7 +27,12 @@ import { useEffect, useRef } from 'react';
 // porque o provedor responde `Access-Control-Allow-Origin: *` e a imagem é
 // pedida com `crossOrigin`. Se isso mudar, o `catch` degrada para a versão
 // só-reduzida em vez de quebrar a tela.
-const LARGURA_GRADE = 56;
+// A grade é PROP, não constante: o mesmo valor dá resultados muito
+// diferentes conforme o tamanho em que a imagem é exibida. Numa miniatura de
+// 64px, 56 de grade é quase 1:1 e fica detalhado; num painel de 288px vira
+// 5x de ampliação e o rosto colapsa em manchas. Regra prática: uma grade em
+// torno de 1/3 da largura exibida lê como pixel art sem destruir a figura.
+const GRADE_PADRAO = 56;
 const CORES = 22;
 const SATURACAO = 1.18;
 
@@ -93,22 +98,23 @@ export default function RetratoPixelado({
   src,
   className = '',
   alt = '',
+  grade = GRADE_PADRAO,
 }: {
   src: string;
   className?: string;
   alt?: string;
+  grade?: number;
 }) {
   const ref = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
     if (!src) return;
-    const img = new Image();
-    // Precisa vir ANTES do `src`, senão o pedido sai sem CORS e o canvas
-    // nasce contaminado.
-    img.crossOrigin = 'anonymous';
     let cancelado = false;
 
-    img.onload = () => {
+    // Desenha e, quando possível, quantiza. `podeLerPixels` diz se a imagem
+    // veio por um pedido com CORS — sem isso o canvas fica "contaminado" e
+    // `getImageData` lança.
+    const desenhar = (img: HTMLImageElement, podeLerPixels: boolean) => {
       const cv = ref.current;
       if (cancelado || !cv) return;
       const ctx = cv.getContext('2d', { willReadFrequently: true });
@@ -117,14 +123,15 @@ export default function RetratoPixelado({
       // O canvas fica do tamanho da GRADE, não da imagem: quem amplia é o CSS
       // (`image-rendering: pixelated`), o que mantém a grade nítida em
       // qualquer tamanho de painel sem redesenhar.
-      const altura = Math.max(1, Math.round((LARGURA_GRADE * img.height) / img.width));
-      cv.width = LARGURA_GRADE;
+      const altura = Math.max(1, Math.round((grade * img.height) / img.width));
+      cv.width = grade;
       cv.height = altura;
       ctx.imageSmoothingEnabled = false;
-      ctx.drawImage(img, 0, 0, LARGURA_GRADE, altura);
+      ctx.drawImage(img, 0, 0, grade, altura);
+      if (!podeLerPixels) return;
 
       try {
-        const dados = ctx.getImageData(0, 0, LARGURA_GRADE, altura);
+        const dados = ctx.getImageData(0, 0, grade, altura);
         const px = dados.data;
 
         // Satura ANTES de quantizar: paleta fechada lava a cor, e sprite de
@@ -140,16 +147,32 @@ export default function RetratoPixelado({
         medianCut(px, CORES);
         ctx.putImageData(dados, 0, 0);
       } catch {
-        // Canvas contaminado (provedor sem CORS): fica só a redução de
-        // resolução, que já ajuda, em vez de deixar a tela sem retrato.
+        // Fica a versão só-reduzida, que já ajuda.
       }
     };
 
-    img.src = src;
+    // Primeira tentativa COM CORS, que é o que permite quantizar.
+    const comCors = new Image();
+    comCors.crossOrigin = 'anonymous'; // precisa vir antes do `src`
+    comCors.onload = () => desenhar(comCors, true);
+
+    // Se falhar, tenta de novo SEM CORS. Isso acontece de verdade: quando a
+    // mesma URL já está no cache vinda de um pedido sem CORS, o pedido com
+    // CORS reaproveita a resposta cacheada e a checagem falha. Sem este
+    // segundo caminho o retrato simplesmente não aparecia — e como não havia
+    // `onerror`, falhava calado, deixando o canvas no tamanho padrão (300x150).
+    comCors.onerror = () => {
+      if (cancelado) return;
+      const semCors = new Image();
+      semCors.onload = () => desenhar(semCors, false);
+      semCors.src = src;
+    };
+
+    comCors.src = src;
     return () => {
       cancelado = true;
     };
-  }, [src]);
+  }, [src, grade]);
 
   return (
     <canvas
