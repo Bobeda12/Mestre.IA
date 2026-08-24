@@ -42,17 +42,19 @@ export default function MapaDeFundo({
         larguraTile={FUNDO_LARGURA}
         duracao={duracaoSegundos}
         opacidade={opacidade}
-        alturaPercentual={100}
-        alinhamento="bottom"
+        alinhamento="top"
       />
       {/* Camada da frente: telhados escuros, ancorados na base. Mais rápida
-          que a de trás, e é ela que escurece o rodapé da tela. */}
+          que a de trás, e é ela que escurece o rodapé da tela.
+          Altura CHEIA, não 60%: o `background` é recortado pela caixa do
+          próprio elemento, então a borda de cima da caixa virava uma linha
+          reta cortando os telhados no meio. Em altura cheia o que sobra pra
+          fora é a parte transparente da arte, que não corta nada. */}
       <Camada
         imagem="/assets/backgrounds/cidade-frente.png"
         larguraTile={FRENTE_LARGURA}
         duracao={Math.round(duracaoSegundos * 0.55)}
         opacidade={opacidade}
-        alturaPercentual={60}
         alinhamento="bottom"
       />
       {/* Véu de opacidade CONSTANTE, não gradiente: em gradiente aparecia uma
@@ -68,14 +70,12 @@ function Camada({
   larguraTile,
   duracao,
   opacidade,
-  alturaPercentual,
   alinhamento,
 }: {
   imagem: string;
   larguraTile: number;
   duracao: number;
   opacidade: number;
-  alturaPercentual: number;
   alinhamento: 'bottom' | 'top';
 }) {
   return (
@@ -85,7 +85,7 @@ function Camada({
         // Bem mais larga que qualquer viewport: assim a borda de trás nunca
         // entra em cena durante o deslocamento de um tile.
         width: '400vw',
-        height: `${alturaPercentual}%`,
+        height: '100%',
         [alinhamento]: 0,
         backgroundImage: `url('${imagem}')`,
         backgroundRepeat: 'repeat-x',

@@ -100,7 +100,7 @@ export default function Home() {
       <div className="z-20 w-full max-w-2xl px-6 flex flex-col items-center justify-center flex-1 py-16">
 
         <div className="text-center mb-10 animate-fade-in">
-          <PixelIcon name="coroa" size={56} className="mx-auto mb-5 animate-pulse-slow" />
+          <PixelIcon name="coroa" size={96} className="mx-auto mb-6 animate-pulse-slow" />
           {/* Press Start 2P é bem mais larga por letra que uma fonte comum:
               tamanho contido pra não estourar em tela estreita (Etapa 11). */}
           <h1 className="text-2xl md:text-5xl font-pixel-title text-white tracking-wider mb-4 leading-relaxed drop-shadow-[0_4px_0_rgba(0,0,0,0.8)]">
