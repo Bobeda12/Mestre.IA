@@ -4,7 +4,7 @@
 
 Um RPG narrado por um LLM — FastAPI + Groq no backend, React no front.
 
-**🔗 Jogue agora:** [mestre-ia-seven.vercel.app](https://mestre-ia-seven.vercel.app) — no ar desde a Etapa 9 (Fly.io + Vercel + Neon, ver [`ADR-0015`](docs/adr/0015-hospedagem-fly-vercel-neon.md)).
+**🔗 Jogue agora:** [mestre-ia-seven.vercel.app](https://mestre-ia-seven.vercel.app) — no ar desde a Etapa 9 (Render + Vercel + Neon; ver [`ADR-0015`](docs/adr/0015-hospedagem-fly-vercel-neon.md) e [`ADR-0022`](docs/adr/0022-hospedagem-render-em-vez-de-fly-io.md), a migração de Fly.io para Render na Etapa 14).
 
 > A arquitetura, as decisões e o porquê de cada uma vivem em [`PLANO_MESTRE.md`](PLANO_MESTRE.md) e em [`docs/`](docs/). Este README é a porta de entrada de engenharia: como rodar, como o backend é organizado, e o que ele ainda não faz.
 
@@ -52,7 +52,7 @@ Se tiver [`just`](https://github.com/casey/just) instalado, `just backend-dev` j
 docker compose up --build
 ```
 
-Sobe o backend (porta 8000, migration aplicada automaticamente no entrypoint) e o front (porta 5173, build de produção servido estático). Precisa de `Backend/.env` já existir (copie de `.env.example`). Caminho de dev/local — a hospedagem de verdade (Postgres no Neon, Fly.io, Vercel) é a Etapa 9, ver [`ADR-0015`](docs/adr/0015-hospedagem-fly-vercel-neon.md) e [`docs/runbook.md`](docs/runbook.md).
+Sobe o backend (porta 8000, migration aplicada automaticamente no entrypoint) e o front (porta 5173, build de produção servido estático). Precisa de `Backend/.env` já existir (copie de `.env.example`). Caminho de dev/local — a hospedagem de verdade (Postgres no Neon, Render, Vercel) é a Etapa 9, ver [`ADR-0015`](docs/adr/0015-hospedagem-fly-vercel-neon.md), [`ADR-0022`](docs/adr/0022-hospedagem-render-em-vez-de-fly-io.md) e [`docs/runbook.md`](docs/runbook.md).
 
 ## Testar
 

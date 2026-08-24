@@ -1,5 +1,5 @@
 # Sobe o Mestre.IA inteiro com um comando: `docker compose up --build`.
-# Uso local/dev — hospedagem de verdade (Postgres, Fly.io) é Etapa 9.
+# Uso local/dev — hospedagem de verdade (Postgres, Render) é Etapa 9/14.
 services:
   backend:
     build: ./Backend

@@ -15,9 +15,9 @@ class Settings(BaseSettings):
         env_file=str(BASE_DIR / ".env"), env_file_encoding="utf-8", extra="ignore"
     )
 
-    # "development" por padrão de propósito — só o `fly.toml`/secrets de
-    # produção (Etapa 9) setam "production" explicitamente. Controla só a
-    # trava do SESSION_SECRET abaixo, nada de lógica de negócio.
+    # "development" por padrão de propósito — só o `render.yaml`/variáveis
+    # de ambiente de produção (Etapa 9/14) setam "production" explicitamente.
+    # Controla só a trava do SESSION_SECRET abaixo, nada de lógica de negócio.
     environment: str = "development"
     groq_api_key: str | None = None
     # Gemini (AI Studio) — chave sem cartão. Serve dois papéis desde a
@@ -132,5 +132,5 @@ if settings.environment == "production" and settings.session_secret == SESSION_S
     raise RuntimeError(
         "SESSION_SECRET ainda é o valor de desenvolvimento em produção (ENVIRONMENT=production). "
         'Gere um novo com `python -c "import secrets; print(secrets.token_hex(32))"` '
-        "e configure via `fly secrets set SESSION_SECRET=...`."
+        "e configure em Environment, no dashboard do Render."
     )
