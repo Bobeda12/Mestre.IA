@@ -7,6 +7,7 @@ import PixelIcon from './PixelIcon';
 import PixelButton from './PixelButton';
 import MapaDeFundo from './MapaDeFundo';
 import Carregando from './Carregando';
+import BotaoSom from './BotaoSom';
 
 interface Personagem {
   session_id: string;
@@ -67,6 +68,13 @@ export default function Home() {
           como defeito. Agora é um mapa de overworld deslizando devagar, que é
           o vocabulário de tela de título de console. Ver MapaDeFundo.tsx. */}
       <MapaDeFundo />
+
+      {/* Trilha na tela inicial (revisão da Etapa 14): antes só o jogo tinha
+          música. Fica fora do bloco de auth abaixo pra aparecer mesmo enquanto
+          a sessão ainda está carregando. */}
+      <div className="absolute top-4 left-4 z-30">
+        <BotaoSom tema="aventura" />
+      </div>
 
       {!carregandoAuth && (
         <div className="absolute top-4 right-4 z-30 flex items-center gap-3 text-sm font-rpg">

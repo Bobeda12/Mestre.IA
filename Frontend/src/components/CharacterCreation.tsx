@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
-import { getLocalImage } from '../lib/utils';
+import { getLocalImage, getRetrato } from '../lib/utils';
 import PixelIcon from './PixelIcon';
 import PixelButton from './PixelButton';
 import PanelFrame from './PanelFrame';
+import BotaoSom from './BotaoSom';
 
 interface CharacterCreationProps {
   onCharacterCreated?: (sessionId: string) => void; // Opcional agora
@@ -189,13 +190,19 @@ export default function CharacterCreation({ onCharacterCreated }: CharacterCreat
   // via.placeholder.com que o onError tentava carregar em seguida também
   // falha offline. Usa a cena de fundo local da Home, já dentro da mesma
   // regra do ADR-0017 (sem geração por IA).
-  const activeImage = step === 5 && finalImageUrl ? finalImageUrl : step === 2 && selectedClass ? getLocalImage('classes', selectedClass) : step === 1 && selectedRace ? getLocalImage('races', selectedRace) : "/assets/backgrounds/home.png";
+  // Painel grande usa o RETRATO (arte de 48×48 gerada e pixelizada, ADR-0025);
+  // a lista da esquerda continua no sprite de 16×16 do Kenney, que é o que se
+  // lê num ícone pequeno. Ver `getRetrato` em lib/utils.ts.
+  const activeImage = step === 5 && finalImageUrl ? finalImageUrl : step === 2 && selectedClass ? getRetrato('classes', selectedClass) : step === 1 && selectedRace ? getRetrato('races', selectedRace) : "/assets/backgrounds/mapa-mundo.png";
   const activeTitle = step === 5 ? name : step === 1 ? (selectedRace || "Linhagem") : step === 2 ? (selectedClass || "Vocação") : step === 3 ? "Identidade" : "Atributos";
   const currentDetails = step === 1 ? raceData : step === 2 ? classData : null;
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-black font-sans text-gray-100">
-      <button onClick={() => navigate('/')} className="absolute top-4 left-4 z-50 text-gray-500 hover:text-white flex items-center gap-2"><PixelIcon name="seta" className="rotate-180" /> Sair</button>
+      <div className="absolute top-4 left-4 z-50 flex items-center gap-3">
+        <button onClick={() => navigate('/')} className="text-gray-300 hover:text-rpg-gold flex items-center gap-2 font-rpg"><PixelIcon name="seta" className="rotate-180" /> Sair</button>
+        <BotaoSom tema="aventura" />
+      </div>
 
       <div className="w-1/3 h-full flex flex-col bg-gray-900 border-r border-gray-800 z-20 shadow-2xl relative">
         <div className="p-6 border-b border-gray-800 bg-black/40 mt-10">
@@ -277,18 +284,22 @@ export default function CharacterCreation({ onCharacterCreated }: CharacterCreat
       </div>
 
       <div className="flex-1 h-full relative bg-gray-900 overflow-hidden flex items-center justify-center p-8 bg-[url('/assets/backgrounds/textura-ruido.png')] bg-repeat">
-         <PanelFrame borderWidth={16} className="relative z-30 w-full max-w-5xl h-[600px] flex bg-[#121212] shadow-2xl overflow-hidden animate-scale-in">
+         {/* `h-[600px]` fixo cortava o conteudo: a revisao acrescentou arma,
+             atributo principal e proficiencias ao painel da classe, e o bloco
+             "Sabe usar" ficava clipado sem aviso. Altura passa a acompanhar a
+             janela, com piso pra nao espremer em tela baixa. */}
+         <PanelFrame borderWidth={16} className="relative z-30 w-full max-w-5xl h-[min(760px,90vh)] min-h-[460px] flex bg-[#121212] shadow-2xl overflow-hidden animate-scale-in">
              <div className="w-[45%] h-full relative border-r border-rpg-gold/30 bg-black">
-                 {/* Etapa 11 (B-1): passos 1/2 mostram um sprite de 16×16
-                     (raça/classe) — `object-contain` com respiro em vez de
-                     `object-cover` esticando um sprite pequeno pra
-                     preencher um painel de ~560px, o que vira um borrão de
-                     pixels gigantes. O retrato gerado por IA (passo 5)
-                     continua em `object-cover`, feito pra esse tamanho. */}
+                 {/* Revisão da Etapa 14 (ADR-0025): os retratos de raça/classe
+                     deixaram de ser sprites de 16×16 e passaram a ser arte de
+                     48×48 enquadrada como busto. Agora todos os passos usam
+                     `object-cover`, preenchendo o painel — o `object-contain`
+                     com respiro que existia aqui era muleta pro sprite
+                     minúsculo de antes e só deixava a imagem menor. */}
                  <img
                      src={activeImage}
-                     className={(step === 1 || step === 2) ? "w-full h-full object-contain object-top p-16" : "w-full h-full object-cover object-top"}
-                     alt="Visual"
+                     className="w-full h-full object-cover object-top"
+                     alt=""
                      onError={(e) => (e.currentTarget.style.display = 'none')}
                  />
                  <div className="absolute bottom-0 w-full bg-gradient-to-t from-black via-black/80 to-transparent p-6 pt-12">
@@ -410,7 +421,7 @@ export default function CharacterCreation({ onCharacterCreated }: CharacterCreat
 function Bloco({ titulo, children }: { titulo: string; children: React.ReactNode }) {
   return (
     <div className="bg-black/40 border-2 border-gray-700 p-3">
-      <span className="text-[10px] text-rpg-gold uppercase tracking-widest block mb-2 font-rpg">{titulo}</span>
+      <span className="text-xs text-rpg-gold uppercase tracking-widest block mb-2 font-rpg">{titulo}</span>
       {children}
     </div>
   );

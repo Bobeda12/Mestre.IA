@@ -28,6 +28,28 @@
   --color-rpg-crimson: #8a1c1c;
   --color-rpg-parchment: #d4c5a9;
   --color-rpg-leather: #4a3b2a;
+
+  /* Revisão da Etapa 14 — a escala `gray` padrão do Tailwind v4 é fria: a
+     matiz dela é 264° (azul). Como quase todo painel, borda e texto do app
+     usa `gray-*`, o resultado era uma interface azulada brigando com o ouro,
+     o couro e o pergaminho da paleta RPG — o "azul que não combina".
+     Redefinir a escala aqui reaquece o app inteiro sem tocar em nenhum
+     componente: os mesmos `bg-gray-900`/`text-gray-300` já escritos passam a
+     resolver pra tons quentes. Matiz 70° (couro/pergaminho), croma baixo pra
+     continuar lendo como neutro e não como marrom saturado.
+     Luminâncias mantidas próximas das originais, pra não estragar os
+     contrastes que já foram medidos. */
+  --color-gray-50:  oklch(0.975 0.004 70);
+  --color-gray-100: oklch(0.945 0.006 70);
+  --color-gray-200: oklch(0.900 0.008 70);
+  --color-gray-300: oklch(0.825 0.011 70);
+  --color-gray-400: oklch(0.705 0.013 70);
+  --color-gray-500: oklch(0.585 0.014 70);
+  --color-gray-600: oklch(0.480 0.015 70);
+  --color-gray-700: oklch(0.385 0.015 70);
+  --color-gray-800: oklch(0.285 0.014 70);
+  --color-gray-900: oklch(0.205 0.012 70);
+  --color-gray-950: oklch(0.145 0.010 70);
 }
 
 .font-pixel-title {
@@ -74,17 +96,14 @@ img[src^="/assets/backgrounds/"] {
   image-rendering: pixelated;
 }
 
-/* Um sprite de 16×16 esticado por `object-cover` num container grande vira
-   um borrão de blocos gigantes. `object-contain` com respiro mantém o
-   sprite no tamanho que ele foi desenhado pra ter, centralizado, com o
-   fundo do card ao redor — como uma tela de seleção de personagem de
-   verdade, não uma foto cortada. */
-img[src^="/assets/races/"],
-img[src^="/assets/classes/"] {
-  object-fit: contain !important;
-  padding: 8%;
-  box-sizing: border-box;
-}
+/* Esta regra existia porque os retratos eram sprites de 16×16: esticar um
+   desses num painel de ~500px virava um borrão de blocos gigantes, então
+   `object-contain` com respiro os mantinha no tamanho desenhado.
+   A revisão da Etapa 14 trocou os 21 retratos por arte de 48×48 (ADR-0025),
+   que É feita pra ocupar o painel — manter o `contain` forçado aqui só
+   deixaria a imagem menor do que precisa ser. Cada call site decide agora;
+   o que continua global é só o `image-rendering: pixelated` acima, que vale
+   pros dois casos. */
 
 /* Scrollbar personalizada (Parece feita de ferro) */
 ::-webkit-scrollbar {

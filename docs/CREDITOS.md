@@ -21,9 +21,20 @@ do [OpenGameArt.org](https://opengameart.org):
 
 ## Sprites de raça/classe/monstro (Etapa 11, B-1)
 
-Os 26 sprites em `Frontend/public/assets/{races,classes,monstros}/` vêm de
-dois pacotes CC0 feitos para serem compatíveis entre si (mesmo estilo
-16×16, mesma paleta fechada), sem geração por IA:
+> **Atualizado na revisão da Etapa 14 ([ADR-0025](adr/0025-retratos-por-ia-pixelizados-por-script.md)):**
+> passou a existir uma SEGUNDA fonte de arte para raça e classe, sem
+> substituir esta. Os sprites CC0 abaixo continuam em uso nos **ícones
+> pequenos** da lista de seleção (`races/`, `classes/`), onde são legíveis e
+> distintos entre si. Os **painéis grandes** usam retratos gerados por IA
+> (image.pollinations.ai) e pixelizados por script para 48×48 / 24 cores, em
+> `assets/retratos/` — o motivo, o que foi testado antes e a dívida de licença
+> que isso cria estão no ADR-0025. Os **5 sprites de monstro** (`monstros/`)
+> seguem inalterados.
+
+Os 5 sprites de monstro em `Frontend/public/assets/monstros/` (e,
+historicamente, os 21 retratos) vêm de dois pacotes CC0 feitos para serem
+compatíveis entre si (mesmo estilo 16×16, mesma paleta fechada), sem geração
+por IA:
 
 | Pacote | Autor | Licença | Fonte |
 |---|---|---|---|

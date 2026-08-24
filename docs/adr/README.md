@@ -22,11 +22,12 @@ Template: [`0000-template.md`](0000-template.md) · Sistema completo: [`../READM
 | [0014](0014-senha-com-google-opcional.md) | Login por senha (PBKDF2) com Google OAuth opcional, cookie assinado à mão | 8 | ✅ aceito | 22/08/2026 |
 | [0015](0015-hospedagem-fly-vercel-neon.md) | Hospedagem: Fly.io + Vercel + Neon, proxy em vez de cookie cross-site | 9 | ✅ aceito | 22/08/2026 |
 | [0016](0016-convidado-e-confirmacao-de-email-bloqueante.md) | Convidado como `Usuario` sem e-mail; confirmação de e-mail bloqueante | 10 | ✅ aceito | 22/08/2026 |
-| [0017](0017-identidade-visual-pixel-art-rota-2.md) | Identidade visual 8-bit: Rota 2 (sprites reais), fonte única CC0 | 11 | ✅ aceito | 23/08/2026 |
+| [0017](0017-identidade-visual-pixel-art-rota-2.md) | Identidade visual 8-bit: Rota 2 (sprites reais), fonte única CC0 | 11 | ⚠️ parcialmente superseded por [0025](0025-retratos-por-ia-pixelizados-por-script.md) | 23/08/2026 |
 | [0021](0021-sistema-de-componentes-pixel-ui.md) | Sistema de componentes pixel (PanelFrame, PixelButton, PixelIcon) | 14 | ✅ aceito | 24/08/2026 |
 | [0022](0022-hospedagem-render-em-vez-de-fly-io.md) | Hospedagem do backend: Render.com em vez de Fly.io | 14 | ✅ aceito | 24/08/2026 |
 | [0023](0023-embeddings-via-api-gemini.md) | Embeddings via API (Gemini) em vez de modelo local (`fastembed`) | 14 | ✅ aceito | 24/08/2026 |
 | [0024](0024-cadeia-multi-provedor-groq-gemini.md) | Cadeia de fallback atravessando provedores (Groq + Gemini) | 14 | ✅ aceito | 24/08/2026 |
+| [0025](0025-retratos-por-ia-pixelizados-por-script.md) | Retratos de raça/classe: geração por IA pixelizada por script | 14 | ✅ aceito | 24/08/2026 |
 
 **Legenda:** 🕓 previsto · ✅ aceito · ⛔ substituído
 

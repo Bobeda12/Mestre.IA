@@ -527,7 +527,10 @@ export default function GameChat() {
                       aria-selected={abaAtiva === aba.id}
                       aria-controls={`painel-${aba.id}`}
                       onClick={() => setAbaAtiva(aba.id)}
-                      className={`flex-1 flex items-center justify-center gap-1 py-2 border-2 text-[9px] font-pixel-title transition-colors focus-visible:outline-none focus-visible:border-rpg-gold ${
+                      // `font-rpg` (VT323) e nao `font-pixel-title`: a Press
+                      // Start 2P nao tem glifos acentuados, e "MISSÃO" saia
+                      // renderizado como "MISSAO" na aba.
+                      className={`flex-1 flex items-center justify-center gap-1 py-2 border-2 text-sm tracking-wider font-rpg transition-colors focus-visible:outline-none focus-visible:border-rpg-gold ${
                           abaAtiva === aba.id
                               ? 'border-rpg-gold bg-rpg-gold/20 text-rpg-gold'
                               : 'border-gray-700 bg-black/40 text-gray-400 hover:text-gray-200 hover:border-gray-500'

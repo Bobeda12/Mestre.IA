@@ -14,10 +14,14 @@
 //
 // `aria-hidden` porque é puramente decorativo: o leitor de tela não ganha
 // nada anunciando um mapa de fundo, e a tela já tem título e rótulos.
-const TILE_LARGURA = 512;
+// Precisa bater EXATAMENTE com o lado de `mapa-mundo.png` (ver gerar_mapa.py,
+// N * TILE). Se divergir, dois problemas de uma vez: o `background-size`
+// reescala a arte e destrói a grade de pixel, e o deslocamento da animação
+// deixa de coincidir com um tile inteiro, fazendo a emenda aparecer.
+const TILE_LARGURA = 768;
 
 export default function MapaDeFundo({
-  opacidade = 0.55,
+  opacidade = 0.75,
   duracaoSegundos = 90,
 }: {
   opacidade?: number;
@@ -48,10 +52,12 @@ export default function MapaDeFundo({
           ['--tile-passos' as string]: String(TILE_LARGURA),
         }}
       />
-      {/* Escurece o mapa por baixo do conteúdo. Sem isto o texto disputa com
-          a arte e nenhum dos dois se lê — o problema de contraste que a
-          revisão apontou nos painéis de pergaminho. */}
-      <div className="absolute inset-0 bg-gradient-to-b from-rpg-darker/80 via-rpg-darker/60 to-rpg-darker" />
+      {/* Escurece o mapa por baixo do conteúdo. Sem isto o texto disputa com a
+          arte e nenhum dos dois se lê.
+          Véu de opacidade CONSTANTE, não gradiente: a versão em gradiente
+          criava uma faixa perceptível na altura em que ele terminava, e numa
+          tela de fundo isso lê como defeito de renderização. */}
+      <div className="absolute inset-0 bg-rpg-darker/70" />
     </div>
   );
 }
