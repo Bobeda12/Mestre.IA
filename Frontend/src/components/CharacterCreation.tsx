@@ -6,6 +6,7 @@ import PixelIcon from './PixelIcon';
 import PixelButton from './PixelButton';
 import PanelFrame from './PanelFrame';
 import BotaoSom from './BotaoSom';
+import RetratoPixelado from './RetratoPixelado';
 
 interface CharacterCreationProps {
   onCharacterCreated?: (sessionId: string) => void; // Opcional agora
@@ -16,6 +17,18 @@ const formatAttribute = (key: string) => {
     const map: Record<string, string> = { "forca": "FOR", "destreza": "DES", "constituicao": "CON", "inteligencia": "INT", "sabedoria": "SAB", "carisma": "CAR", "livre_escolha": "LIVRE" };
     return map[key] || key.substring(0,3).toUpperCase();
 };
+// Hash estável (FNV-1a de 32 bits) pro seed do gerador de imagem. Precisa ser
+// determinístico entre sessões — o mesmo herói tem que reproduzir o mesmo
+// retrato — e espalhar bem, pra dois heróis diferentes não colidirem.
+function hashSeed(texto: string): number {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < texto.length; i++) {
+    h ^= texto.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return Math.abs(h) % 1_000_000;
+}
+
 const getPointCost = (score: number) => { if (score <= 8) return 0; const costs: Record<number, number> = {9:1, 10:2, 11:3, 12:4, 13:5, 14:7, 15:9}; return costs[score] || 99; };
 
 // O modelo de imagem foi treinado majoritariamente em inglês — mandar o
@@ -104,7 +117,15 @@ export default function CharacterCreation({ onCharacterCreated }: CharacterCreat
         const raceVisual = RACE_VISUAL_EN[selectedRace] || selectedRace;
         const classVisual = CLASS_VISUAL_EN[selectedClass] || selectedClass;
         const prompt = `fantasy rpg character portrait of a ${genderEn} ${raceVisual}, ${classVisual}, highly detailed face, looking at camera, dnd art style, masterpiece, sharp focus, dark fantasy background`;
-        const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=500&height=750&nologo=true&model=flux&seed=${name.length + 123}`;
+        // O seed saía de `name.length + 123`, ou seja dependia SÓ do
+        // comprimento do nome: como quase todo nome tem 4 a 8 letras, todo
+        // mundo caía entre 127 e 131, e "Pedro" e "Vorag" geravam com o
+        // mesmo seed. Agora entra a identidade inteira, então trocar
+        // qualquer parte dela muda o resultado — e o mesmo herói continua
+        // reproduzindo o mesmo retrato, que é o motivo de existir um seed
+        // fixo em vez de aleatório.
+        const seed = hashSeed(`${name}|${gender}|${selectedRace}|${selectedClass}`);
+        const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=500&height=750&nologo=true&model=flux&seed=${seed}`;
         setFinalImageUrl(url);
     }
   }, [step, name, gender, selectedRace, selectedClass]);
@@ -303,16 +324,26 @@ export default function CharacterCreation({ onCharacterCreated }: CharacterCreat
                      passo 5 (500×750) são bustos feitos pra preencher o
                      painel, então os dois usam `cover`. Só o placeholder,
                      que é um ícone, usa `contain`. */}
-                 <img
-                     src={activeImage}
-                     className={
-                       semSelecao
-                         ? "w-full h-full object-contain p-24 opacity-70"
-                         : "w-full h-full object-cover object-top"
-                     }
-                     alt=""
-                     onError={(e) => (e.currentTarget.style.display = 'none')}
-                 />
+                 {step === 5 && finalImageUrl ? (
+                     // Retrato gerado: passa pelo pixelizador pra não destoar
+                     // do resto (ver RetratoPixelado.tsx).
+                     <RetratoPixelado
+                         src={finalImageUrl}
+                         alt={`Retrato de ${name}`}
+                         className="w-full h-full object-cover object-top"
+                     />
+                 ) : (
+                     <img
+                         src={activeImage}
+                         className={
+                           semSelecao
+                             ? "w-full h-full object-contain p-24 opacity-70"
+                             : "w-full h-full object-cover object-top"
+                         }
+                         alt=""
+                         onError={(e) => (e.currentTarget.style.display = 'none')}
+                     />
+                 )}
                  <div className="absolute bottom-0 w-full bg-gradient-to-t from-black via-black/80 to-transparent p-6 pt-12">
                      <h2 className="text-3xl font-rpg text-white text-center drop-shadow-md">{activeTitle}</h2>
                      {step === 5 && <p className="text-rpg-gold text-center font-bold text-xs uppercase tracking-widest opacity-80">{selectedRace} • {selectedClass}</p>}

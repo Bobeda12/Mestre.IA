@@ -16,6 +16,7 @@ import PanelFrame from './PanelFrame';
 import PixelButton from './PixelButton';
 import InventoryGrid from './InventoryGrid';
 import Carregando from './Carregando';
+import RetratoPixelado from './RetratoPixelado';
 
 // Etapa 14 (revisão) — a ficha virou menu de abas estilo JRPG. Antes tudo
 // (retrato, barras, atributos, missão, inventário) era uma pilha só numa
@@ -506,7 +507,7 @@ export default function GameChat() {
               de aba, só o conteúdo abaixo dele muda. */}
           <div className="p-3 pb-0 shrink-0">
               <div className="pixel-frame w-full aspect-[4/3] bg-black relative overflow-hidden">
-                   <img src={charImage} alt="" className="w-full h-full object-cover object-top opacity-90" onError={(e) => (e.currentTarget.style.display = 'none')}/>
+                   <RetratoPixelado src={charImage} alt={`Retrato de ${charName}`} className="w-full h-full object-cover object-top opacity-90" />
                    <div className="absolute bottom-0 w-full bg-gradient-to-t from-black via-black/85 to-transparent p-2 pt-8">
                        <p className="text-white font-rpg text-lg leading-tight">{charName}</p>
                        <p className="text-[10px] text-gray-300 uppercase tracking-wide font-rpg">{charRace} {charClass}</p>
