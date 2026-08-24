@@ -50,3 +50,27 @@ mantendo o mesmo estilo em vez de misturar fontes):
 orelha pontuda, símbolo sagrado ou traje de monge visível a 16px; nenhuma
 fonte CC0/CC-BY encontrada tinha esses três SEM quebrar a consistência
 visual com o resto do conjunto).
+
+## Ícones de jogo, painéis e botões (Etapa 14, C-1)
+
+`Frontend/public/assets/icons/` e `Frontend/public/assets/ui/` — mesma
+regra do B-1: sem geração por IA, pacotes CC0 escolhidos por serem
+compatíveis em estilo (16×16, contorno grosso) com o que já estava no repo.
+
+| Pacote | Autor | Licença | Fonte | Usado para |
+|---|---|---|---|---|
+| Tiny Dungeon | Kenney | [CC0](https://creativecommons.org/publicdomain/zero/1.0/) | [kenney.nl/assets/tiny-dungeon](https://kenney.nl/assets/tiny-dungeon) | espada, adaga, machado, maça, escudo, 4 poções, baú (já usado no B-1, mesmo arquivo-fonte) |
+| Roguelike/RPG Pack | Kenney | [CC0](https://creativecommons.org/publicdomain/zero/1.0/) | [kenney.nl/assets/roguelike-rpg-pack](https://kenney.nl/assets/roguelike-rpg-pack) | pergaminho (missão), mochila (inventário), moeda (ouro) |
+| UI Pack - Pixel Adventure | Kenney | [CC0](https://creativecommons.org/publicdomain/zero/1.0/) | [kenney.nl/assets/ui-pack-pixel-adventure](https://kenney.nl/assets/ui-pack-pixel-adventure) | moldura 9-slice (`PanelFrame`) e botões (`PixelButton`) |
+
+Nenhuma licença exige atribuição (todas CC0) — está aqui por educação e
+para rastrear a origem de cada arquivo.
+
+**Desenhados à mão** (estrela/nível, fechar, menu, seta, som ligado/mudo,
+coroa, coração, menos, mais):
+nenhum pacote pesquisado (Tiny Dungeon, Roguelike/RPG Pack, UI Pack - Pixel
+Adventure, Game Icons, UI Pack RPG Expansion) tinha esses seis num estilo
+coerente com o resto — em vez de misturar um pacote genérico incompatível,
+foram desenhados como pixel art simples (contorno preto + preenchimento
+chapado, mesmo tratamento visual dos outros ícones) via script Python
+(Pillow), não gerados por IA.

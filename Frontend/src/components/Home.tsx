@@ -1,8 +1,12 @@
 import { useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Sword, Scroll, Crown, Loader2, Archive, Play, LogOut, LogIn } from 'lucide-react';
+import { Loader2, Archive, Play, LogOut, LogIn } from 'lucide-react';
 import { api } from '../lib/api';
 import { useAuth, useInvalidarAuth } from '../lib/auth';
+import { getLocalImage } from '../lib/utils';
+import PixelIcon from './PixelIcon';
+import PixelButton from './PixelButton';
+import PanelFrame from './PanelFrame';
 
 interface Personagem {
   session_id: string;
@@ -59,10 +63,12 @@ export default function Home() {
   return (
     <div className="h-screen w-screen bg-black flex flex-col items-center justify-center relative overflow-hidden font-sans">
 
-      {/* Background */}
+      {/* Background — Etapa 14 (C-2): cena pixel art composta a partir de
+          tiles do Tiny Dungeon (parede + chão + móveis), no lugar da foto
+          gerada por IA. Mesma regra do ADR-0017: sem geração por IA. */}
       <div className="absolute inset-0 z-0">
         <div className="absolute inset-0 bg-gradient-to-t from-black via-black/80 to-black/40 z-10" />
-        <img src="https://image.pollinations.ai/prompt/dark%20fantasy%20rpg%20table%20dnd%20mood%20lighting%20candle?width=1920&height=1080&nologo=true" className="w-full h-full object-cover opacity-50"/>
+        <img src="/assets/backgrounds/home.png" className="w-full h-full object-cover opacity-50"/>
       </div>
 
       {!carregandoAuth && (
@@ -87,7 +93,7 @@ export default function Home() {
         {/* Header */}
         <div className="text-center mb-12 animate-fade-in">
             <div className="mb-4 flex justify-center">
-                <Crown size={60} className="text-rpg-gold animate-pulse-slow drop-shadow-[0_0_15px_rgba(197,160,89,0.5)]" />
+                <PixelIcon name="coroa" size={60} className="animate-pulse-slow drop-shadow-[0_0_15px_rgba(197,160,89,0.5)]" />
             </div>
             {/* Etapa 11 (B-1) — Press Start 2P é bem mais larga por letra que
                 a Cinzel antiga; texto menor que o tamanho original pra não
@@ -102,13 +108,14 @@ export default function Home() {
 
             {/* COLUNA 1: MENU PRINCIPAL */}
             <div className="flex-1 flex flex-col gap-6 items-center md:items-end w-full">
-                <button onClick={() => navigate(logado ? '/criar' : '/entrar')} className="w-full md:w-80 group relative px-8 py-6 bg-gradient-to-r from-red-900 to-red-800 hover:from-red-800 hover:to-red-700 text-white font-bold rounded-lg border border-red-700 shadow-2xl transition-all transform hover:-translate-y-1 flex items-center justify-between overflow-hidden">
-                    <div className="flex items-center gap-4 text-2xl font-rpg z-10">
-                        <Sword size={32} className="text-red-300"/>
-                        NOVO JOGO
-                    </div>
-                    <div className="absolute inset-0 bg-black/20 group-hover:bg-transparent transition-colors"/>
-                </button>
+                <PixelButton
+                    variant="vermelho"
+                    onClick={() => navigate(logado ? '/criar' : '/entrar')}
+                    className="w-full md:w-80 px-8 py-6 text-lg flex items-center justify-center gap-4 hover:scale-105"
+                >
+                    <PixelIcon name="espada" size={28} />
+                    NOVO JOGO
+                </PixelButton>
                 {!logado && !carregandoAuth && (
                     <p className="text-xs text-gray-600 text-center md:text-right w-full md:w-80">
                         Entre com seu e-mail para criar e guardar seus heróis.
@@ -119,7 +126,7 @@ export default function Home() {
             {/* COLUNA 2: MEUS HERÓIS */}
             <div className="flex-1 w-full md:w-auto h-full flex flex-col">
                 <h3 className="text-rpg-gold font-rpg text-xl mb-4 flex items-center gap-2 border-b border-gray-800 pb-2">
-                    <Scroll size={20}/> MEUS HERÓIS
+                    <PixelIcon name="pergaminho" size={20}/> MEUS HERÓIS
                 </h3>
 
                 <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 space-y-3">
@@ -140,11 +147,11 @@ export default function Home() {
                                 tabIndex={0}
                                 onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); loadGame.mutate(p.session_id); } }}
                                 aria-label={`Continuar como ${p.nome}, ${p.raca} ${p.classe}`}
-                                className="group flex items-center gap-4 p-3 bg-gray-900/60 hover:bg-gray-800 border border-gray-800 hover:border-rpg-gold/50 rounded-lg cursor-pointer transition-all relative focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rpg-gold"
+                                className="group flex items-center gap-4 p-3 bg-gray-900/60 hover:bg-gray-800 border border-gray-800 hover:border-rpg-gold/50 cursor-pointer transition-all relative focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rpg-gold"
                             >
-                                <div className="w-16 h-16 rounded bg-black border border-gray-700 overflow-hidden shrink-0 flex items-center justify-center">
-                                    <Crown size={24} className="text-gray-700" />
-                                </div>
+                                <PanelFrame borderWidth={6} className="w-16 h-16 shrink-0 overflow-hidden flex items-center justify-center">
+                                    <img src={getLocalImage('classes', p.classe)} alt="" className="w-full h-full" />
+                                </PanelFrame>
 
                                 <div className="flex-1 min-w-0">
                                     <h4 className="text-lg font-rpg text-gray-200 group-hover:text-white truncate">{p.nome}</h4>
@@ -175,7 +182,7 @@ export default function Home() {
         </div>
       </div>
 
-      <footer className="absolute bottom-4 text-gray-700 text-xs font-sans">v2.2 • Contas e biblioteca de heróis</footer>
+      <footer className="absolute bottom-4 text-gray-700 text-xs font-rpg">v2.2 • Contas e biblioteca de heróis</footer>
     </div>
   );
 }

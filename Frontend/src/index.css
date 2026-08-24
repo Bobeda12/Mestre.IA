@@ -67,7 +67,10 @@ body {
    nunca batem nesse prefixo, então continuam suavizados normalmente. */
 img[src^="/assets/races/"],
 img[src^="/assets/classes/"],
-img[src^="/assets/monstros/"] {
+img[src^="/assets/monstros/"],
+img[src^="/assets/icons/"],
+img[src^="/assets/ui/"],
+img[src^="/assets/backgrounds/"] {
   image-rendering: pixelated;
 }
 

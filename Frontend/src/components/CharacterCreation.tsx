@@ -1,11 +1,11 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import {
-  Sword, Crown, ChevronRight, ArrowLeft, Sparkles,
-  Minus, Plus, Heart, Scroll, User, Zap, Edit2
-} from 'lucide-react';
+import { Sparkles, User, Zap, Edit2 } from 'lucide-react';
 import { api } from '../lib/api';
 import { getLocalImage } from '../lib/utils';
+import PixelIcon from './PixelIcon';
+import PixelButton from './PixelButton';
+import PanelFrame from './PanelFrame';
 
 interface CharacterCreationProps {
   onCharacterCreated?: (sessionId: string) => void; // Opcional agora
@@ -185,18 +185,25 @@ export default function CharacterCreation({ onCharacterCreated }: CharacterCreat
     }
   };
 
-  const activeImage = step === 5 && finalImageUrl ? finalImageUrl : step === 2 && selectedClass ? getLocalImage('classes', selectedClass) : step === 1 && selectedRace ? getLocalImage('races', selectedRace) : "/assets/background-default.jpg";
+  // Etapa 14 (C-4) — "/assets/background-default.jpg" não existe mais desde
+  // a reorganização de assets do B-1 (Etapa 11); o placeholder externo do
+  // via.placeholder.com que o onError tentava carregar em seguida também
+  // falha offline. Usa a cena de fundo local da Home, já dentro da mesma
+  // regra do ADR-0017 (sem geração por IA).
+  const activeImage = step === 5 && finalImageUrl ? finalImageUrl : step === 2 && selectedClass ? getLocalImage('classes', selectedClass) : step === 1 && selectedRace ? getLocalImage('races', selectedRace) : "/assets/backgrounds/home.png";
   const activeTitle = step === 5 ? name : step === 1 ? (selectedRace || "Linhagem") : step === 2 ? (selectedClass || "Vocação") : step === 3 ? "Identidade" : "Atributos";
   const currentDetails = step === 1 ? raceData : step === 2 ? classData : null;
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-black font-sans text-gray-100">
-      <button onClick={() => navigate('/')} className="absolute top-4 left-4 z-50 text-gray-500 hover:text-white flex items-center gap-2"><ArrowLeft size={20}/> Sair</button>
+      <button onClick={() => navigate('/')} className="absolute top-4 left-4 z-50 text-gray-500 hover:text-white flex items-center gap-2"><PixelIcon name="seta" className="rotate-180" /> Sair</button>
 
       <div className="w-1/3 h-full flex flex-col bg-gray-900 border-r border-gray-800 z-20 shadow-2xl relative">
         <div className="p-6 border-b border-gray-800 bg-black/40 mt-10">
-           <h1 className="text-xl font-pixel-title text-rpg-gold flex items-center gap-2"><Crown className="text-red-600"/> CRIAÇÃO</h1>
-           <div className="flex justify-between mt-4 px-2">{[1,2,3,4,5].map(s => (<button key={s} disabled={s > step && s !== step + 1} onClick={() => { if (step === 5 || (s < step)) setStep(s); }} className={`h-1 flex-1 mx-1 rounded transition-all duration-300 ${step >= s ? 'bg-rpg-gold cursor-pointer hover:h-2' : 'bg-gray-800 cursor-not-allowed'}`}/>))}</div>
+           <h1 className="text-xl font-pixel-title text-rpg-gold flex items-center gap-2"><PixelIcon name="coroa" size={20} /> CRIAÇÃO</h1>
+           {/* Etapa 14 (C-4) — passos em blocos discretos, mesmo espírito do
+               PixelBar (Etapa 11), em vez da barra fina arredondada. */}
+           <div className="flex gap-1 mt-4 px-2">{[1,2,3,4,5].map(s => (<button key={s} disabled={s > step && s !== step + 1} onClick={() => { if (step === 5 || (s < step)) setStep(s); }} className={`h-3 flex-1 transition-colors ${step >= s ? 'bg-rpg-gold cursor-pointer' : 'bg-gray-800 cursor-not-allowed'}`}/>))}</div>
            <p className="text-xs text-gray-500 mt-1 uppercase tracking-widest text-right">{step === 5 ? "Ficha Final" : `Passo ${step}/5`}</p>
         </div>
 
@@ -214,14 +221,14 @@ export default function CharacterCreation({ onCharacterCreated }: CharacterCreat
                     {/* Campos Essenciais (Isso que faltava) */}
                     <div>
                         <label className="text-rpg-gold font-rpg block mb-1">Nome do Herói</label>
-                        <input type="text" className="w-full bg-black/50 border border-gray-600 p-3 rounded text-white outline-none focus:border-rpg-gold" placeholder="Ex: Vorag" value={name} onChange={e => setName(e.target.value)} />
+                        <input type="text" className="w-full bg-black/50 border-2 border-gray-600 p-3 text-white outline-none focus:border-rpg-gold" placeholder="Ex: Vorag" value={name} onChange={e => setName(e.target.value)} />
                     </div>
                     
                     <div>
                         <label className="text-rpg-gold font-rpg block mb-1">Gênero</label>
                         <div className="grid grid-cols-3 gap-2">
                             {["Masculino", "Feminino", "Outro"].map(g => (
-                                <button key={g} onClick={() => setGender(g)} className={`p-2 rounded border text-sm transition-all ${gender === g ? 'bg-rpg-gold text-black border-rpg-gold' : 'bg-black border-gray-700 hover:border-gray-500'}`}>{g}</button>
+                                <button key={g} onClick={() => setGender(g)} className={`p-2 border-2 text-sm transition-all ${gender === g ? 'bg-rpg-gold text-black border-rpg-gold' : 'bg-black border-gray-700 hover:border-gray-500'}`}>{g}</button>
                             ))}
                         </div>
                     </div>
@@ -231,7 +238,7 @@ export default function CharacterCreation({ onCharacterCreated }: CharacterCreat
                     {/* Campos de Profundidade (Novos) */}
                     <div>
                         <label className="text-rpg-gold font-rpg block mb-1">Alinhamento Moral</label>
-                        <select className="w-full bg-black/50 border border-gray-600 p-2 rounded text-white outline-none" value={alignment} onChange={e => setAlignment(e.target.value)}>
+                        <select className="w-full bg-black/50 border-2 border-gray-600 p-2 text-white outline-none" value={alignment} onChange={e => setAlignment(e.target.value)}>
                             <option value="Neutro">Neutro Verdadeiro</option>
                             <option value="Leal e Bom">Leal e Bom (O Paladino)</option>
                             <option value="Neutro e Bom">Neutro e Bom (O Benfeitor)</option>
@@ -246,32 +253,32 @@ export default function CharacterCreation({ onCharacterCreated }: CharacterCreat
 
                     <div>
                         <label className="text-rpg-gold font-rpg block mb-1">Profissão / Origem</label>
-                        <input type="text" className="w-full bg-black/50 border border-gray-600 p-3 rounded text-white outline-none" placeholder="Ex: Soldado, Eremita, Nobre..." value={background} onChange={e => setBackground(e.target.value)} />
+                        <input type="text" className="w-full bg-black/50 border-2 border-gray-600 p-3 text-white outline-none focus:border-rpg-gold" placeholder="Ex: Soldado, Eremita, Nobre..." value={background} onChange={e => setBackground(e.target.value)} />
                         <p className="text-[10px] text-gray-500 mt-1">Isso define onde você começa o jogo.</p>
                     </div>
 
                     <div>
                         <label className="text-rpg-gold font-rpg block mb-1">Objetivo de Vida</label>
-                        <input type="text" className="w-full bg-black/50 border border-gray-600 p-3 rounded text-white outline-none" placeholder="Ex: Vingar meu clã..." value={goal} onChange={e => setGoal(e.target.value)} />
+                        <input type="text" className="w-full bg-black/50 border-2 border-gray-600 p-3 text-white outline-none focus:border-rpg-gold" placeholder="Ex: Vingar meu clã..." value={goal} onChange={e => setGoal(e.target.value)} />
                     </div>
 
                     <div>
                         <label className="text-rpg-gold font-rpg block mb-1">História Extra (Opcional)</label>
-                        <textarea className="w-full bg-black/50 border border-gray-600 p-3 rounded text-white h-20 outline-none resize-none" placeholder="Detalhes adicionais..." value={history} onChange={e => setHistory(e.target.value)} />
+                        <textarea className="w-full bg-black/50 border-2 border-gray-600 p-3 text-white h-20 outline-none resize-none focus:border-rpg-gold" placeholder="Detalhes adicionais..." value={history} onChange={e => setHistory(e.target.value)} />
                     </div>
                 </div>
             )}
 
             {/* PASSO 4: ATRIBUTOS */}
-            {step === 4 && (<div className="p-4 space-y-6 animate-fade-in"><div className="bg-black/40 p-4 rounded border border-blue-900 text-center"><span className="block text-gray-400 text-xs uppercase tracking-widest">Pontos Restantes</span><span className={`text-4xl font-rpg ${pointsRemaining === 0 ? 'text-green-500' : 'text-blue-400'}`}>{pointsRemaining}/27</span></div>{maxFreePoints > 0 && (<div className={`p-3 rounded border text-center ${usedFreePoints === maxFreePoints ? 'bg-green-900/20 border-green-700' : 'bg-rpg-gold/10 border-rpg-gold'}`}><span className="text-sm font-bold text-gray-200 block mb-1"><Sparkles size={12} className="inline mr-1"/> Bônus Racial Extra</span><span className={`text-xl font-rpg ${usedFreePoints === maxFreePoints ? 'text-green-400' : 'text-rpg-gold'}`}>{usedFreePoints}/{maxFreePoints}</span></div>)}<div className="space-y-2">{Object.keys(attributes).map(attr => { const fixedBonus = raceData?.bonus_atributos?.[attr] || 0; const isFreeSelected = freePointsAllocation[attr] === 1; const isFreeAvailable = maxFreePoints > 0 && fixedBonus === 0; return (<div key={attr} className="flex items-center justify-between bg-gray-900/50 p-2 rounded border border-gray-800 hover:border-gray-600"><div className="w-20"><span className="font-bold text-sm text-gray-300 block">{formatAttribute(attr)}</span>{fixedBonus > 0 && <span className="text-[10px] text-blue-400 font-bold">+{fixedBonus} Raça</span>}{isFreeAvailable && (<button onClick={() => handleFreeAllocation(attr)} disabled={!isFreeSelected && usedFreePoints >= maxFreePoints} className={`text-[10px] px-1 rounded border mt-1 transition-colors ${isFreeSelected ? 'bg-green-600 text-white border-green-500' : 'bg-black text-gray-500 border-gray-700 hover:border-gray-500'}`}>{isFreeSelected ? '+1 Extra' : '+ Adicionar'}</button>)}</div><div className="flex items-center gap-3"><button onClick={() => handleAttributeChange(attr, -1)} className="w-8 h-8 rounded bg-gray-800 hover:bg-red-900 flex items-center justify-center text-white disabled:opacity-30" disabled={attributes[attr] <= 8}><Minus size={14}/></button><span className="text-xl w-6 text-center font-mono">{attributes[attr]}</span><button onClick={() => handleAttributeChange(attr, 1)} className="w-8 h-8 rounded bg-gray-800 hover:bg-green-900 flex items-center justify-center text-white disabled:opacity-30" disabled={attributes[attr] >= 15 || pointsRemaining === 0}><Plus size={14}/></button></div><div className="text-[10px] text-gray-500 w-12 text-right">{attributes[attr] >= 15 ? 'MÁX' : `-${getPointCost(attributes[attr] + 1) - getPointCost(attributes[attr])}`}</div></div>); })}</div></div>)}
+            {step === 4 && (<div className="p-4 space-y-6 animate-fade-in"><div className="bg-black/40 p-4 border-2 border-blue-900 text-center"><span className="block text-gray-400 text-xs uppercase tracking-widest">Pontos Restantes</span><span className={`text-4xl font-rpg ${pointsRemaining === 0 ? 'text-green-500' : 'text-blue-400'}`}>{pointsRemaining}/27</span></div>{maxFreePoints > 0 && (<div className={`p-3 border-2 text-center ${usedFreePoints === maxFreePoints ? 'bg-green-900/20 border-green-700' : 'bg-rpg-gold/10 border-rpg-gold'}`}><span className="text-sm font-bold text-gray-200 block mb-1"><Sparkles size={12} className="inline mr-1"/> Bônus Racial Extra</span><span className={`text-xl font-rpg ${usedFreePoints === maxFreePoints ? 'text-green-400' : 'text-rpg-gold'}`}>{usedFreePoints}/{maxFreePoints}</span></div>)}<div className="space-y-2">{Object.keys(attributes).map(attr => { const fixedBonus = raceData?.bonus_atributos?.[attr] || 0; const isFreeSelected = freePointsAllocation[attr] === 1; const isFreeAvailable = maxFreePoints > 0 && fixedBonus === 0; return (<div key={attr} className="flex items-center justify-between bg-gray-900/50 p-2 border-2 border-gray-800 hover:border-gray-600"><div className="w-20"><span className="font-bold text-sm text-gray-300 block">{formatAttribute(attr)}</span>{fixedBonus > 0 && <span className="text-[10px] text-blue-400 font-bold">+{fixedBonus} Raça</span>}{isFreeAvailable && (<button onClick={() => handleFreeAllocation(attr)} disabled={!isFreeSelected && usedFreePoints >= maxFreePoints} className={`text-[10px] px-1 border mt-1 transition-colors ${isFreeSelected ? 'bg-green-600 text-white border-green-500' : 'bg-black text-gray-500 border-gray-700 hover:border-gray-500'}`}>{isFreeSelected ? '+1 Extra' : '+ Adicionar'}</button>)}</div><div className="flex items-center gap-3"><button onClick={() => handleAttributeChange(attr, -1)} className="w-8 h-8 bg-gray-800 hover:bg-red-900 flex items-center justify-center disabled:opacity-30" disabled={attributes[attr] <= 8}><PixelIcon name="menos" size={14}/></button><span className="text-xl w-6 text-center font-mono">{attributes[attr]}</span><button onClick={() => handleAttributeChange(attr, 1)} className="w-8 h-8 bg-gray-800 hover:bg-green-900 flex items-center justify-center disabled:opacity-30" disabled={attributes[attr] >= 15 || pointsRemaining === 0}><PixelIcon name="mais" size={14}/></button></div><div className="text-[10px] text-gray-500 w-12 text-right">{attributes[attr] >= 15 ? 'MÁX' : `-${getPointCost(attributes[attr] + 1) - getPointCost(attributes[attr])}`}</div></div>); })}</div></div>)}
             
             {/* PASSO 5: RESUMO */}
-            {step === 5 && (<div className="p-6 h-full flex flex-col justify-center items-center text-center animate-fade-in"><Crown size={48} className="text-rpg-gold mb-4 animate-pulse"/><h3 className="text-2xl font-rpg text-white mb-2">Destino Selado</h3><p className="text-gray-400 text-sm mb-8">Confirme os dados da ficha ao lado para iniciar.</p><button onClick={handleFinish} disabled={loading} className="w-full py-5 bg-green-700 hover:bg-green-600 text-white font-bold text-lg rounded shadow-lg flex items-center justify-center gap-3 transition-all hover:scale-105 mb-4">{loading ? "Iniciando..." : <>JOGAR AGORA <ChevronRight /></>}</button><button onClick={() => setStep(4)} className="text-gray-500 hover:text-rpg-gold flex items-center gap-2 text-sm underline decoration-gray-700 hover:decoration-rpg-gold"><Edit2 size={14}/> Editar Atributos</button></div>)}
+            {step === 5 && (<div className="p-6 h-full flex flex-col justify-center items-center text-center animate-fade-in"><PixelIcon name="coroa" size={48} className="mb-4 animate-pulse"/><h3 className="text-2xl font-rpg text-white mb-2">Destino Selado</h3><p className="text-gray-400 text-sm mb-8">Confirme os dados da ficha ao lado para iniciar.</p><PixelButton variant="dourado" onClick={handleFinish} disabled={loading} className="w-full py-5 text-lg flex items-center justify-center gap-3 hover:scale-105 mb-4">{loading ? "Iniciando..." : <>JOGAR AGORA <PixelIcon name="seta" /></>}</PixelButton><button onClick={() => setStep(4)} className="text-gray-500 hover:text-rpg-gold flex items-center gap-2 text-sm underline decoration-gray-700 hover:decoration-rpg-gold"><Edit2 size={14}/> Editar Atributos</button></div>)}
         </div>
       </div>
 
-      <div className="flex-1 h-full relative bg-gray-900 overflow-hidden flex items-center justify-center p-8 bg-[url('https://www.transparenttextures.com/patterns/dark-matter.png')]">
-         <div className="relative z-30 w-full max-w-5xl h-[600px] flex bg-[#121212] border-2 border-rpg-gold rounded-xl shadow-2xl overflow-hidden animate-scale-in">
+      <div className="flex-1 h-full relative bg-gray-900 overflow-hidden flex items-center justify-center p-8 bg-[url('/assets/backgrounds/textura-ruido.png')] bg-repeat">
+         <PanelFrame borderWidth={16} className="relative z-30 w-full max-w-5xl h-[600px] flex bg-[#121212] shadow-2xl overflow-hidden animate-scale-in">
              <div className="w-[45%] h-full relative border-r border-rpg-gold/30 bg-black">
                  {/* Etapa 11 (B-1): passos 1/2 mostram um sprite de 16×16
                      (raça/classe) — `object-contain` com respiro em vez de
@@ -291,9 +298,9 @@ export default function CharacterCreation({ onCharacterCreated }: CharacterCreat
                  </div>
              </div>
              <div className="w-[55%] p-8 flex flex-col relative overflow-y-auto custom-scrollbar">
-                 <div className="absolute top-4 right-4 opacity-10 pointer-events-none"><Crown size={120}/></div>
+                 <div className="absolute top-4 right-4 opacity-10 pointer-events-none"><PixelIcon name="coroa" size={120}/></div>
                  <h3 className="text-rpg-gold font-rpg text-2xl border-b border-gray-700 pb-3 mb-6 flex items-center gap-2">
-                    {step === 5 ? <Scroll size={24}/> : step === 1 ? <User size={24}/> : step === 2 ? <Sword size={24}/> : <Sparkles size={24}/>}
+                    {step === 5 ? <PixelIcon name="pergaminho" size={24}/> : step === 1 ? <User size={24}/> : step === 2 ? <PixelIcon name="espada" size={24}/> : <Sparkles size={24}/>}
                     {step === 5 ? "Ficha Técnica" : step === 1 ? "Detalhes da Raça" : step === 2 ? "Detalhes da Classe" : "Planejamento"}
                  </h3>
                  
@@ -318,7 +325,7 @@ export default function CharacterCreation({ onCharacterCreated }: CharacterCreat
                         </div>
                      </>
                  ) : currentDetails ? (
-                     <div className="space-y-6 animate-fade-in">{currentDetails.quote && <p className="text-xl text-rpg-gold italic font-serif text-center px-4">"{currentDetails.quote}"</p>}<div className="text-gray-300 leading-relaxed text-justify bg-black/20 p-4 rounded border border-gray-800">{currentDetails.descricao}</div>{step === 1 && currentDetails.bonus_atributos && (<div className="mt-4"><span className="text-xs text-gray-500 uppercase tracking-widest block mb-2">Bônus de Atributo</span><div className="flex gap-2 flex-wrap">{Object.entries(currentDetails.bonus_atributos).filter(([k]) => k !== 'livre_escolha').map(([k,v]) => (<span key={k} className="text-xs bg-blue-900/40 px-3 py-1 rounded text-blue-200 border border-blue-800 uppercase flex items-center gap-1"><Zap size={10} /> +{v as number} {formatAttribute(k)}</span>))}{currentDetails.bonus_atributos.livre_escolha > 0 && (<span className="text-xs bg-purple-900/40 px-3 py-1 rounded text-purple-200 border border-purple-800 uppercase flex items-center gap-1"><Sparkles size={10} /> +{currentDetails.bonus_atributos.livre_escolha} Escolha</span>)}</div></div>)}{step === 2 && currentDetails.dado_vida && <div className="mt-4 flex gap-4"><span className="flex items-center gap-2 text-gray-300 bg-gray-800 px-3 py-1 rounded border border-gray-700"><Heart size={14} className="text-red-500"/> Vida Base: d{currentDetails.dado_vida}</span></div>}</div>
+                     <div className="space-y-6 animate-fade-in">{currentDetails.quote && <p className="text-xl text-rpg-gold italic font-serif text-center px-4">"{currentDetails.quote}"</p>}<div className="text-gray-300 leading-relaxed text-justify bg-black/20 p-4 rounded border border-gray-800">{currentDetails.descricao}</div>{step === 1 && currentDetails.bonus_atributos && (<div className="mt-4"><span className="text-xs text-gray-500 uppercase tracking-widest block mb-2">Bônus de Atributo</span><div className="flex gap-2 flex-wrap">{Object.entries(currentDetails.bonus_atributos).filter(([k]) => k !== 'livre_escolha').map(([k,v]) => (<span key={k} className="text-xs bg-blue-900/40 px-3 py-1 rounded text-blue-200 border border-blue-800 uppercase flex items-center gap-1"><Zap size={10} /> +{v as number} {formatAttribute(k)}</span>))}{currentDetails.bonus_atributos.livre_escolha > 0 && (<span className="text-xs bg-purple-900/40 px-3 py-1 rounded text-purple-200 border border-purple-800 uppercase flex items-center gap-1"><Sparkles size={10} /> +{currentDetails.bonus_atributos.livre_escolha} Escolha</span>)}</div></div>)}{step === 2 && currentDetails.dado_vida && <div className="mt-4 flex gap-4"><span className="flex items-center gap-2 text-gray-300 bg-gray-800 px-3 py-1 rounded border border-gray-700"><PixelIcon name="coracao" size={14}/> Vida Base: d{currentDetails.dado_vida}</span></div>}</div>
                  ) : step === 3 ? (
                      <div className="flex flex-col items-center justify-center h-full text-gray-600 text-center px-8">
                          <User size={64} className="mb-4 text-rpg-gold opacity-50"/>
@@ -328,9 +335,9 @@ export default function CharacterCreation({ onCharacterCreated }: CharacterCreat
                  ) : (<div className="flex flex-col items-center justify-center h-full text-gray-600"><Sparkles size={48} className="mb-4 opacity-50"/><span className="text-xl font-rpg">Selecione uma opção...</span></div>)}
                  
                  {/* BOTÃO PRÓXIMO (O QUE SUMIU) */}
-                 {canProceed && step < 5 && (<div className="mt-auto pt-6 flex justify-end"><button onClick={() => setStep(s => s + 1)} className="bg-rpg-gold hover:bg-white text-black p-3 rounded-full shadow-lg transition-all hover:scale-110 flex items-center gap-2 font-bold px-6">PRÓXIMO <ChevronRight size={20} /></button></div>)}
+                 {canProceed && step < 5 && (<div className="mt-auto pt-6 flex justify-end"><PixelButton variant="dourado" onClick={() => setStep(s => s + 1)} className="py-3 px-6 flex items-center gap-2 hover:scale-105">PRÓXIMO <PixelIcon name="seta" size={20} /></PixelButton></div>)}
              </div>
-         </div>
+         </PanelFrame>
       </div>
     </div>
   );

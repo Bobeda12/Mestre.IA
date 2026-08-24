@@ -3,8 +3,8 @@ import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { isAxiosError } from 'axios';
 import {
-  Send, Scroll, Menu, X, Dices, User, Backpack, Map, Sword, Shield, AlertTriangle, Star, Coins, FlaskConical, BookOpen,
-  ThumbsUp, ThumbsDown, Crown, Loader2, Volume2, VolumeX
+  Send, Dices, User, Map, AlertTriangle,
+  ThumbsUp, ThumbsDown, Loader2
 } from 'lucide-react';
 import { api, API_URL } from '../lib/api';
 import { postSse } from '../lib/sse';
@@ -15,6 +15,10 @@ import RollCard, { type DadosRolagem } from './RollCard';
 import StatusCard, { type EventoStatus } from './StatusCard';
 import PixelBar from './PixelBar';
 import Prologo from './Prologo';
+import PixelIcon from './PixelIcon';
+import PanelFrame from './PanelFrame';
+import PixelButton from './PixelButton';
+import InventoryGrid from './InventoryGrid';
 
 type Message =
   // `turnoIndex` (Etapa 9) chega no frame SSE "state", junto do resto do
@@ -72,21 +76,6 @@ interface CargaJogo extends EstadoJogo {
   objetivo?: string | null;
   historia_texto?: string | null;
   historico_chat?: { role: string; content: string }[];
-}
-
-// Ícone por palavra-chave no nome do item — não existe um campo "tipo" em
-// data/weapons.json/o inventário do herói, só o nome mesmo (ver
-// app/infra/db.py:Personagem.inventario, uma lista de strings).
-const _PALAVRAS_POCAO = ['poção', 'pocao', 'elixir', 'frasco'];
-const _PALAVRAS_ARMA = ['espada', 'cimitarra', 'machado', 'adaga', 'maça', 'martelo', 'arco', 'lança', 'rapier'];
-const _PALAVRAS_ARMADURA = ['armadura', 'cota', 'escudo', 'couro', 'placas'];
-
-function ItemIcon({ nome }: { nome: string }) {
-  const nomeLower = nome.toLowerCase();
-  if (_PALAVRAS_POCAO.some(p => nomeLower.includes(p))) return <FlaskConical size={12} className="text-emerald-500 shrink-0" />;
-  if (_PALAVRAS_ARMA.some(p => nomeLower.includes(p))) return <Sword size={12} className="text-gray-400 shrink-0" />;
-  if (_PALAVRAS_ARMADURA.some(p => nomeLower.includes(p))) return <Shield size={12} className="text-blue-500 shrink-0" />;
-  return <BookOpen size={12} className="text-gray-500 shrink-0" />;
 }
 
 export default function GameChat() {
@@ -385,7 +374,7 @@ export default function GameChat() {
             <AlertTriangle size={48} className="text-red-600"/>
             <h1 className="text-2xl font-rpg">Essa jornada não existe mais</h1>
             <p className="text-gray-500 text-sm">O save "{sessionId}" não foi encontrado no servidor.</p>
-            <button onClick={() => navigate('/')} className="mt-4 border border-gray-700 px-4 py-2 rounded text-gray-400 hover:text-white hover:border-gray-500">Voltar ao menu</button>
+            <button onClick={() => navigate('/')} className="mt-4 border-2 border-gray-700 px-4 py-2 text-gray-400 hover:text-white hover:border-gray-500">Voltar ao menu</button>
         </div>
     );
   }
@@ -432,7 +421,7 @@ export default function GameChat() {
             </div>
             <div>
               <div className="text-2xl font-rpg text-rpg-gold flex items-center justify-center gap-1">
-                <Coins size={16} className="shrink-0" />{ouro}
+                <PixelIcon name="moeda" size={16} />{ouro}
               </div>
               <div className="text-[10px] uppercase tracking-widest text-gray-500 mt-1">Ouro</div>
             </div>
@@ -454,7 +443,7 @@ export default function GameChat() {
 
           <button
             onClick={() => navigate('/')}
-            className="mt-8 border border-gray-700 px-4 py-2 rounded text-gray-400 hover:text-white hover:border-gray-500 transition-colors"
+            className="mt-8 border-2 border-gray-700 px-4 py-2 text-gray-400 hover:text-white hover:border-gray-500 transition-colors"
           >
             Voltar
           </button>
@@ -486,19 +475,19 @@ export default function GameChat() {
               transition-all duration-300 bg-gray-900 border-r border-gray-800 flex flex-col shrink-0 overflow-hidden`}
       >
           <div className="p-4 border-b border-gray-800 flex justify-between items-center bg-black/20">
-              <h2 className="font-pixel-title text-sm text-rpg-gold flex items-center gap-2"><Scroll size={18}/> FICHA</h2>
+              <h2 className="font-pixel-title text-sm text-rpg-gold flex items-center gap-2"><PixelIcon name="pergaminho" size={18}/> FICHA</h2>
               <div className="flex items-center gap-3">
                   <button
                       onClick={alternarMudo}
                       aria-label={mudo ? "Ativar música" : "Silenciar música"}
                       title={mudo ? "Ativar música" : "Silenciar música"}
-                      className="text-gray-500 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rpg-gold rounded"
-                  >{mudo ? <VolumeX size={18}/> : <Volume2 size={18}/>}</button>
+                      className="text-gray-500 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rpg-gold"
+                  ><PixelIcon name={mudo ? 'som-mudo' : 'som-ligado'} size={18}/></button>
                   <button
                       onClick={() => setShowSidebar(false)}
                       aria-label="Fechar ficha do personagem"
-                      className="text-gray-500 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rpg-gold rounded"
-                  ><X size={18}/></button>
+                      className="text-gray-500 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rpg-gold"
+                  ><PixelIcon name="fechar" size={18}/></button>
               </div>
           </div>
 
@@ -513,14 +502,14 @@ export default function GameChat() {
               </div>
 
               {/* Vida, Nível/XP e Defesa */}
-              <div className="bg-gray-800/30 p-3 rounded border border-gray-700 space-y-3">
+              <div className="bg-gray-800/30 p-3 border-2 border-gray-700 space-y-3">
                   <div>
                     <div className="flex justify-between text-xs font-bold uppercase mb-1"><span>Vida</span><span>{hpAtual}/{hpMax}</span></div>
                     <PixelBar value={hpAtual} max={hpMax} colorClass="bg-red-600" />
                   </div>
                   <div>
                     <div className="flex justify-between text-xs font-bold uppercase mb-1">
-                      <span className="flex items-center gap-1"><Star size={11} className="text-rpg-gold"/> Nível {nivel}</span>
+                      <span className="flex items-center gap-1"><PixelIcon name="estrela" size={11}/> Nível {nivel}</span>
                       <span>{xpProximoNivel != null ? `${xp}/${xpProximoNivel} XP` : "XP máximo"}</span>
                     </div>
                     <PixelBar
@@ -530,22 +519,22 @@ export default function GameChat() {
                     />
                   </div>
                   <div className="flex justify-between items-center pt-2 border-t border-gray-800/50">
-                     <span className="flex items-center gap-2 text-xs text-gray-400 font-bold uppercase"><Shield size={14} className="text-blue-500"/> Defesa</span>
+                     <span className="flex items-center gap-2 text-xs text-gray-400 font-bold uppercase"><PixelIcon name="escudo" size={14}/> Defesa</span>
                      <span className="text-blue-200 font-rpg text-lg">{defesa ?? "?"}</span>
                   </div>
               </div>
 
                {/* Atributos (Sidebar) */}
                <div className="grid grid-cols-3 gap-2">
-                  <div className="bg-gray-800/40 p-2 rounded text-center border border-gray-700">
+                  <div className="bg-gray-800/40 p-2 text-center border-2 border-gray-700">
                       <span className="text-[9px] text-gray-500 block">FOR</span>
                       <span className="font-rpg text-gray-200">{attributes.forca}</span>
                   </div>
-                  <div className="bg-gray-800/40 p-2 rounded text-center border border-gray-700">
+                  <div className="bg-gray-800/40 p-2 text-center border-2 border-gray-700">
                       <span className="text-[9px] text-gray-500 block">DES</span>
                       <span className="font-rpg text-gray-200">{attributes.destreza}</span>
                   </div>
-                  <div className="bg-gray-800/40 p-2 rounded text-center border border-gray-700">
+                  <div className="bg-gray-800/40 p-2 text-center border-2 border-gray-700">
                       <span className="text-[9px] text-gray-500 block">INT</span>
                       <span className="font-rpg text-gray-200">{attributes.inteligencia}</span>
                   </div>
@@ -553,27 +542,20 @@ export default function GameChat() {
 
               {/* Missão */}
               {quest && (
-                  <div className="bg-blue-900/10 border border-blue-900/30 p-3 rounded relative">
+                  <div className="bg-blue-900/10 border-2 border-blue-900/30 p-3 relative">
                       <h3 className="text-[10px] text-blue-400 uppercase font-bold mb-1 tracking-widest flex items-center gap-2"><Map size={12}/> Missão</h3>
                       <p className="text-sm text-blue-100 font-serif leading-tight">{quest.nome_missao}</p>
                       <p className="text-[10px] text-gray-400 mt-1 italic">"{quest.objetivo_missao}"</p>
                   </div>
               )}
 
-              {/* Inventário */}
+              {/* Inventário — Etapa 14 (C-6): grade de slots em vez de lista */}
               <div>
                   <div className="flex items-center justify-between mb-2">
-                      <h3 className="text-xs text-gray-500 uppercase font-bold flex items-center gap-2"><Backpack size={12}/> Inventário</h3>
-                      <span className="text-xs text-rpg-gold font-rpg flex items-center gap-1"><Coins size={12}/> {ouro}</span>
+                      <h3 className="text-xs text-gray-500 uppercase font-bold flex items-center gap-2"><PixelIcon name="mochila" size={12}/> Inventário</h3>
+                      <span className="text-xs text-rpg-gold font-rpg flex items-center gap-1"><PixelIcon name="moeda" size={12}/> {ouro}</span>
                   </div>
-                  <ul className="text-xs text-gray-400 space-y-1 max-h-40 overflow-y-auto custom-scrollbar">
-                      {inventory.length > 0 ? inventory.map((item, i) => (
-                          <li key={i} className="border-b border-gray-800 pb-1 flex items-center gap-2 animate-fade-in">
-                              <ItemIcon nome={item} />
-                              {item}
-                          </li>
-                      )) : <li className="italic opacity-50">Mochila vazia...</li>}
-                  </ul>
+                  <InventoryGrid items={inventory} />
               </div>
           </div>
       </div>
@@ -584,8 +566,8 @@ export default function GameChat() {
             <button
                 onClick={() => setShowSidebar(true)}
                 aria-label="Abrir ficha do personagem"
-                className="absolute top-4 left-4 z-40 p-2 bg-black/50 rounded-full text-gray-400 border border-gray-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rpg-gold"
-            ><Menu size={20}/></button>
+                className="absolute top-4 left-4 z-40 p-2 bg-black/50 text-gray-400 border border-gray-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rpg-gold"
+            ><PixelIcon name="menu" size={20}/></button>
         )}
 
         {/* Convite pra reivindicar (Etapa 10, A-1) — aparece só pro
@@ -594,25 +576,26 @@ export default function GameChat() {
             dispensar (não volta na mesma aba). */}
         {mostrarConviteReivindicar && !modalReivindicarAberto && (
             <div className="absolute bottom-24 left-1/2 -translate-x-1/2 z-40 w-[calc(100%-2rem)] max-w-md animate-fade-in">
-                <div className="bg-gray-900/95 border border-rpg-gold/40 rounded-lg p-3 flex items-center gap-3 shadow-xl backdrop-blur-sm">
-                    <Crown size={20} className="text-rpg-gold shrink-0" />
+                <PanelFrame borderWidth={6} className="bg-gray-900/95 p-3 flex items-center gap-3 shadow-xl backdrop-blur-sm">
+                    <PixelIcon name="coroa" size={20} className="shrink-0" />
                     <p className="text-xs text-gray-300 flex-1">Curtindo? Crie uma conta pra não perder esse herói.</p>
                     <button
                         onClick={() => setModalReivindicarAberto(true)}
-                        className="text-xs font-bold text-black bg-rpg-gold hover:bg-white px-3 py-1.5 rounded shrink-0"
+                        className="text-xs font-bold text-black bg-rpg-gold hover:bg-white px-3 py-1.5 shrink-0"
                     >
                         Criar conta
                     </button>
                     <button onClick={dispensarConvite} aria-label="Dispensar convite" className="text-gray-500 hover:text-white shrink-0">
-                        <X size={16} />
+                        <PixelIcon name="fechar" size={16} />
                     </button>
-                </div>
+                </PanelFrame>
             </div>
         )}
 
         {modalReivindicarAberto && (
             <div className="absolute inset-0 z-[90] bg-black/80 flex items-center justify-center p-4">
-                <form onSubmit={reivindicar} className="bg-gray-900 border border-gray-700 rounded-lg p-6 w-full max-w-sm">
+                <PanelFrame borderWidth={10} className="w-full max-w-sm">
+                <form onSubmit={reivindicar} className="bg-gray-900 p-6">
                     <h2 className="font-rpg text-lg text-rpg-gold mb-1">Criar conta</h2>
                     <p className="text-xs text-gray-500 mb-4">{charName} continua exatamente como está — só ganha um dono de verdade.</p>
                     <div className="flex flex-col gap-3">
@@ -621,7 +604,7 @@ export default function GameChat() {
                             required
                             autoFocus
                             placeholder="seu@email.com"
-                            className="bg-black/60 border border-gray-700 rounded px-3 py-2 text-white text-sm outline-none focus:border-rpg-gold"
+                            className="bg-black/60 border-2 border-gray-700 px-3 py-2 text-white text-sm outline-none focus:border-rpg-gold"
                             value={reivindicarEmail}
                             onChange={(e) => setReivindicarEmail(e.target.value)}
                         />
@@ -630,7 +613,7 @@ export default function GameChat() {
                             required
                             minLength={8}
                             placeholder="Mínimo 8 caracteres"
-                            className="bg-black/60 border border-gray-700 rounded px-3 py-2 text-white text-sm outline-none focus:border-rpg-gold"
+                            className="bg-black/60 border-2 border-gray-700 px-3 py-2 text-white text-sm outline-none focus:border-rpg-gold"
                             value={reivindicarSenha}
                             onChange={(e) => setReivindicarSenha(e.target.value)}
                         />
@@ -639,20 +622,22 @@ export default function GameChat() {
                             <button
                                 type="button"
                                 onClick={() => setModalReivindicarAberto(false)}
-                                className="flex-1 border border-gray-700 text-gray-400 hover:text-white rounded py-2 text-sm"
+                                className="flex-1 border-2 border-gray-700 text-gray-400 hover:text-white py-2 text-sm"
                             >
                                 Cancelar
                             </button>
-                            <button
+                            <PixelButton
                                 type="submit"
+                                variant="dourado"
                                 disabled={reivindicarEnviando}
-                                className="flex-1 bg-rpg-gold hover:bg-white text-black font-bold rounded py-2 text-sm disabled:opacity-50"
+                                className="flex-1 py-2 text-sm"
                             >
                                 {reivindicarEnviando ? <Loader2 size={16} className="animate-spin mx-auto" /> : 'Salvar'}
-                            </button>
+                            </PixelButton>
                         </div>
                     </div>
                 </form>
+                </PanelFrame>
             </div>
         )}
 
@@ -664,7 +649,7 @@ export default function GameChat() {
             (ADR-0006), isto só evita digitar o nome à mão. */}
         {combatActive && enemies.length > 0 && !gameOver && (
             <div className="absolute top-0 w-full bg-gradient-to-b from-red-950/90 to-transparent p-2 z-30 flex justify-center gap-4 animate-fade-in shadow-lg">
-                <span className="absolute left-4 top-4 text-red-500 font-rpg text-xs animate-pulse flex items-center gap-2"><Sword size={14}/> COMBATE</span>
+                <span className="absolute left-4 top-4 text-red-500 font-rpg text-xs animate-pulse flex items-center gap-2"><PixelIcon name="espada" size={14}/> COMBATE</span>
                 {enemies.map((en, i) => {
                     const posicao = ordemIniciativa.indexOf(i);
                     const suaVez = posicao !== -1 && ordemIniciativa[turnoAtual] === i;
@@ -676,7 +661,7 @@ export default function GameChat() {
                             onClick={() => !morto && setInput(`Eu ataco ${en.nome}`)}
                             disabled={morto}
                             aria-label={morto ? `${en.nome} (derrotado)` : `Atacar ${en.nome}`}
-                            className={`relative min-w-[100px] bg-black/80 p-2 rounded border backdrop-blur-sm text-left transition-colors
+                            className={`relative min-w-[100px] bg-black/80 p-2 border-2 backdrop-blur-sm text-left transition-colors
                                 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rpg-gold
                                 ${morto ? 'border-gray-800 opacity-40 cursor-default' : 'border-red-900/50 hover:border-rpg-gold cursor-pointer'}
                                 ${suaVez && !morto ? 'ring-1 ring-rpg-gold' : ''}`}
@@ -688,7 +673,7 @@ export default function GameChat() {
                             ))}
                             <div className="flex justify-between items-center mb-1 gap-1">
                                 {posicao !== -1 && (
-                                    <span className={`text-[9px] font-mono rounded px-1 shrink-0 ${suaVez ? 'bg-rpg-gold text-black' : 'bg-gray-800 text-gray-400'}`}>
+                                    <span className={`text-[9px] font-mono px-1 shrink-0 ${suaVez ? 'bg-rpg-gold text-black' : 'bg-gray-800 text-gray-400'}`}>
                                         {posicao + 1}
                                     </span>
                                 )}
@@ -703,7 +688,7 @@ export default function GameChat() {
                                 />
                                 <span className="text-[10px] font-bold text-red-100 truncate">{en.nome}</span>
                             </div>
-                            <div className="h-1 bg-gray-800 rounded-full overflow-hidden"><div className="h-full bg-red-600 transition-all duration-300" style={{ width: `${(en.hp / en.max_hp) * 100}%` }}></div></div>
+                            <PixelBar value={en.hp} max={en.max_hp} segments={8} colorClass="bg-red-600" />
                         </button>
                     );
                 })}
@@ -735,7 +720,7 @@ export default function GameChat() {
                 if (isSystem) {
                     return (
                         <div key={idx} className="flex justify-center my-2 animate-fade-in">
-                            <div className="bg-yellow-900/20 border border-yellow-700/30 text-yellow-500 px-4 py-2 rounded-full text-xs font-mono flex items-center gap-2">
+                            <div className="bg-yellow-900/20 border border-yellow-700/30 text-yellow-500 px-4 py-2 text-xs font-mono flex items-center gap-2">
                                 <Dices size={12}/> {msg.content}
                             </div>
                         </div>
@@ -744,7 +729,7 @@ export default function GameChat() {
 
                 return (
                     <div key={idx} className={`flex items-start gap-3 ${isUser ? 'flex-row-reverse' : 'flex-row'} animate-fade-in`}>
-                        <div className={`w-9 h-9 rounded-md shrink-0 flex items-center justify-center border shadow-md overflow-hidden ${isUser ? 'border-blue-900 bg-blue-950' : msg.isError ? 'border-amber-700 bg-amber-950' : 'border-gray-700 bg-gray-900'}`}>
+                        <div className={`w-9 h-9 shrink-0 flex items-center justify-center border shadow-md overflow-hidden ${isUser ? 'border-blue-900 bg-blue-950' : msg.isError ? 'border-amber-700 bg-amber-950' : 'border-gray-700 bg-gray-900'}`}>
                              {isUser ? (
                                  <img src={charImage} className="w-full h-full object-cover" onError={(e) => {e.currentTarget.style.display='none'}}/>
                              ) : msg.isError ? (
@@ -755,12 +740,12 @@ export default function GameChat() {
                              {isUser && <User size={16} className="text-blue-400 absolute -z-10"/>}
                         </div>
 
-                        <div className={`max-w-[85%] p-3.5 rounded-lg text-sm md:text-base leading-relaxed shadow-lg backdrop-blur-sm
+                        <div className={`max-w-[85%] p-3.5 text-sm md:text-base leading-relaxed shadow-lg backdrop-blur-sm
                             ${isUser
-                                ? 'bg-blue-950/40 border border-blue-900/30 text-blue-100 rounded-tr-none'
+                                ? 'bg-blue-950/40 border border-blue-900/30 text-blue-100'
                                 : msg.isError
-                                ? 'bg-amber-950/30 border border-amber-800/40 text-amber-200 rounded-tl-none italic'
-                                : 'bg-gray-900/60 border border-gray-800 text-gray-300 rounded-tl-none'
+                                ? 'bg-amber-950/30 border border-amber-800/40 text-amber-200 italic'
+                                : 'bg-gray-900/60 border border-gray-800 text-gray-300'
                             }`}>
                             <p className="whitespace-pre-wrap break-words">{msg.content}</p>
                             {!isUser && !msg.isError && msg.turnoIndex !== undefined && (
@@ -781,7 +766,7 @@ export default function GameChat() {
                                             maxLength={500}
                                             placeholder="O que ficou estranho? (opcional)"
                                             aria-label="O que ficou estranho? Opcional."
-                                            className="bg-black/40 border border-gray-700 rounded px-2 py-1 text-xs text-gray-200 outline-none focus:border-red-700 w-full max-w-xs"
+                                            className="bg-black/40 border border-gray-700 px-2 py-1 text-xs text-gray-200 outline-none focus:border-red-700 w-full max-w-xs"
                                         />
                                         <div className="flex gap-2">
                                             <button
@@ -807,14 +792,14 @@ export default function GameChat() {
                                             onClick={() => enviarFeedback(idx, msg.turnoIndex!, 1)}
                                             disabled={msg.feedback !== undefined}
                                             aria-label="Gostei desta narração"
-                                            className={`p-1 rounded transition-colors ${msg.feedback === 1 ? 'text-emerald-500' : 'text-gray-600 hover:text-emerald-500 disabled:hover:text-gray-600'}`}
+                                            className={`p-1 transition-colors ${msg.feedback === 1 ? 'text-emerald-500' : 'text-gray-600 hover:text-emerald-500 disabled:hover:text-gray-600'}`}
                                         ><ThumbsUp size={13}/></button>
                                         <button
                                             type="button"
                                             onClick={() => { if (msg.feedback === undefined) setComentarioAbertoIdx(idx); }}
                                             disabled={msg.feedback !== undefined}
                                             aria-label="Não gostei desta narração"
-                                            className={`p-1 rounded transition-colors ${msg.feedback === -1 ? 'text-red-500' : 'text-gray-600 hover:text-red-500 disabled:hover:text-gray-600'}`}
+                                            className={`p-1 transition-colors ${msg.feedback === -1 ? 'text-red-500' : 'text-gray-600 hover:text-red-500 disabled:hover:text-gray-600'}`}
                                         ><ThumbsDown size={13}/></button>
                                     </div>
                                 )
@@ -830,7 +815,7 @@ export default function GameChat() {
 
         {/* INPUT AREA */}
         <div className="p-4 border-t border-gray-800 bg-gray-900 z-40 relative">
-            <div className="max-w-4xl mx-auto flex gap-2 bg-black/40 p-1.5 rounded-xl border border-gray-700 focus-within:border-blue-800 transition-colors shadow-inner">
+            <div className="max-w-4xl mx-auto flex gap-2 bg-black/40 p-1.5 border-2 border-gray-700 focus-within:border-rpg-gold transition-colors shadow-inner">
                 <textarea
                     value={input}
                     onChange={(e) => setInput(e.target.value)}
@@ -844,7 +829,7 @@ export default function GameChat() {
                     onClick={handleSendMessage}
                     disabled={loading || !input.trim() || gameOver}
                     aria-label="Enviar ação"
-                    className="h-10 w-10 bg-gray-800 hover:bg-gray-700 text-rpg-gold rounded-lg flex items-center justify-center transition-all mt-1 mr-1 border border-gray-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rpg-gold disabled:opacity-40"
+                    className="h-10 w-10 bg-gray-800 hover:bg-gray-700 text-rpg-gold flex items-center justify-center transition-all mt-1 mr-1 border border-gray-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rpg-gold disabled:opacity-40"
                 >
                     <Send size={18}/>
                 </button>
