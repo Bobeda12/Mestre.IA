@@ -73,12 +73,13 @@ def registrar(request: Request, req: RegistrarRequest, response: Response, db: S
 
 
 @router.post("/convidado", status_code=201)
-@limiter.limit("1/10 minute")
+@limiter.limit("5/10 minute")
 def convidado(request: Request, response: Response, db: Session = Depends(get_db)) -> dict:
     """Etapa 10 (A-1) — joga sem e-mail. `Usuario.email` já é opcional (ver
     ADR-0014); convidado é só um `Usuario` sem e-mail nem senha. Rate limit
-    apertado (1 por IP a cada 10 min), senão o endpoint vira fábrica de
-    contas descartáveis."""
+    por IP (5 a cada 10 min — antes de `_ip_do_cliente` existir, isto era
+    1/10min e valia pro site inteiro, não por pessoa; ver `rate_limit.py`),
+    senão o endpoint vira fábrica de contas descartáveis."""
     usuario = Usuario()
     db.add(usuario)
     db.commit()

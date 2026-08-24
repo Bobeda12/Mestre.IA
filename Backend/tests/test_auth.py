@@ -132,10 +132,11 @@ def test_convidado_cria_usuario_sem_email(client):
 
 
 def test_convidado_tem_rate_limit_por_ip(client):
-    resp1 = client.post("/auth/convidado")
-    assert resp1.status_code == 201
-    resp2 = client.post("/auth/convidado")
-    assert resp2.status_code == 429
+    for _ in range(5):
+        resp = client.post("/auth/convidado")
+        assert resp.status_code == 201
+    resp = client.post("/auth/convidado")
+    assert resp.status_code == 429
 
 
 def test_reivindicar_mantem_o_mesmo_usuario_e_os_herois(client, monkeypatch):
