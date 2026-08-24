@@ -1,4 +1,4 @@
-import { Dices } from 'lucide-react';
+import PixelIcon from './PixelIcon';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip';
 
 // Espelha DadosRolagem (Backend/app/domain/eventos.py) — um evento de
@@ -85,8 +85,8 @@ export default function RollCard({ dados }: { dados: DadosRolagem }) {
     <TooltipProvider delayDuration={150}>
       <div className="flex flex-col items-center gap-1 my-2 animate-fade-in" role="status">
         {titulo && <span className="text-[10px] uppercase tracking-widest text-gray-500">{titulo}</span>}
-        <div className={`flex items-center gap-2 px-4 py-1.5 rounded-full border font-mono text-xs ${cor}`}>
-          <Dices size={13} className="shrink-0" />
+        <div className={`flex items-center gap-2 px-3 py-1.5 border-2 font-rpg text-xs ${cor}`}>
+          <PixelIcon name="dado" size={13} />
           {dados.d20 != null && (
             <span>
               d20({dados.d20})

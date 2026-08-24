@@ -27,6 +27,17 @@ const ICON_PATHS = {
   seta: '/assets/icons/seta.png',
   'som-ligado': '/assets/icons/som-ligado.png',
   'som-mudo': '/assets/icons/som-mudo.png',
+  // Revisão da Etapa 14 — os que faltavam pra tirar o lucide-react do
+  // GameChat/RollCard/StatusCard. Mesma origem dos outros desenhados à mão
+  // (ver docs/CREDITOS.md).
+  dado: '/assets/icons/dado.png',
+  rosto: '/assets/icons/rosto.png',
+  alerta: '/assets/icons/alerta.png',
+  'polegar-cima': '/assets/icons/polegar-cima.png',
+  'polegar-baixo': '/assets/icons/polegar-baixo.png',
+  enviar: '/assets/icons/enviar.png',
+  cura: '/assets/icons/cura.png',
+  caveira: '/assets/icons/caveira.png',
 } as const;
 
 export type PixelIconName = keyof typeof ICON_PATHS;

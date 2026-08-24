@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Sparkles, User, Zap, Edit2 } from 'lucide-react';
 import { api } from '../lib/api';
 import { getLocalImage } from '../lib/utils';
 import PixelIcon from './PixelIcon';
@@ -204,7 +203,7 @@ export default function CharacterCreation({ onCharacterCreated }: CharacterCreat
            {/* Etapa 14 (C-4) — passos em blocos discretos, mesmo espírito do
                PixelBar (Etapa 11), em vez da barra fina arredondada. */}
            <div className="flex gap-1 mt-4 px-2">{[1,2,3,4,5].map(s => (<button key={s} disabled={s > step && s !== step + 1} onClick={() => { if (step === 5 || (s < step)) setStep(s); }} className={`h-3 flex-1 transition-colors ${step >= s ? 'bg-rpg-gold cursor-pointer' : 'bg-gray-800 cursor-not-allowed'}`}/>))}</div>
-           <p className="text-xs text-gray-500 mt-1 uppercase tracking-widest text-right">{step === 5 ? "Ficha Final" : `Passo ${step}/5`}</p>
+           <p className="text-xs text-gray-300 mt-1 uppercase tracking-widest text-right font-rpg">{step === 5 ? "Ficha Final" : `Passo ${step}/5`}</p>
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 space-y-2 custom-scrollbar pb-24">
@@ -270,10 +269,10 @@ export default function CharacterCreation({ onCharacterCreated }: CharacterCreat
             )}
 
             {/* PASSO 4: ATRIBUTOS */}
-            {step === 4 && (<div className="p-4 space-y-6 animate-fade-in"><div className="bg-black/40 p-4 border-2 border-blue-900 text-center"><span className="block text-gray-400 text-xs uppercase tracking-widest">Pontos Restantes</span><span className={`text-4xl font-rpg ${pointsRemaining === 0 ? 'text-green-500' : 'text-blue-400'}`}>{pointsRemaining}/27</span></div>{maxFreePoints > 0 && (<div className={`p-3 border-2 text-center ${usedFreePoints === maxFreePoints ? 'bg-green-900/20 border-green-700' : 'bg-rpg-gold/10 border-rpg-gold'}`}><span className="text-sm font-bold text-gray-200 block mb-1"><Sparkles size={12} className="inline mr-1"/> Bônus Racial Extra</span><span className={`text-xl font-rpg ${usedFreePoints === maxFreePoints ? 'text-green-400' : 'text-rpg-gold'}`}>{usedFreePoints}/{maxFreePoints}</span></div>)}<div className="space-y-2">{Object.keys(attributes).map(attr => { const fixedBonus = raceData?.bonus_atributos?.[attr] || 0; const isFreeSelected = freePointsAllocation[attr] === 1; const isFreeAvailable = maxFreePoints > 0 && fixedBonus === 0; return (<div key={attr} className="flex items-center justify-between bg-gray-900/50 p-2 border-2 border-gray-800 hover:border-gray-600"><div className="w-20"><span className="font-bold text-sm text-gray-300 block">{formatAttribute(attr)}</span>{fixedBonus > 0 && <span className="text-[10px] text-blue-400 font-bold">+{fixedBonus} Raça</span>}{isFreeAvailable && (<button onClick={() => handleFreeAllocation(attr)} disabled={!isFreeSelected && usedFreePoints >= maxFreePoints} className={`text-[10px] px-1 border mt-1 transition-colors ${isFreeSelected ? 'bg-green-600 text-white border-green-500' : 'bg-black text-gray-500 border-gray-700 hover:border-gray-500'}`}>{isFreeSelected ? '+1 Extra' : '+ Adicionar'}</button>)}</div><div className="flex items-center gap-3"><button onClick={() => handleAttributeChange(attr, -1)} className="w-8 h-8 bg-gray-800 hover:bg-red-900 flex items-center justify-center disabled:opacity-30" disabled={attributes[attr] <= 8}><PixelIcon name="menos" size={14}/></button><span className="text-xl w-6 text-center font-mono">{attributes[attr]}</span><button onClick={() => handleAttributeChange(attr, 1)} className="w-8 h-8 bg-gray-800 hover:bg-green-900 flex items-center justify-center disabled:opacity-30" disabled={attributes[attr] >= 15 || pointsRemaining === 0}><PixelIcon name="mais" size={14}/></button></div><div className="text-[10px] text-gray-500 w-12 text-right">{attributes[attr] >= 15 ? 'MÁX' : `-${getPointCost(attributes[attr] + 1) - getPointCost(attributes[attr])}`}</div></div>); })}</div></div>)}
+            {step === 4 && (<div className="p-4 space-y-6 animate-fade-in"><div className="bg-black/40 p-4 border-2 border-blue-900 text-center"><span className="block text-gray-400 text-xs uppercase tracking-widest">Pontos Restantes</span><span className={`text-4xl font-rpg ${pointsRemaining === 0 ? 'text-green-500' : 'text-blue-400'}`}>{pointsRemaining}/27</span></div>{maxFreePoints > 0 && (<div className={`p-3 border-2 text-center ${usedFreePoints === maxFreePoints ? 'bg-green-900/20 border-green-700' : 'bg-rpg-gold/10 border-rpg-gold'}`}><span className="text-sm font-bold text-gray-200 block mb-1 flex items-center justify-center gap-1"><PixelIcon name="estrela" size={12}/> Bônus Racial Extra</span><span className={`text-xl font-rpg ${usedFreePoints === maxFreePoints ? 'text-green-400' : 'text-rpg-gold'}`}>{usedFreePoints}/{maxFreePoints}</span></div>)}<div className="space-y-2">{Object.keys(attributes).map(attr => { const fixedBonus = raceData?.bonus_atributos?.[attr] || 0; const isFreeSelected = freePointsAllocation[attr] === 1; const isFreeAvailable = maxFreePoints > 0 && fixedBonus === 0; return (<div key={attr} className="flex items-center justify-between bg-gray-900/50 p-2 border-2 border-gray-800 hover:border-gray-600"><div className="w-20"><span className="font-bold text-sm text-gray-300 block">{formatAttribute(attr)}</span>{fixedBonus > 0 && <span className="text-[10px] text-blue-400 font-bold">+{fixedBonus} Raça</span>}{isFreeAvailable && (<button onClick={() => handleFreeAllocation(attr)} disabled={!isFreeSelected && usedFreePoints >= maxFreePoints} className={`text-[10px] px-1 border mt-1 transition-colors ${isFreeSelected ? 'bg-green-600 text-white border-green-500' : 'bg-black text-gray-500 border-gray-700 hover:border-gray-500'}`}>{isFreeSelected ? '+1 Extra' : '+ Adicionar'}</button>)}</div><div className="flex items-center gap-3"><button onClick={() => handleAttributeChange(attr, -1)} className="w-8 h-8 bg-gray-800 hover:bg-red-900 flex items-center justify-center disabled:opacity-30" disabled={attributes[attr] <= 8}><PixelIcon name="menos" size={14}/></button><span className="text-xl w-6 text-center font-mono">{attributes[attr]}</span><button onClick={() => handleAttributeChange(attr, 1)} className="w-8 h-8 bg-gray-800 hover:bg-green-900 flex items-center justify-center disabled:opacity-30" disabled={attributes[attr] >= 15 || pointsRemaining === 0}><PixelIcon name="mais" size={14}/></button></div><div className="text-[10px] text-gray-500 w-12 text-right">{attributes[attr] >= 15 ? 'MÁX' : `-${getPointCost(attributes[attr] + 1) - getPointCost(attributes[attr])}`}</div></div>); })}</div></div>)}
             
             {/* PASSO 5: RESUMO */}
-            {step === 5 && (<div className="p-6 h-full flex flex-col justify-center items-center text-center animate-fade-in"><PixelIcon name="coroa" size={48} className="mb-4 animate-pulse"/><h3 className="text-2xl font-rpg text-white mb-2">Destino Selado</h3><p className="text-gray-400 text-sm mb-8">Confirme os dados da ficha ao lado para iniciar.</p><PixelButton variant="dourado" onClick={handleFinish} disabled={loading} className="w-full py-5 text-lg flex items-center justify-center gap-3 hover:scale-105 mb-4">{loading ? "Iniciando..." : <>JOGAR AGORA <PixelIcon name="seta" /></>}</PixelButton><button onClick={() => setStep(4)} className="text-gray-500 hover:text-rpg-gold flex items-center gap-2 text-sm underline decoration-gray-700 hover:decoration-rpg-gold"><Edit2 size={14}/> Editar Atributos</button></div>)}
+            {step === 5 && (<div className="p-6 h-full flex flex-col justify-center items-center text-center animate-fade-in"><PixelIcon name="coroa" size={48} className="mb-4 animate-pulse"/><h3 className="text-2xl font-rpg text-white mb-2">Destino Selado</h3><p className="text-gray-400 text-sm mb-8">Confirme os dados da ficha ao lado para iniciar.</p><PixelButton variant="dourado" onClick={handleFinish} disabled={loading} className="w-full py-5 text-lg flex items-center justify-center gap-3 hover:scale-105 mb-4">{loading ? "Iniciando..." : <>JOGAR AGORA <PixelIcon name="seta" /></>}</PixelButton><button onClick={() => setStep(4)} className="text-gray-500 hover:text-rpg-gold flex items-center gap-2 text-sm underline decoration-gray-700 hover:decoration-rpg-gold"><PixelIcon name="seta" size={14} className="rotate-180"/> Editar Atributos</button></div>)}
         </div>
       </div>
 
@@ -290,7 +289,7 @@ export default function CharacterCreation({ onCharacterCreated }: CharacterCreat
                      src={activeImage}
                      className={(step === 1 || step === 2) ? "w-full h-full object-contain object-top p-16" : "w-full h-full object-cover object-top"}
                      alt="Visual"
-                     onError={(e) => (e.currentTarget.src = "https://via.placeholder.com/500x750?text=...")}
+                     onError={(e) => (e.currentTarget.style.display = 'none')}
                  />
                  <div className="absolute bottom-0 w-full bg-gradient-to-t from-black via-black/80 to-transparent p-6 pt-12">
                      <h2 className="text-3xl font-rpg text-white text-center drop-shadow-md">{activeTitle}</h2>
@@ -299,15 +298,15 @@ export default function CharacterCreation({ onCharacterCreated }: CharacterCreat
              </div>
              <div className="w-[55%] p-8 flex flex-col relative overflow-y-auto custom-scrollbar">
                  <div className="absolute top-4 right-4 opacity-10 pointer-events-none"><PixelIcon name="coroa" size={120}/></div>
-                 <h3 className="text-rpg-gold font-rpg text-2xl border-b border-gray-700 pb-3 mb-6 flex items-center gap-2">
-                    {step === 5 ? <PixelIcon name="pergaminho" size={24}/> : step === 1 ? <User size={24}/> : step === 2 ? <PixelIcon name="espada" size={24}/> : <Sparkles size={24}/>}
+                 <h3 className="text-rpg-gold font-rpg text-2xl border-b-2 border-gray-700 pb-3 mb-6 flex items-center gap-2">
+                    {step === 5 ? <PixelIcon name="pergaminho" size={24}/> : step === 1 ? <PixelIcon name="coroa" size={24}/> : step === 2 ? <PixelIcon name="espada" size={24}/> : <PixelIcon name="estrela" size={24}/>}
                     {step === 5 ? "Ficha Técnica" : step === 1 ? "Detalhes da Raça" : step === 2 ? "Detalhes da Classe" : "Planejamento"}
                  </h3>
                  
                  {/* Conteúdo Dinâmico da Direita */}
                  {step === 5 ? (
                      <>
-                        <div className="flex justify-around mb-8 bg-black/20 p-4 rounded-lg">
+                        <div className="flex justify-around mb-8 bg-black/40 p-4 border-2 border-gray-700">
                              <div className="text-center"><div className="text-2xl font-bold text-blue-400 font-rpg">{10 + getModifierValue(getFinalAttribute('destreza'))}</div><span className="text-[10px] text-gray-500 uppercase font-bold">Defesa</span></div>
                              <div className="w-px bg-gray-700 mx-2"></div>
                              <div className="text-center"><div className="text-2xl font-bold text-red-500 font-rpg">{getInitialHP()}</div><span className="text-[10px] text-gray-500 uppercase font-bold">Vida</span></div>
@@ -316,23 +315,83 @@ export default function CharacterCreation({ onCharacterCreated }: CharacterCreat
                         </div>
                         <div className="grid grid-cols-3 gap-3">
                              {Object.keys(attributes).map(attr => (
-                                 <div key={attr} className="bg-gray-800/40 border border-gray-700 rounded p-2 text-center relative"><span className="block text-[10px] text-gray-500 uppercase font-bold mb-1">{formatAttribute(attr)}</span><span className="block text-xl text-white font-rpg">{getFinalAttribute(attr)}</span><div className="absolute -top-2 -right-2 w-6 h-6 bg-gray-700 rounded-full flex items-center justify-center text-[10px] text-blue-300 font-bold border border-gray-600 shadow-sm">{formatModifier(getModifierValue(getFinalAttribute(attr)))}</div></div>
+                                 <div key={attr} className="bg-gray-800/60 border-2 border-gray-700 p-2 text-center relative"><span className="block text-[10px] text-gray-300 uppercase font-bold mb-1">{formatAttribute(attr)}</span><span className="block text-xl text-white font-rpg">{getFinalAttribute(attr)}</span><div className="absolute -top-2 -right-2 w-6 h-6 bg-gray-700 flex items-center justify-center text-[10px] text-blue-200 font-bold border-2 border-gray-500">{formatModifier(getModifierValue(getFinalAttribute(attr)))}</div></div>
                              ))}
                         </div>
-                        <div className="mt-6 bg-black/30 p-3 rounded text-sm text-gray-400">
-                            <p><strong className="text-rpg-gold">Origem:</strong> {background}</p>
-                            <p><strong className="text-rpg-gold">Missão:</strong> {goal}</p>
+                        <div className="mt-6 bg-black/40 border-2 border-gray-700 p-3 text-sm text-gray-200 space-y-1">
+                            <p><strong className="text-rpg-gold font-rpg">Origem:</strong> {background || <span className="text-gray-400 italic">não informada</span>}</p>
+                            <p><strong className="text-rpg-gold font-rpg">Missão:</strong> {goal || <span className="text-gray-400 italic">não informada</span>}</p>
                         </div>
                      </>
                  ) : currentDetails ? (
-                     <div className="space-y-6 animate-fade-in">{currentDetails.quote && <p className="text-xl text-rpg-gold italic font-serif text-center px-4">"{currentDetails.quote}"</p>}<div className="text-gray-300 leading-relaxed text-justify bg-black/20 p-4 rounded border border-gray-800">{currentDetails.descricao}</div>{step === 1 && currentDetails.bonus_atributos && (<div className="mt-4"><span className="text-xs text-gray-500 uppercase tracking-widest block mb-2">Bônus de Atributo</span><div className="flex gap-2 flex-wrap">{Object.entries(currentDetails.bonus_atributos).filter(([k]) => k !== 'livre_escolha').map(([k,v]) => (<span key={k} className="text-xs bg-blue-900/40 px-3 py-1 rounded text-blue-200 border border-blue-800 uppercase flex items-center gap-1"><Zap size={10} /> +{v as number} {formatAttribute(k)}</span>))}{currentDetails.bonus_atributos.livre_escolha > 0 && (<span className="text-xs bg-purple-900/40 px-3 py-1 rounded text-purple-200 border border-purple-800 uppercase flex items-center gap-1"><Sparkles size={10} /> +{currentDetails.bonus_atributos.livre_escolha} Escolha</span>)}</div></div>)}{step === 2 && currentDetails.dado_vida && <div className="mt-4 flex gap-4"><span className="flex items-center gap-2 text-gray-300 bg-gray-800 px-3 py-1 rounded border border-gray-700"><PixelIcon name="coracao" size={14}/> Vida Base: d{currentDetails.dado_vida}</span></div>}</div>
+                     <div className="space-y-5 animate-fade-in">
+                        {currentDetails.quote && (
+                          <p className="text-lg text-rpg-gold italic text-center px-4 font-hand">"{currentDetails.quote}"</p>
+                        )}
+                        <p className="text-gray-200 leading-relaxed bg-black/40 p-4 border-2 border-gray-700">{currentDetails.descricao}</p>
+
+                        {step === 1 && currentDetails.bonus_atributos && (
+                          <Bloco titulo="Bônus de Atributo">
+                            <div className="flex gap-2 flex-wrap">
+                              {Object.entries(currentDetails.bonus_atributos).filter(([k]) => k !== 'livre_escolha').map(([k,v]) => (
+                                <Etiqueta key={k} cor="azul">+{v as number} {formatAttribute(k)}</Etiqueta>
+                              ))}
+                              {currentDetails.bonus_atributos.livre_escolha > 0 && (
+                                <Etiqueta cor="roxo">+{currentDetails.bonus_atributos.livre_escolha} à escolha</Etiqueta>
+                              )}
+                            </div>
+                          </Bloco>
+                        )}
+
+                        {/* Etapa 14 (revisão) — a tela de classe mostrava só a
+                            descrição e o dado de vida, ficando visivelmente
+                            mais pobre que a de raça. Os dados abaixo já
+                            existiam em Backend/data/classes.json desde sempre;
+                            faltava exibi-los. */}
+                        {step === 2 && (
+                          <>
+                            <div className="grid grid-cols-2 gap-3">
+                              <Bloco titulo="Vida por nível">
+                                <span className="flex items-center gap-2 text-xl font-rpg text-red-300">
+                                  <PixelIcon name="coracao" size={18}/> d{currentDetails.dado_vida}
+                                </span>
+                              </Bloco>
+                              <Bloco titulo="Atributo principal">
+                                <span className="flex items-center gap-2 text-xl font-rpg text-blue-300">
+                                  <PixelIcon name="estrela" size={18}/> {(currentDetails.atributo_primario || []).join(' e ')}
+                                </span>
+                              </Bloco>
+                            </div>
+
+                            {currentDetails.equipamento_inicial?.length > 0 && (
+                              <Bloco titulo="Começa com">
+                                <div className="flex gap-2 flex-wrap">
+                                  {currentDetails.equipamento_inicial.map((item: string) => (
+                                    <Etiqueta key={item} cor="ouro"><PixelIcon name="espada" size={11}/> {item}</Etiqueta>
+                                  ))}
+                                </div>
+                              </Bloco>
+                            )}
+
+                            {currentDetails.proficiencias?.length > 0 && (
+                              <Bloco titulo="Sabe usar">
+                                <div className="flex gap-2 flex-wrap">
+                                  {currentDetails.proficiencias.map((p: string) => (
+                                    <Etiqueta key={p} cor="neutro">{p}</Etiqueta>
+                                  ))}
+                                </div>
+                              </Bloco>
+                            )}
+                          </>
+                        )}
+                     </div>
                  ) : step === 3 ? (
                      <div className="flex flex-col items-center justify-center h-full text-gray-600 text-center px-8">
-                         <User size={64} className="mb-4 text-rpg-gold opacity-50"/>
+                         <PixelIcon name="coroa" size={64} className="mb-4 opacity-60"/>
                          <h3 className="text-xl font-rpg text-white mb-2">Quem é você?</h3>
                          <p className="text-sm">Defina sua identidade. O nome e o passado do seu herói moldarão como o mundo reage a ele.</p>
                      </div>
-                 ) : (<div className="flex flex-col items-center justify-center h-full text-gray-600"><Sparkles size={48} className="mb-4 opacity-50"/><span className="text-xl font-rpg">Selecione uma opção...</span></div>)}
+                 ) : (<div className="flex flex-col items-center justify-center h-full text-gray-400"><PixelIcon name="estrela" size={48} className="mb-4 opacity-50"/><span className="text-xl font-rpg">Selecione uma opção...</span></div>)}
                  
                  {/* BOTÃO PRÓXIMO (O QUE SUMIU) */}
                  {canProceed && step < 5 && (<div className="mt-auto pt-6 flex justify-end"><PixelButton variant="dourado" onClick={() => setStep(s => s + 1)} className="py-3 px-6 flex items-center gap-2 hover:scale-105">PRÓXIMO <PixelIcon name="seta" size={20} /></PixelButton></div>)}
@@ -343,4 +402,68 @@ export default function CharacterCreation({ onCharacterCreated }: CharacterCreat
   );
 }
 
-function OptionButton({ label, active, onClick, image }: any) { return <button onClick={onClick} className={`w-full text-left flex items-center gap-4 p-2 border transition-all group relative overflow-hidden ${active ? 'bg-gray-800 border-rpg-gold shadow-lg' : 'bg-black/20 border-gray-800 hover:bg-gray-800 hover:border-gray-600'}`}><div className={`pixel-frame w-12 h-12 bg-black shrink-0 overflow-hidden ${active ? '' : 'opacity-80'}`}><img src={image} onError={(e) => (e.currentTarget.src = "https://via.placeholder.com/50?text=?")} className="w-full h-full object-contain group-hover:opacity-100 transition-opacity" /></div><div className="flex-1 z-10"><span className={`font-rpg text-base block ${active ? 'text-rpg-gold text-glow' : 'text-gray-400 group-hover:text-gray-200'}`}>{label}</span></div>{active && <div className="absolute inset-0 bg-gradient-to-r from-rpg-gold/10 to-transparent pointer-events-none"/>}</button>; }
+// Etapa 14 (revisão) — bloco rotulado e etiqueta, os dois padrões que se
+// repetiam à mão pelo painel de detalhes (cada um com um `rounded`/borda um
+// pouco diferente). Centralizar aqui é o que garante que os cantos fiquem
+// retos e as cores consistentes em todos os usos, em vez de depender de
+// lembrar em cada call site.
+function Bloco({ titulo, children }: { titulo: string; children: React.ReactNode }) {
+  return (
+    <div className="bg-black/40 border-2 border-gray-700 p-3">
+      <span className="text-[10px] text-rpg-gold uppercase tracking-widest block mb-2 font-rpg">{titulo}</span>
+      {children}
+    </div>
+  );
+}
+
+const CORES_ETIQUETA = {
+  azul: 'bg-blue-950 text-blue-200 border-blue-700',
+  roxo: 'bg-purple-950 text-purple-200 border-purple-700',
+  ouro: 'bg-rpg-gold/15 text-rpg-gold border-rpg-gold/60',
+  neutro: 'bg-gray-800 text-gray-200 border-gray-600',
+} as const;
+
+function Etiqueta({ cor, children }: { cor: keyof typeof CORES_ETIQUETA; children: React.ReactNode }) {
+  return (
+    <span className={`text-xs px-2 py-1 border-2 uppercase flex items-center gap-1 font-rpg ${CORES_ETIQUETA[cor]}`}>
+      {children}
+    </span>
+  );
+}
+
+// Etapa 14 (revisão) — a lista da esquerda destoava do painel da direita:
+// borda de 1px, texto `text-gray-400` sobre fundo quase preto (baixo
+// contraste) e o item selecionado se distinguindo só por um brilho sutil.
+// Agora: borda grossa igual ao resto, texto legível, e o selecionado marcado
+// por cor de fundo E por um cursor "▶" à esquerda, como menu de console —
+// não depender só de cor também ajuda quem não distingue bem os tons.
+function OptionButton({ label, active, onClick, image }: any) {
+  return (
+    <button
+      onClick={onClick}
+      aria-pressed={active}
+      className={`w-full text-left flex items-center gap-3 p-2 border-2 transition-colors group focus-visible:outline-none focus-visible:border-rpg-gold ${
+        active
+          ? 'bg-rpg-gold/20 border-rpg-gold'
+          : 'bg-black/50 border-gray-700 hover:border-gray-500 hover:bg-black/70'
+      }`}
+    >
+      {/* Cursor decorativo: `aria-hidden` porque `aria-pressed` no botão já
+          diz o que está selecionado — sem isso o leitor de tela lê um "▶"
+          solto antes de cada opção da lista. */}
+      <span aria-hidden className={`font-rpg text-rpg-gold w-3 shrink-0 ${active ? 'opacity-100' : 'opacity-0'}`}>▶</span>
+      <div className="pixel-frame w-12 h-12 bg-black shrink-0 overflow-hidden">
+        {/* Sem `onError` apontando pra placeholder externo: offline (ou com o
+            domínio fora do ar) o fallback falha junto e sobra o ícone de
+            imagem quebrada. Escondendo, sobra o quadro preto da moldura. */}
+        <img
+          src={image}
+          alt=""
+          className="w-full h-full object-contain"
+          onError={(e) => (e.currentTarget.style.display = 'none')}
+        />
+      </div>
+      <span className={`font-rpg text-base ${active ? 'text-rpg-gold' : 'text-gray-200'}`}>{label}</span>
+    </button>
+  );
+}

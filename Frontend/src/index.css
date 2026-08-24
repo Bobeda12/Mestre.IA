@@ -175,6 +175,49 @@ img[src^="/assets/classes/"] {
   animation: floatUp 1.2s ease-out forwards;
 }
 
+/* Etapa 14 (revisão) — blocos de carregamento (Carregando.tsx), no lugar do
+   círculo girando do lucide-react. Piscam em sequência pelo `animation-delay`
+   que o componente aplica em cada bloco. */
+@keyframes blocosCarregando {
+  0%, 100% { opacity: 0.25; }
+  50% { opacity: 1; }
+}
+.animate-blocos-carregando {
+  animation: blocosCarregando 0.9s steps(2, end) infinite;
+}
+
+/* Etapa 14 (revisão) — mapa do mundo deslizando devagar no fundo da tela
+   inicial. A faixa é bem mais larga que qualquer tela e repete a imagem em
+   `repeat-x`; deslocar EXATAMENTE a largura de um tile (`--tile-w`) faz o
+   padrão cair sobre si mesmo, então o loop não tem emenda — deslocar uma
+   porcentagem só funcionaria se a tela fosse múltiplo exato do tile, que não
+   dá pra garantir. `steps()` é de propósito: movimento contínuo cai em
+   sub-pixel e borra a arte pixel, enquanto em passos a grade se mantém
+   nítida, como num console de verdade. */
+@keyframes mapaDeslizando {
+  from { transform: translate3d(0, 0, 0); }
+  to { transform: translate3d(calc(-1 * var(--tile-w)), 0, 0); }
+}
+.animate-mapa {
+  animation: mapaDeslizando var(--tile-dur, 90s) steps(var(--tile-passos, 180), end) infinite;
+  will-change: transform;
+}
+
+/* O jogo tem bastante coisa em loop (tocha, mapa, blocos de carregamento,
+   pulsação do título). Uma única regra desliga tudo pra quem pediu menos
+   movimento no sistema, em vez de cada componente ter que lembrar de checar.
+   `!important` porque as classes acima definem `animation` diretamente. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
 @theme inline {
   --font-heading: var(--font-sans);
   --font-sans: 'Geist Variable', sans-serif;

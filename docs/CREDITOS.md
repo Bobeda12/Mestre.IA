@@ -60,17 +60,25 @@ compatíveis em estilo (16×16, contorno grosso) com o que já estava no repo.
 | Pacote | Autor | Licença | Fonte | Usado para |
 |---|---|---|---|---|
 | Tiny Dungeon | Kenney | [CC0](https://creativecommons.org/publicdomain/zero/1.0/) | [kenney.nl/assets/tiny-dungeon](https://kenney.nl/assets/tiny-dungeon) | espada, adaga, machado, maça, escudo, 4 poções, baú (já usado no B-1, mesmo arquivo-fonte) |
-| Roguelike/RPG Pack | Kenney | [CC0](https://creativecommons.org/publicdomain/zero/1.0/) | [kenney.nl/assets/roguelike-rpg-pack](https://kenney.nl/assets/roguelike-rpg-pack) | pergaminho (missão), mochila (inventário), moeda (ouro) |
+| Roguelike/RPG Pack | Kenney | [CC0](https://creativecommons.org/publicdomain/zero/1.0/) | [kenney.nl/assets/roguelike-rpg-pack](https://kenney.nl/assets/roguelike-rpg-pack) | pergaminho (missão), mochila (inventário), moeda (ouro), e os tiles de terreno do mapa de fundo (`backgrounds/mapa-mundo.png`) |
 | UI Pack - Pixel Adventure | Kenney | [CC0](https://creativecommons.org/publicdomain/zero/1.0/) | [kenney.nl/assets/ui-pack-pixel-adventure](https://kenney.nl/assets/ui-pack-pixel-adventure) | moldura 9-slice (`PanelFrame`) e botões (`PixelButton`) |
 
 Nenhuma licença exige atribuição (todas CC0) — está aqui por educação e
 para rastrear a origem de cada arquivo.
 
+**Composto a partir de tiles CC0**: `backgrounds/mapa-mundo.png` é um mapa de
+overworld montado tile a tile a partir do Roguelike/RPG Pack (grama, água,
+terra, árvores), numa grade toroidal pra ladrilhar sem emenda nos dois eixos —
+ver `MapaDeFundo.tsx`. Não é arte gerada, é composição de tiles existentes.
+
 **Desenhados à mão** (estrela/nível, fechar, menu, seta, som ligado/mudo,
-coroa, coração, menos, mais):
+coroa, coração, menos, mais, dado, rosto, alerta, polegar cima/baixo, enviar,
+cura, caveira):
 nenhum pacote pesquisado (Tiny Dungeon, Roguelike/RPG Pack, UI Pack - Pixel
-Adventure, Game Icons, UI Pack RPG Expansion) tinha esses seis num estilo
+Adventure, Game Icons, UI Pack RPG Expansion) tinha esses num estilo
 coerente com o resto — em vez de misturar um pacote genérico incompatível,
 foram desenhados como pixel art simples (contorno preto + preenchimento
 chapado, mesmo tratamento visual dos outros ícones) via script Python
-(Pillow), não gerados por IA.
+(Pillow), não gerados por IA. Os oito últimos entraram na revisão da Etapa 14,
+que tirou o `lucide-react` das telas de jogo (`GameChat`, `RollCard`,
+`StatusCard`) — hoje o pacote não é mais importado em lugar nenhum do `src/`.

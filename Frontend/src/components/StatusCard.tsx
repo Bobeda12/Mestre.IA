@@ -1,4 +1,4 @@
-import { HeartPulse, Skull } from 'lucide-react';
+import PixelIcon from './PixelIcon';
 
 // Espelha EventoStatus (Backend/app/domain/eventos.py) — cura e morte de
 // inimigo (Etapa 10, A-7): não são rolagem de d20, por isso não usam
@@ -18,8 +18,8 @@ export default function StatusCard({ dados }: { dados: EventoStatus }) {
 
   return (
     <div className="flex justify-center my-2 animate-fade-in" role="status">
-      <div className={`flex items-center gap-2 px-4 py-1.5 rounded-full border font-mono text-xs ${cor}`}>
-        {cura ? <HeartPulse size={13} className="shrink-0" /> : <Skull size={13} className="shrink-0" />}
+      <div className={`flex items-center gap-2 px-3 py-1.5 border-2 font-rpg text-xs ${cor}`}>
+        <PixelIcon name={cura ? 'cura' : 'caveira'} size={13} />
         <span className="font-bold tracking-wide">
           {cura ? `+${dados.valor ?? 0} PV` : `${dados.quem} caiu`}
         </span>

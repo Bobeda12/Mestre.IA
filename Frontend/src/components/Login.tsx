@@ -1,11 +1,24 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { isAxiosError } from 'axios';
-import { Mail, Lock, Crown, ArrowLeft, Loader2 } from 'lucide-react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { api, API_URL } from '../lib/api';
 import { useInvalidarAuth } from '../lib/auth';
 import ConfirmeEmail from './ConfirmeEmail';
+import PixelIcon from './PixelIcon';
+import PixelButton from './PixelButton';
+import Carregando from './Carregando';
+import MapaDeFundo from './MapaDeFundo';
+
+// Etapa 14 (revisão) — a tela de login tinha passado inteira por fora do
+// sistema pixel: `font-sans` (Geist), cantos arredondados e ícones
+// lucide-react de traço fino. O layout já estava certo, então aqui muda só a
+// pele. Os ícones dos campos (envelope/cadeado) saíram em vez de virarem
+// pixel: jogo 8-bit não põe ícone dentro de campo de texto, e o rótulo em
+// maiúscula acima do campo já diz o que é.
+const CAMPO =
+  'w-full bg-black/60 border-2 border-gray-600 px-3 py-3 text-white outline-none focus:border-rpg-gold transition-colors';
+const ROTULO = 'text-left text-xs text-rpg-gold uppercase tracking-widest font-rpg';
 
 export default function Login() {
   const [modo, setModo] = useState<'entrar' | 'criar'>('entrar');
@@ -74,114 +87,103 @@ export default function Login() {
   }
 
   return (
-    <div className="h-screen w-screen bg-black flex flex-col items-center justify-center relative overflow-hidden font-sans px-4">
-      <div className="absolute inset-0 bg-gradient-to-t from-black via-black/90 to-black/60 z-0" />
+    <div className="min-h-[100dvh] w-screen bg-rpg-darker flex flex-col items-center justify-center relative overflow-hidden px-4 py-10">
+      <MapaDeFundo />
 
       <div className="z-10 w-full max-w-sm text-center">
-        <Link to="/" className="absolute top-4 left-4 text-gray-500 hover:text-white flex items-center gap-2 text-sm">
-          <ArrowLeft size={18} /> Voltar
+        <Link to="/" className="absolute top-4 left-4 text-gray-400 hover:text-rpg-gold flex items-center gap-2 text-sm font-rpg">
+          <PixelIcon name="seta" size={16} className="rotate-180" /> Voltar
         </Link>
 
-        <Crown size={48} className="text-rpg-gold mx-auto mb-4 drop-shadow-[0_0_15px_rgba(197,160,89,0.5)]" />
-        <h1 className="text-3xl font-rpg text-white mb-2">{modo === 'entrar' ? 'Entrar' : 'Criar conta'}</h1>
+        <PixelIcon name="coroa" size={48} className="mx-auto mb-4" />
+        <h1 className="text-base md:text-lg font-pixel-title text-rpg-gold mb-6 leading-relaxed">
+          {modo === 'entrar' ? 'ENTRAR' : 'CRIAR CONTA'}
+        </h1>
 
         {confirmado === '1' && (
-          <p className="text-emerald-400 text-sm mb-4">E-mail confirmado! Pode entrar.</p>
+          <p className="text-emerald-400 text-sm mb-4 font-rpg">E-mail confirmado! Pode entrar.</p>
         )}
         {confirmado === '0' && (
-          <p className="text-red-500 text-sm mb-4">Esse link de confirmação expirou ou já foi usado.</p>
+          <p className="text-red-400 text-sm mb-4 font-rpg">Esse link de confirmação expirou ou já foi usado.</p>
         )}
 
-        <button
+        <PixelButton
           type="button"
+          variant="vermelho"
           onClick={() => jogarComoConvidado.mutate()}
           disabled={jogarComoConvidado.isPending}
-          className="w-full bg-transparent hover:bg-gray-900 text-rpg-gold border border-rpg-gold/50 hover:border-rpg-gold font-bold py-3 rounded flex items-center justify-center gap-2 transition-all disabled:opacity-50"
+          className="w-full py-4 text-[10px] md:text-xs"
         >
-          {jogarComoConvidado.isPending ? <Loader2 size={18} className="animate-spin" /> : 'Jogar agora'}
-        </button>
-        <p className="text-gray-600 text-xs mt-2">
-          Seu progresso fica salvo neste navegador — limpou os dados, perdeu o herói.
+          {jogarComoConvidado.isPending ? <Carregando rotulo="Entrando" /> : 'JOGAR AGORA'}
+        </PixelButton>
+        <p className="text-gray-400 text-xs mt-2 font-rpg">
+          Seu progresso fica salvo neste navegador. Limpou os dados, perdeu o herói.
         </p>
         {jogarComoConvidado.isError && (
-          <p className="text-red-500 text-sm mt-2">Não deu para começar agora. Tenta de novo em alguns minutos.</p>
+          <p className="text-red-400 text-sm mt-2 font-rpg">Não deu para começar agora. Tenta de novo em alguns minutos.</p>
         )}
 
-        <div className="flex items-center gap-3 my-6 text-gray-600 text-xs uppercase tracking-widest">
-          <div className="flex-1 h-px bg-gray-800" />
-          {modo === 'entrar' ? 'ou entre com e-mail e senha' : 'ou crie uma conta'}
-          <div className="flex-1 h-px bg-gray-800" />
-        </div>
+        <Divisor>{modo === 'entrar' ? 'ou entre com e-mail' : 'ou crie uma conta'}</Divisor>
 
         <form
           onSubmit={(e) => {
             e.preventDefault();
             entrar.mutate();
           }}
-          className="mt-8 flex flex-col gap-4"
+          className="flex flex-col gap-2 text-left"
         >
-          <label className="text-left text-xs text-gray-500 uppercase tracking-wide -mb-2">E-mail</label>
-          <div className="flex items-center bg-gray-900/80 border border-gray-700 rounded px-3 focus-within:border-rpg-gold">
-            <Mail size={18} className="text-gray-500" />
-            <input
-              type="email"
-              required
-              autoFocus
-              placeholder="seu@email.com"
-              aria-label="E-mail"
-              className="bg-transparent text-white px-3 py-3 outline-none w-full"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-            />
-          </div>
+          <label className={ROTULO} htmlFor="campo-email">E-mail</label>
+          <input
+            id="campo-email"
+            type="email"
+            required
+            autoFocus
+            placeholder="seu@email.com"
+            className={CAMPO}
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+          />
 
-          <label className="text-left text-xs text-gray-500 uppercase tracking-wide -mb-2">Senha</label>
-          <div className="flex items-center bg-gray-900/80 border border-gray-700 rounded px-3 focus-within:border-rpg-gold">
-            <Lock size={18} className="text-gray-500" />
-            <input
-              type="password"
-              required
-              minLength={modo === 'criar' ? 8 : undefined}
-              placeholder={modo === 'criar' ? 'Mínimo 8 caracteres' : 'Sua senha'}
-              aria-label="Senha"
-              className="bg-transparent text-white px-3 py-3 outline-none w-full"
-              value={senha}
-              onChange={(e) => setSenha(e.target.value)}
-            />
-          </div>
+          <label className={`${ROTULO} mt-2`} htmlFor="campo-senha">Senha</label>
+          <input
+            id="campo-senha"
+            type="password"
+            required
+            minLength={modo === 'criar' ? 8 : undefined}
+            placeholder={modo === 'criar' ? 'Mínimo 8 caracteres' : 'Sua senha'}
+            className={CAMPO}
+            value={senha}
+            onChange={(e) => setSenha(e.target.value)}
+          />
 
           {modo === 'criar' && (
             <>
-              <label className="text-left text-xs text-gray-500 uppercase tracking-wide -mb-2">Confirmar senha</label>
-              <div className={`flex items-center bg-gray-900/80 border rounded px-3 focus-within:border-rpg-gold ${
-                confirmarSenha && !senhasConferem ? 'border-red-700' : 'border-gray-700'
-              }`}>
-                <Lock size={18} className="text-gray-500" />
-                <input
-                  type="password"
-                  required
-                  minLength={8}
-                  placeholder="Digite a senha de novo"
-                  aria-label="Confirmar senha"
-                  className="bg-transparent text-white px-3 py-3 outline-none w-full"
-                  value={confirmarSenha}
-                  onChange={(e) => setConfirmarSenha(e.target.value)}
-                />
-              </div>
+              <label className={`${ROTULO} mt-2`} htmlFor="campo-confirmar">Confirmar senha</label>
+              <input
+                id="campo-confirmar"
+                type="password"
+                required
+                minLength={8}
+                placeholder="Digite a senha de novo"
+                className={`${CAMPO} ${confirmarSenha && !senhasConferem ? 'border-red-600' : ''}`}
+                value={confirmarSenha}
+                onChange={(e) => setConfirmarSenha(e.target.value)}
+              />
               {confirmarSenha && !senhasConferem && (
-                <p className="text-red-500 text-xs text-left -mt-2">As senhas não são iguais.</p>
+                <p className="text-red-400 text-xs font-rpg">As senhas não são iguais.</p>
               )}
             </>
           )}
 
-          <button
+          <PixelButton
             type="submit"
+            variant="dourado"
             disabled={entrar.isPending || !email || !senha || !senhasConferem}
-            className="bg-rpg-gold hover:bg-white text-black font-bold py-3 rounded flex items-center justify-center gap-2 transition-all disabled:opacity-50 mt-2"
+            className="w-full py-4 text-[10px] md:text-xs mt-4"
           >
-            {entrar.isPending ? <Loader2 size={18} className="animate-spin" /> : modo === 'entrar' ? 'Entrar' : 'Criar conta'}
-          </button>
-          {entrar.isError && <p className="text-red-500 text-sm">{mensagemErro}</p>}
+            {entrar.isPending ? <Carregando /> : modo === 'entrar' ? 'ENTRAR' : 'CRIAR CONTA'}
+          </PixelButton>
+          {entrar.isError && <p className="text-red-400 text-sm font-rpg text-center">{mensagemErro}</p>}
         </form>
 
         <button
@@ -191,25 +193,37 @@ export default function Login() {
             setConfirmarSenha('');
             setModo(modo === 'entrar' ? 'criar' : 'entrar');
           }}
-          className="mt-4 text-gray-500 hover:text-rpg-gold text-sm underline decoration-gray-700"
+          className="mt-5 text-gray-400 hover:text-rpg-gold text-sm font-rpg underline decoration-gray-700 hover:decoration-rpg-gold"
         >
           {modo === 'entrar' ? 'Não tem conta? Criar uma' : 'Já tem conta? Entrar'}
         </button>
 
         {opcoes.data?.google_disponivel && (
           <>
-            <div className="flex items-center gap-3 my-6 text-gray-600 text-xs uppercase tracking-widest">
-              <div className="flex-1 h-px bg-gray-800" /> ou <div className="flex-1 h-px bg-gray-800" />
-            </div>
+            <Divisor>ou</Divisor>
+            {/* A marca do Google tem regra própria de apresentação (fundo
+                branco, texto escuro), então este é o único controle do app que
+                fica fora da paleta pixel de propósito. O que dá pra alinhar
+                sem descaracterizar é o canto reto e a borda grossa. */}
             <a
               href={`${API_URL}/auth/google/iniciar`}
-              className="w-full flex items-center justify-center gap-2 bg-white hover:bg-gray-200 text-gray-900 font-bold py-3 rounded transition-all"
+              className="w-full flex items-center justify-center gap-2 bg-white hover:bg-gray-200 text-gray-900 font-bold py-3 border-2 border-black transition-colors"
             >
               Entrar com Google
             </a>
           </>
         )}
       </div>
+    </div>
+  );
+}
+
+function Divisor({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="flex items-center gap-3 my-6 text-gray-400 text-[10px] uppercase tracking-widest font-rpg">
+      <div className="flex-1 h-0.5 bg-gray-700" />
+      {children}
+      <div className="flex-1 h-0.5 bg-gray-700" />
     </div>
   );
 }

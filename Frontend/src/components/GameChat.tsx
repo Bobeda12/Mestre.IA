@@ -2,10 +2,6 @@ import { useState, useEffect, useRef } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { isAxiosError } from 'axios';
-import {
-  Send, Dices, User, Map, AlertTriangle,
-  ThumbsUp, ThumbsDown, Loader2
-} from 'lucide-react';
 import { api, API_URL } from '../lib/api';
 import { postSse } from '../lib/sse';
 import { getLocalImage, limparMarkdownLeve } from '../lib/utils';
@@ -15,10 +11,23 @@ import RollCard, { type DadosRolagem } from './RollCard';
 import StatusCard, { type EventoStatus } from './StatusCard';
 import PixelBar from './PixelBar';
 import Prologo from './Prologo';
-import PixelIcon from './PixelIcon';
+import PixelIcon, { type PixelIconName } from './PixelIcon';
 import PanelFrame from './PanelFrame';
 import PixelButton from './PixelButton';
 import InventoryGrid from './InventoryGrid';
+import Carregando from './Carregando';
+
+// Etapa 14 (revisão) — a ficha virou menu de abas estilo JRPG. Antes tudo
+// (retrato, barras, atributos, missão, inventário) era uma pilha só numa
+// coluna de 320px: ficava espremido e obrigava a rolar pra achar qualquer
+// coisa. Três telas curtas leem melhor e é o vocabulário de menu de console.
+const ABAS = [
+  { id: 'status', rotulo: 'STATUS', icone: 'coracao' },
+  { id: 'itens', rotulo: 'ITENS', icone: 'mochila' },
+  { id: 'missao', rotulo: 'MISSÃO', icone: 'pergaminho' },
+] as const satisfies readonly { id: string; rotulo: string; icone: PixelIconName }[];
+
+type AbaFicha = (typeof ABAS)[number]['id'];
 
 type Message =
   // `turnoIndex` (Etapa 9) chega no frame SSE "state", junto do resto do
@@ -90,6 +99,7 @@ export default function GameChat() {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [showSidebar, setShowSidebar] = useState(true);
+  const [abaAtiva, setAbaAtiva] = useState<AbaFicha>('status');
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // FICHA — sempre a verdade que vem do backend (load_game / chat)
@@ -371,7 +381,7 @@ export default function GameChat() {
   if (notFound) {
     return (
         <div className="h-screen w-screen bg-black flex flex-col items-center justify-center text-gray-300 gap-4">
-            <AlertTriangle size={48} className="text-red-600"/>
+            <PixelIcon name="alerta" size={48}/>
             <h1 className="text-2xl font-rpg">Essa jornada não existe mais</h1>
             <p className="text-gray-500 text-sm">O save "{sessionId}" não foi encontrado no servidor.</p>
             <button onClick={() => navigate('/')} className="mt-4 border-2 border-gray-700 px-4 py-2 text-gray-400 hover:text-white hover:border-gray-500">Voltar ao menu</button>
@@ -491,72 +501,108 @@ export default function GameChat() {
               </div>
           </div>
 
-          <div className="p-4 space-y-6 overflow-y-auto custom-scrollbar flex-1">
-              {/* Foto */}
-              <div className="pixel-frame w-full aspect-[3/4] bg-black relative shadow-lg overflow-hidden">
-                   <img src={charImage} className="w-full h-full object-cover opacity-90" onError={(e) => (e.currentTarget.src = "https://via.placeholder.com/300x400")}/>
-                   <div className="absolute bottom-0 w-full bg-gradient-to-t from-black via-black/80 to-transparent p-3 pt-8">
-                       <p className="text-white font-rpg text-lg">{charName}</p>
-                       <p className="text-xs text-gray-400 uppercase tracking-wide">{charRace} {charClass}</p>
+          {/* Retrato + nome: fica FORA das abas, sempre visível. É a âncora de
+              identidade do menu — em JRPG o retrato não some quando você troca
+              de aba, só o conteúdo abaixo dele muda. */}
+          <div className="p-3 pb-0 shrink-0">
+              <div className="pixel-frame w-full aspect-[4/3] bg-black relative overflow-hidden">
+                   <img src={charImage} alt="" className="w-full h-full object-cover object-top opacity-90" onError={(e) => (e.currentTarget.style.display = 'none')}/>
+                   <div className="absolute bottom-0 w-full bg-gradient-to-t from-black via-black/85 to-transparent p-2 pt-8">
+                       <p className="text-white font-rpg text-lg leading-tight">{charName}</p>
+                       <p className="text-[10px] text-gray-300 uppercase tracking-wide font-rpg">{charRace} {charClass}</p>
                    </div>
               </div>
+          </div>
 
-              {/* Vida, Nível/XP e Defesa */}
-              <div className="bg-gray-800/30 p-3 border-2 border-gray-700 space-y-3">
-                  <div>
-                    <div className="flex justify-between text-xs font-bold uppercase mb-1"><span>Vida</span><span>{hpAtual}/{hpMax}</span></div>
-                    <PixelBar value={hpAtual} max={hpMax} colorClass="bg-red-600" />
-                  </div>
-                  <div>
-                    <div className="flex justify-between text-xs font-bold uppercase mb-1">
-                      <span className="flex items-center gap-1"><PixelIcon name="estrela" size={11}/> Nível {nivel}</span>
-                      <span>{xpProximoNivel != null ? `${xp}/${xpProximoNivel} XP` : "XP máximo"}</span>
-                    </div>
-                    <PixelBar
-                      value={xpProximoNivel != null ? xp : 1}
-                      max={xpProximoNivel != null ? xpProximoNivel : 1}
-                      colorClass="bg-rpg-gold"
-                    />
-                  </div>
-                  <div className="flex justify-between items-center pt-2 border-t border-gray-800/50">
-                     <span className="flex items-center gap-2 text-xs text-gray-400 font-bold uppercase"><PixelIcon name="escudo" size={14}/> Defesa</span>
-                     <span className="text-blue-200 font-rpg text-lg">{defesa ?? "?"}</span>
-                  </div>
-              </div>
+          {/* Abas. A ficha inteira empilhada numa coluna de 320px ficava
+              espremida e obrigava a rolar pra achar qualquer coisa; separada em
+              três telas, cada uma respira. Um `role="tablist"` de verdade, pra
+              seta do teclado e leitor de tela funcionarem como o esperado. */}
+          <div role="tablist" aria-label="Ficha do personagem" className="flex shrink-0 px-3 pt-3 gap-1">
+              {ABAS.map((aba) => (
+                  <button
+                      key={aba.id}
+                      role="tab"
+                      id={`aba-${aba.id}`}
+                      aria-selected={abaAtiva === aba.id}
+                      aria-controls={`painel-${aba.id}`}
+                      onClick={() => setAbaAtiva(aba.id)}
+                      className={`flex-1 flex items-center justify-center gap-1 py-2 border-2 text-[9px] font-pixel-title transition-colors focus-visible:outline-none focus-visible:border-rpg-gold ${
+                          abaAtiva === aba.id
+                              ? 'border-rpg-gold bg-rpg-gold/20 text-rpg-gold'
+                              : 'border-gray-700 bg-black/40 text-gray-400 hover:text-gray-200 hover:border-gray-500'
+                      }`}
+                  >
+                      <PixelIcon name={aba.icone} size={12} />
+                      <span className="hidden sm:inline">{aba.rotulo}</span>
+                  </button>
+              ))}
+          </div>
 
-               {/* Atributos (Sidebar) */}
-               <div className="grid grid-cols-3 gap-2">
-                  <div className="bg-gray-800/40 p-2 text-center border-2 border-gray-700">
-                      <span className="text-[9px] text-gray-500 block">FOR</span>
-                      <span className="font-rpg text-gray-200">{attributes.forca}</span>
+          <div
+              role="tabpanel"
+              id={`painel-${abaAtiva}`}
+              aria-labelledby={`aba-${abaAtiva}`}
+              className="p-3 space-y-4 overflow-y-auto custom-scrollbar flex-1"
+          >
+              {abaAtiva === 'status' && (
+                <div className="space-y-4 animate-fade-in">
+                  <div className="bg-black/50 p-3 border-2 border-gray-700 space-y-3">
+                      <div>
+                        <div className="flex justify-between text-xs font-bold uppercase mb-1 font-rpg"><span>Vida</span><span>{hpAtual}/{hpMax}</span></div>
+                        <PixelBar value={hpAtual} max={hpMax} colorClass="bg-red-600" />
+                      </div>
+                      <div>
+                        <div className="flex justify-between text-xs font-bold uppercase mb-1 font-rpg">
+                          <span className="flex items-center gap-1"><PixelIcon name="estrela" size={11}/> Nível {nivel}</span>
+                          <span>{xpProximoNivel != null ? `${xp}/${xpProximoNivel} XP` : "XP máximo"}</span>
+                        </div>
+                        <PixelBar
+                          value={xpProximoNivel != null ? xp : 1}
+                          max={xpProximoNivel != null ? xpProximoNivel : 1}
+                          colorClass="bg-rpg-gold"
+                        />
+                      </div>
+                      <div className="flex justify-between items-center pt-2 border-t-2 border-gray-700">
+                         <span className="flex items-center gap-2 text-xs text-gray-200 font-bold uppercase font-rpg"><PixelIcon name="escudo" size={14}/> Defesa</span>
+                         <span className="text-blue-200 font-rpg text-lg">{defesa ?? "?"}</span>
+                      </div>
                   </div>
-                  <div className="bg-gray-800/40 p-2 text-center border-2 border-gray-700">
-                      <span className="text-[9px] text-gray-500 block">DES</span>
-                      <span className="font-rpg text-gray-200">{attributes.destreza}</span>
-                  </div>
-                  <div className="bg-gray-800/40 p-2 text-center border-2 border-gray-700">
-                      <span className="text-[9px] text-gray-500 block">INT</span>
-                      <span className="font-rpg text-gray-200">{attributes.inteligencia}</span>
-                  </div>
-              </div>
 
-              {/* Missão */}
-              {quest && (
-                  <div className="bg-blue-900/10 border-2 border-blue-900/30 p-3 relative">
-                      <h3 className="text-[10px] text-blue-400 uppercase font-bold mb-1 tracking-widest flex items-center gap-2"><Map size={12}/> Missão</h3>
-                      <p className="text-sm text-blue-100 font-serif leading-tight">{quest.nome_missao}</p>
-                      <p className="text-[10px] text-gray-400 mt-1 italic">"{quest.objetivo_missao}"</p>
+                  <div className="grid grid-cols-3 gap-2">
+                     {([['FOR', attributes.forca], ['DES', attributes.destreza], ['INT', attributes.inteligencia]] as const).map(([sigla, valor]) => (
+                       <div key={sigla} className="bg-black/50 p-2 text-center border-2 border-gray-700">
+                           <span className="text-[9px] text-gray-300 block font-rpg">{sigla}</span>
+                           <span className="font-rpg text-xl text-gray-100">{valor}</span>
+                       </div>
+                     ))}
                   </div>
+                </div>
               )}
 
-              {/* Inventário — Etapa 14 (C-6): grade de slots em vez de lista */}
-              <div>
-                  <div className="flex items-center justify-between mb-2">
-                      <h3 className="text-xs text-gray-500 uppercase font-bold flex items-center gap-2"><PixelIcon name="mochila" size={12}/> Inventário</h3>
-                      <span className="text-xs text-rpg-gold font-rpg flex items-center gap-1"><PixelIcon name="moeda" size={12}/> {ouro}</span>
-                  </div>
-                  <InventoryGrid items={inventory} />
-              </div>
+              {abaAtiva === 'itens' && (
+                <div className="space-y-2 animate-fade-in">
+                    <div className="flex items-center justify-between">
+                        <h3 className="text-[10px] text-gray-300 uppercase font-rpg tracking-widest flex items-center gap-2"><PixelIcon name="mochila" size={12}/> Mochila</h3>
+                        <span className="text-sm text-rpg-gold font-rpg flex items-center gap-1"><PixelIcon name="moeda" size={14}/> {ouro}</span>
+                    </div>
+                    <InventoryGrid items={inventory} />
+                </div>
+              )}
+
+              {abaAtiva === 'missao' && (
+                <div className="animate-fade-in">
+                  {quest ? (
+                      <div className="bg-black/50 border-2 border-blue-800 p-3">
+                          <h3 className="text-[10px] text-blue-300 uppercase font-rpg mb-2 tracking-widest">Missão atual</h3>
+                          <p className="text-base text-blue-100 font-rpg leading-tight mb-2">{quest.nome_missao}</p>
+                          <p className="text-xs text-gray-200 leading-relaxed">{quest.objetivo_missao}</p>
+                      </div>
+                  ) : (
+                      <p className="text-sm text-gray-400 font-rpg text-center py-8">Nenhuma missão em andamento.</p>
+                  )}
+                </div>
+              )}
           </div>
       </div>
 
@@ -632,7 +678,7 @@ export default function GameChat() {
                                 disabled={reivindicarEnviando}
                                 className="flex-1 py-2 text-sm"
                             >
-                                {reivindicarEnviando ? <Loader2 size={16} className="animate-spin mx-auto" /> : 'Salvar'}
+                                {reivindicarEnviando ? <Carregando rotulo="Salvando" /> : 'Salvar'}
                             </PixelButton>
                         </div>
                     </div>
@@ -721,7 +767,7 @@ export default function GameChat() {
                     return (
                         <div key={idx} className="flex justify-center my-2 animate-fade-in">
                             <div className="bg-yellow-900/20 border border-yellow-700/30 text-yellow-500 px-4 py-2 text-xs font-mono flex items-center gap-2">
-                                <Dices size={12}/> {msg.content}
+                                <PixelIcon name="dado" size={12}/> {msg.content}
                             </div>
                         </div>
                     );
@@ -733,11 +779,11 @@ export default function GameChat() {
                              {isUser ? (
                                  <img src={charImage} className="w-full h-full object-cover" onError={(e) => {e.currentTarget.style.display='none'}}/>
                              ) : msg.isError ? (
-                                 <AlertTriangle size={16} className="text-amber-500"/>
+                                 <PixelIcon name="alerta" size={16}/>
                              ) : (
-                                 <Dices size={16} className="text-rpg-gold"/>
+                                 <PixelIcon name="dado" size={16}/>
                              )}
-                             {isUser && <User size={16} className="text-blue-400 absolute -z-10"/>}
+                             {isUser && <PixelIcon name="rosto" size={16} className="absolute -z-10"/>}
                         </div>
 
                         <div className={`max-w-[85%] p-3.5 text-sm md:text-base leading-relaxed shadow-lg backdrop-blur-sm
@@ -793,14 +839,14 @@ export default function GameChat() {
                                             disabled={msg.feedback !== undefined}
                                             aria-label="Gostei desta narração"
                                             className={`p-1 transition-colors ${msg.feedback === 1 ? 'text-emerald-500' : 'text-gray-600 hover:text-emerald-500 disabled:hover:text-gray-600'}`}
-                                        ><ThumbsUp size={13}/></button>
+                                        ><PixelIcon name="polegar-cima" size={13}/></button>
                                         <button
                                             type="button"
                                             onClick={() => { if (msg.feedback === undefined) setComentarioAbertoIdx(idx); }}
                                             disabled={msg.feedback !== undefined}
                                             aria-label="Não gostei desta narração"
                                             className={`p-1 transition-colors ${msg.feedback === -1 ? 'text-red-500' : 'text-gray-600 hover:text-red-500 disabled:hover:text-gray-600'}`}
-                                        ><ThumbsDown size={13}/></button>
+                                        ><PixelIcon name="polegar-baixo" size={13}/></button>
                                     </div>
                                 )
                             )}
@@ -831,7 +877,7 @@ export default function GameChat() {
                     aria-label="Enviar ação"
                     className="h-10 w-10 bg-gray-800 hover:bg-gray-700 text-rpg-gold flex items-center justify-center transition-all mt-1 mr-1 border border-gray-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rpg-gold disabled:opacity-40"
                 >
-                    <Send size={18}/>
+                    <PixelIcon name="enviar" size={18}/>
                 </button>
             </div>
         </div>
