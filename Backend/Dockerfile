@@ -8,14 +8,6 @@ RUN uv sync --frozen --no-dev
 
 COPY . .
 
-# Etapa 10 (A-6) — baixa o modelo de embedding AGORA, uma vez, na imagem
-# (não em `/tmp`, ver app/infra/embeddings.py:CACHE_DIR — alguns runtimes
-# de container montam um tmpfs por cima de `/tmp`, o que apagaria isto
-# antes do container sequer subir). Sem isto, o primeiro pedido da
-# primeira sessão numa máquina nova pagava o download inteiro do
-# HuggingFace dentro do turno de um jogador de verdade.
-RUN uv run --no-dev python -c "from app.infra.embeddings import carregar_modelo; carregar_modelo()"
-
 EXPOSE 8000
 
 # `uv run` faz um sync implícito antes de rodar — sem --no-dev aqui, ele
@@ -23,7 +15,7 @@ EXPOSE 8000
 # rede à toa num ambiente que não precisa de nenhum dos dois.
 #
 # `alembic upgrade head` voltou pra cá (migração Fly.io → Render, ver
-# ADR-0016). Na Etapa 10 (A-6) tinha saído daqui porque o Fly tinha um
+# ADR-0022). Na Etapa 10 (A-6) tinha saído daqui porque o Fly tinha um
 # `release_command` (roda uma vez por deploy, fora do CMD); o Render no
 # plano free não tem equivalente, então volta a rodar a cada boot de
 # máquina — idempotente e barato (é um no-op se já está na head), o custo

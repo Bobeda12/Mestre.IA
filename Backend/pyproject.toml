@@ -8,12 +8,9 @@ dependencies = [
     "uvicorn[standard]>=0.38,<0.39",
     "pydantic>=2.12,<3",
     "pydantic-settings>=2.7,<3",
-    "groq>=0.37,<0.38",
     "sqlalchemy>=2.0,<3",
     "alembic>=1.14,<2",
     "tenacity>=9.0,<10",
-    "fastembed>=0.4,<1",
-    "onnxruntime>=1.20",
     "rank-bm25>=0.2,<0.3",
     "httpx>=0.28,<1",
     "pyyaml>=6.0,<7",
@@ -21,6 +18,11 @@ dependencies = [
     "slowapi>=0.1.9,<1",
     "langfuse>=4.14.4",
     "resend>=2.39.0",
+    # Etapa 14 (ADR-0024) — substitui `groq` (SDK específico de um provedor
+    # só): Groq, Gemini e outros provedores compatíveis expõem endpoint
+    # OpenAI-compatible (`base_url` diferente por cliente), então um SDK só
+    # serve os dois em app/infra/llm_client.py.
+    "openai>=3.3,<4",
 ]
 
 [dependency-groups]

@@ -33,7 +33,8 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
-from app.infra.llm_client import MODELOS, chamar_com_fallback, chamar_modelo_unico
+from app.infra.llm_client import chamar_com_fallback, chamar_modelo_unico
+from app.infra.settings import settings
 from evals import metrics
 from evals.harness import ResultadoCenario, rodar_cenario
 from evals.judge import julgar_lote, media_por_eixo, taxa_parse_valido
@@ -157,10 +158,12 @@ def main() -> None:
     parser.add_argument("--categoria", action="append", help="Filtra por categoria; repita a flag para várias.")
     parser.add_argument("--amostra-por-categoria", type=int, default=None, help="Amostra N cenários por categoria.")
     parser.add_argument("--seed", type=int, default=42, help="Seed da amostragem (--amostra-por-categoria).")
-    parser.add_argument("--modelo", default=None, help="Mira um modelo Groq (bypassa a cadeia de fallback).")
-    parser.add_argument("--bake-off", action="store_true", help="Roda contra os 3 modelos da cadeia.")
+    parser.add_argument(
+        "--modelo", default=None, help="Mira um modelo específico ('provedor:modelo', bypassa a cadeia)."
+    )
+    parser.add_argument("--bake-off", action="store_true", help="Roda contra cada elo de settings.cadeia_llm.")
     parser.add_argument("--sem-juiz", action="store_true", help="Pula o LLM-as-judge (só métricas).")
-    parser.add_argument("--juiz-modelo", default=None, help="Modelo do juiz (default: settings.model_name).")
+    parser.add_argument("--juiz-modelo", default=None, help="Modelo do juiz (default: settings.modelo_barato).")
     parser.add_argument("--comparar-baseline", action="store_true", help="Sai com 1 se ficar abaixo do baseline.")
     parser.add_argument("--salvar-baseline", action="store_true", help="Grava a pontuação atual em baseline.json.")
     parser.add_argument("--margem", type=float, default=0.05, help="Margem tolerada ao salvar o baseline.")
@@ -174,7 +177,7 @@ def main() -> None:
         print("Nenhum cenário selecionado — confira --categoria.")
         sys.exit(1)
 
-    modelos_alvo = MODELOS if args.bake_off else [args.modelo] if args.modelo else [None]
+    modelos_alvo = settings.cadeia_llm if args.bake_off else [args.modelo] if args.modelo else [None]
     relatorio: dict[str, Any] = {"n_cenarios": len(cenarios), "modelos": {}}
     ultima_pontuacao = 0.0
     ultimos_resultados: list[ResultadoCenario] = []

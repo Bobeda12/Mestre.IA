@@ -9,8 +9,8 @@ import json
 from app.domain.character import CharacterCreationRequest
 from app.domain.memoria import ResumoRolante
 from app.domain.state import CombatState, QuestLog, WorldState
+from app.infra import llm_client
 from app.infra.db import Personagem
-from app.services import narrator
 from app.services.narrator import gerar_prologo_missao, montar_contexto
 
 
@@ -117,34 +117,36 @@ class TestGerarPrologoMissaoLocalInicial:
     local do catálogo, mas quem garante é a checagem no servidor."""
 
     def test_local_invalido_do_modelo_e_substituido_pelo_padrao(self, monkeypatch):
+        provedor_principal, _ = llm_client.CADEIA[0]
         monkeypatch.setattr(
-            narrator, "client",
-            _ClienteFalso({
+            llm_client, "clients",
+            {provedor_principal: _ClienteFalso({
                 "local_inicial": "Ruínas de Gralhoth",  # não existe no catálogo
                 "clima_inicial": "Nublado",
                 "nome_missao": "Missão",
                 "objetivo_missao": "Objetivo",
                 "intro_narrativa": "Texto.",
-            }),
+            })},
         )
         roteiro = gerar_prologo_missao(_personagem_criacao())
         assert roteiro["local_inicial"] == "Vila de Phandalin"
 
     def test_local_valido_do_modelo_e_mantido(self, monkeypatch):
+        provedor_principal, _ = llm_client.CADEIA[0]
         monkeypatch.setattr(
-            narrator, "client",
-            _ClienteFalso({
+            llm_client, "clients",
+            {provedor_principal: _ClienteFalso({
                 "local_inicial": "Floresta das Sombras",
                 "clima_inicial": "Nublado",
                 "nome_missao": "Missão",
                 "objetivo_missao": "Objetivo",
                 "intro_narrativa": "Texto.",
-            }),
+            })},
         )
         roteiro = gerar_prologo_missao(_personagem_criacao())
         assert roteiro["local_inicial"] == "Floresta das Sombras"
 
     def test_sem_client_cai_no_local_padrao_do_catalogo(self, monkeypatch):
-        monkeypatch.setattr(narrator, "client", None)
+        monkeypatch.setattr(llm_client, "clients", {})
         roteiro = gerar_prologo_missao(_personagem_criacao())
         assert roteiro["local_inicial"] == "Vila de Phandalin"

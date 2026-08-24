@@ -1,6 +1,4 @@
 import logging
-from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -8,7 +6,6 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 
-from app.infra import embeddings
 from app.infra.rate_limit import limiter
 from app.infra.settings import settings
 from app.routers import auth, character, game, options, personagens
@@ -21,22 +18,11 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s
 
 logger = logging.getLogger(__name__)
 
-
-@asynccontextmanager
-async def _lifespan(_app: FastAPI) -> AsyncIterator[None]:
-    # Etapa 10 (A-6) — antes disto, o modelo de embedding só carregava no
-    # primeiro pedido que precisasse dele (`services/memory.py`), ou seja,
-    # dentro do turno de algum jogador. Carregar no boot paga esse custo
-    # antes do primeiro pedido, não durante ele — com o cache já baixado em
-    # build time (Dockerfile), isto é leitura de disco, não download de
-    # rede, então não atrasa o `/health` check do Fly.io de forma sensível.
-    logger.info("Carregando modelo de embeddings no boot...")
-    embeddings.carregar_modelo()
-    logger.info("Modelo de embeddings carregado.")
-    yield
-
-
-app = FastAPI(title="Mestre.IA", lifespan=_lifespan)
+# Etapa 14 (ADR-0023) — não há mais `lifespan` nenhum aqui: o modelo de
+# embedding que precisava de um preload em memória no boot (Etapa 10, A-6)
+# virou uma chamada de API (app/infra/embeddings.py). Não existe mais custo
+# de "primeira chamada" para pagar antes do primeiro pedido de um jogador.
+app = FastAPI(title="Mestre.IA")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins_list,

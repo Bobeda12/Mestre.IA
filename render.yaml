@@ -20,6 +20,15 @@ services:
         sync: false
       - key: GROQ_API_KEY
         sync: false
+      # Etapa 14 (ADR-0023/ADR-0024) — sem cartão, em
+      # aistudio.google.com/apikey. Obrigatória de verdade agora (não só
+      # "opcional que degrada"): sem ela, embeddings caem para busca só
+      # léxica (BM25) e a cadeia de chat perde o segundo provedor — no
+      # plano free do Render, é o que mantém o processo web dentro dos
+      # 512 MB (ver ADR-0023: o modelo local de embedding sozinho já
+      # passava disso).
+      - key: GEMINI_API_KEY
+        sync: false
       # console.cloud.google.com/apis/credentials
       - key: GOOGLE_CLIENT_ID
         sync: false

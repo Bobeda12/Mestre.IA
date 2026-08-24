@@ -1,41 +1,33 @@
 import json
 
-import groq
-
 from app.domain.character import CharacterCreationRequest
 from app.domain.memoria import ResumoRolante
 from app.domain.state import CombatState, QuestLog, WorldState
+from app.infra import llm_client
 from app.infra.data_manager import regras
 from app.infra.db import Personagem
-from app.infra.llm_client import MODEL_NAME, ErroMestre, client
+from app.infra.llm_client import ErroMestre
+from app.infra.settings import settings
 
 __all__ = ["ErroMestre", "chamar_mestre", "gerar_prologo_missao", "montar_contexto"]
 
 
 def chamar_mestre(msgs: list[dict]) -> dict:
     """Chama o LLM e devolve o JSON já decodificado, ou levanta ErroMestre
-    com uma mensagem específica para cada tipo de falha (nunca engole o
-    erro em silêncio — ver ADR-0002, Etapa 1)."""
-    if not client:
+    (nunca engole o erro em silêncio — ver ADR-0002, Etapa 1). A tradução de
+    erro de API para `ErroMestre` mora em `chamar_modelo_unico`
+    (app/infra/llm_client.py) — o mesmo caminho usado por qualquer outra
+    chamada única do projeto, não uma cópia local."""
+    if not llm_client.clients:
         raise ErroMestre(
-            "O mestre está sem acesso à IA — falta configurar a chave da Groq no servidor (GROQ_API_KEY)."
+            "O mestre está sem acesso à IA — falta configurar ao menos uma chave de API "
+            "no servidor (GROQ_API_KEY ou GEMINI_API_KEY)."
         )
-    try:
-        # Só o prólogo (gerar_prologo_missao) ainda usa este caminho em modo
-        # JSON solto — não tem estado de jogo para chamar ferramenta nenhuma,
-        # é uma chamada única. O turno de jogo (routers/game.py) usa
-        # services/agent_loop.py + tool calling nativo desde a Etapa 4.
-        resp = client.chat.completions.create(
-            model=MODEL_NAME, messages=msgs, response_format={"type": "json_object"}  # type: ignore[call-overload]
-        )
-    except groq.RateLimitError as e:
-        raise ErroMestre("A cota de uso da IA acabou por agora. Espere um pouco e tente de novo.") from e
-    except groq.APITimeoutError as e:
-        raise ErroMestre("O mestre demorou demais para responder. Tente enviar a ação de novo.") from e
-    except groq.APIConnectionError as e:
-        raise ErroMestre("Não foi possível conectar ao serviço de IA. Verifique sua internet.") from e
-    except groq.APIStatusError as e:
-        raise ErroMestre(f"O serviço de IA recusou o pedido (código {e.status_code}).") from e
+    # Só o prólogo (gerar_prologo_missao) ainda usa este caminho em modo
+    # JSON solto — não tem estado de jogo para chamar ferramenta nenhuma, é
+    # uma chamada única. O turno de jogo (routers/game.py) usa
+    # services/agent_loop.py + tool calling nativo desde a Etapa 4.
+    resp = llm_client.chamar_modelo_unico(settings.cadeia_llm[0], msgs, response_format={"type": "json_object"})
 
     try:
         return json.loads(resp.choices[0].message.content)
@@ -54,7 +46,7 @@ def gerar_prologo_missao(char: CharacterCreationRequest) -> dict:
     locais_validos = regras.get_locations_list()
     local_padrao = "Vila de Phandalin" if "Vila de Phandalin" in locais_validos else locais_validos[0]
 
-    if not client:
+    if not llm_client.clients:
         return {
             "local_inicial": local_padrao,
             "clima_inicial": "Nublado",

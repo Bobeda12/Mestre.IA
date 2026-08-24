@@ -140,9 +140,9 @@ def test_convidado_tem_rate_limit_por_ip(client):
 
 
 def test_reivindicar_mantem_o_mesmo_usuario_e_os_herois(client, monkeypatch):
-    from app.services import narrator
+    from app.infra import llm_client
 
-    monkeypatch.setattr(narrator, "client", None)
+    monkeypatch.setattr(llm_client, "clients", {})
     client.post("/auth/convidado")
     criado = client.post("/create_character", json=_payload_base(nome="HeroiConvidado"))
     assert criado.status_code == 200
@@ -184,10 +184,10 @@ def test_reivindicar_sem_login_devolve_401(client):
 def test_convidado_de_outro_nao_enxerga_heroi_do_outro(dois_clientes, monkeypatch):
     """Mesmo teste de IDOR da Etapa 8 (`dois_clientes`), mas com dois
     convidados em vez de duas contas com e-mail."""
+    from app.infra import llm_client
     from app.infra.rate_limit import limiter
-    from app.services import narrator
 
-    monkeypatch.setattr(narrator, "client", None)
+    monkeypatch.setattr(llm_client, "clients", {})
     cliente_a, cliente_b = dois_clientes
     cliente_a.post("/auth/convidado")
     # O TestClient não distingue IP entre os dois clientes (mesmo processo) —
@@ -299,9 +299,9 @@ def test_login_com_senha_em_conta_so_google_e_rejeitado(client, monkeypatch):
 
 
 def test_personagem_de_outro_usuario_devolve_403(dois_clientes, monkeypatch):
-    from app.services import narrator
+    from app.infra import llm_client
 
-    monkeypatch.setattr(narrator, "client", None)
+    monkeypatch.setattr(llm_client, "clients", {})
     cliente_a, cliente_b = dois_clientes
     _registrar(cliente_a, "dona@teste.com")
     _registrar(cliente_b, "intrusa@teste.com")
@@ -323,9 +323,9 @@ def test_personagem_de_outro_usuario_devolve_403(dois_clientes, monkeypatch):
 
 
 def test_personagens_lista_so_os_do_dono(dois_clientes, monkeypatch):
-    from app.services import narrator
+    from app.infra import llm_client
 
-    monkeypatch.setattr(narrator, "client", None)
+    monkeypatch.setattr(llm_client, "clients", {})
     cliente_a, cliente_b = dois_clientes
     _registrar(cliente_a, "colecionador@teste.com")
     _registrar(cliente_b, "outrocolecionador@teste.com")
@@ -340,9 +340,9 @@ def test_personagens_lista_so_os_do_dono(dois_clientes, monkeypatch):
 
 
 def test_arquivar_personagem_de_outro_usuario_devolve_403(dois_clientes, monkeypatch):
-    from app.services import narrator
+    from app.infra import llm_client
 
-    monkeypatch.setattr(narrator, "client", None)
+    monkeypatch.setattr(llm_client, "clients", {})
     cliente_a, cliente_b = dois_clientes
     _registrar(cliente_a, "dona2@teste.com")
     _registrar(cliente_b, "intrusa2@teste.com")

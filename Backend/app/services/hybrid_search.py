@@ -72,6 +72,14 @@ def busca_lexica(query: str, documentos: list[Documento]) -> list[int]:
 
 
 def _cosseno(a: list[float], b: list[float]) -> float:
+    if len(a) != len(b):
+        # Etapa 14 (ADR-0023) — eventos gravados antes da troca do modelo
+        # local de embedding (384 dim) para a API do Gemini (768 dim) ainda
+        # têm o vetor antigo. Dimensões diferentes nunca são comparáveis;
+        # tratar como "sem similaridade" (em vez de deixar o zip() abaixo
+        # levantar ValueError) degrada esse documento para busca só léxica,
+        # sem derrubar a busca inteira.
+        return 0.0
     produto = sum(x * y for x, y in zip(a, b, strict=True))
     norma_a = math.sqrt(sum(x * x for x in a))
     norma_b = math.sqrt(sum(y * y for y in b))

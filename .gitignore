@@ -14,9 +14,6 @@ Backend/.mypy_cache/
 Backend/.coverage
 *.db
 *.sqlite3
-# Cache local do modelo de embeddings (Etapa 10, A-6) — em produção é baixado
-# em build time (Dockerfile); local, cada dev baixa o próprio.
-Backend/fastembed_cache/
 
 # --- AVALIAÇÃO (Etapa 6) ---
 # Saída de rodadas de evals/run_eval.py (--salvar-cache/--salvar-relatorio) —

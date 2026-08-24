@@ -13,7 +13,6 @@ from fastapi.testclient import TestClient
 
 from app.infra import llm_client
 from app.main import app
-from app.services import narrator
 
 client = TestClient(app)
 
@@ -51,7 +50,7 @@ def test_criar_e_carregar_personagem(monkeypatch):
     dependência da cota da Groq, não importa se quem roda o pytest tem
     GROQ_API_KEY configurada ou não.
     """
-    monkeypatch.setattr(narrator, "client", None)
+    monkeypatch.setattr(llm_client, "clients", {})
 
     criado = client.post(
         "/create_character",
@@ -126,7 +125,7 @@ def test_atributos_livre_sem_direito_a_raca_e_rejeitado():
 
 
 def test_atributos_livre_do_meio_elfo_e_aceito(monkeypatch):
-    monkeypatch.setattr(narrator, "client", None)
+    monkeypatch.setattr(llm_client, "clients", {})
     # Meio-Elfo (data/races.json): +2 carisma fixo, 2 pontos livres.
     payload = _payload_base(raca="Meio-Elfo", atributos_livre=["forca", "destreza"])
     resp = client.post("/create_character", json=payload)
@@ -147,7 +146,7 @@ def test_atributos_livre_em_atributo_com_bonus_fixo_e_rejeitado():
 def test_imagem_persiste_e_volta_no_load_game(monkeypatch):
     # Etapa 11 (B-3): a foto gerada na criação não pode mais se perder ao
     # recarregar — antes só vivia em `location.state`, agora é uma coluna.
-    monkeypatch.setattr(narrator, "client", None)
+    monkeypatch.setattr(llm_client, "clients", {})
     payload = _payload_base(imagem="https://image.pollinations.ai/prompt/teste")
     resp = client.post("/create_character", json=payload)
     assert resp.status_code == 200
@@ -158,7 +157,7 @@ def test_imagem_persiste_e_volta_no_load_game(monkeypatch):
 def test_historia_texto_persiste_e_volta_no_load_game(monkeypatch):
     # Etapa 11 (B-7, resolve P-4): antes, historia_texto entrava no prompt
     # do prólogo e nunca era gravado — a tela de abertura precisa dele.
-    monkeypatch.setattr(narrator, "client", None)
+    monkeypatch.setattr(llm_client, "clients", {})
     payload = _payload_base(historia_texto="Nasceu numa vila que o fogo levou.")
     resp = client.post("/create_character", json=payload)
     assert resp.status_code == 200
@@ -167,7 +166,7 @@ def test_historia_texto_persiste_e_volta_no_load_game(monkeypatch):
 
 
 def test_historia_texto_vira_primeiro_evento_de_memoria(monkeypatch):
-    monkeypatch.setattr(narrator, "client", None)
+    monkeypatch.setattr(llm_client, "clients", {})
     payload = _payload_base(nome="TesteMemoriaHistoria", historia_texto="Um segredo que ninguém mais sabe.")
     resp = client.post("/create_character", json=payload)
     session_id = resp.json()["session_id"]
@@ -186,7 +185,7 @@ def test_historia_texto_vira_primeiro_evento_de_memoria(monkeypatch):
 
 
 def test_historia_texto_vazia_nao_cria_evento_de_memoria(monkeypatch):
-    monkeypatch.setattr(narrator, "client", None)
+    monkeypatch.setattr(llm_client, "clients", {})
     payload = _payload_base(nome="TesteSemHistoria")
     resp = client.post("/create_character", json=payload)
     session_id = resp.json()["session_id"]
@@ -211,11 +210,10 @@ def test_chat_sem_chave_de_api_devolve_mensagem_explicita(monkeypatch):
     """O bug original (api.py, versão anterior às Etapas 1 e 2) engolia qualquer
     erro num `except:` nu e respondia sempre a mesma narrativa "...". Agora
     cada causa de falha tem uma mensagem própria — aqui testamos a mais
-    comum: a chave da Groq não está configurada. `/chat` passa pelo loop de
-    agente (Etapa 4), que consulta `llm_client.client` — não mais
-    `narrator.client`, usado só pelo prólogo do `/create_character`."""
-    monkeypatch.setattr(narrator, "client", None)
-    monkeypatch.setattr(llm_client, "client", None)
+    comum: nenhuma chave de API configurada. `/chat` (loop de agente, Etapa
+    4) e `/create_character` (prólogo, narrator.py) checam o mesmo
+    `llm_client.clients` (Etapa 14, ADR-0024) — um só patch cobre os dois."""
+    monkeypatch.setattr(llm_client, "clients", {})
     criado = client.post("/create_character", json=_payload_base(nome="TesteErro"))
     session_id = criado.json()["session_id"]
 
@@ -247,7 +245,7 @@ def test_chat_com_ferramenta_chamada_de_ponta_a_ponta(monkeypatch):
     from app.services import agent_loop
     from tests.test_agent_loop import _LLMFalso, _MensagemFalsa, _ToolCallFalso
 
-    monkeypatch.setattr(narrator, "client", None)  # prólogo cai no fallback determinístico, sem rede
+    monkeypatch.setattr(llm_client, "clients", {})  # prólogo cai no fallback determinístico, sem rede
     criado = client.post("/create_character", json=_payload_base(nome="TesteFerramentaChat"))
     assert criado.status_code == 200
     session_id = criado.json()["session_id"]
@@ -279,7 +277,7 @@ def test_chat_stream_de_ponta_a_ponta(monkeypatch):
     from app.services import agent_loop
     from tests.test_agent_loop import _ChunkFalso, _DeltaFalso, _DeltaToolCallFalso, _StreamLLMFalso
 
-    monkeypatch.setattr(narrator, "client", None)
+    monkeypatch.setattr(llm_client, "clients", {})
     criado = client.post("/create_character", json=_payload_base(nome="TesteStreamChat"))
     assert criado.status_code == 200
     session_id = criado.json()["session_id"]

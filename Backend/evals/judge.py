@@ -2,10 +2,10 @@
 de um cenário em 4 eixos, 1-5, com uma rubrica fixa. Roda DEPOIS da
 narrativa já gerada — não influencia o turno em si, só avalia o resultado.
 
-Limitação registrada, não escondida (ver ADR-0011): por padrão o juiz usa o
-mesmo modelo mais forte da cadeia de fallback do narrador
-(`settings.model_name`) — não há um segundo provedor/família neste projeto
-(ADR-0008) para separar "quem narra" de "quem julga" de verdade."""
+Limitação do ADR-0011 resolvida na Etapa 14 (ADR-0024): por padrão o juiz
+usa `settings.modelo_barato` — um provedor DIFERENTE do primeiro elo da
+cadeia do narrador (`settings.cadeia_llm[0]`), de propósito: reduz o risco
+de o juiz "gostar" do próprio estilo de um modelo da mesma família."""
 
 from __future__ import annotations
 
@@ -77,7 +77,7 @@ def julgar(
     parse inválido em vez de derrubar a rodada inteira por um cenário."""
     if not resultado.narrativa.strip():
         return None
-    modelo = modelo or settings.model_name
+    modelo = modelo or settings.modelo_barato
     chamar_fn = chamar_fn or chamar_modelo_unico
     msgs = _prompt_juiz(resultado)
     try:

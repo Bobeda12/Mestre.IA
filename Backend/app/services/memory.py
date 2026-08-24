@@ -125,7 +125,7 @@ def atualizar_resumo_rolante(heroi: Personagem, k_turnos: int = 8) -> bool:
     prompt = _PROMPT_RESUMO.format(resumo_atual=resumo_atual.model_dump_json(), eventos=eventos_texto)
     try:
         resp = llm_client.chamar_modelo_unico(
-            settings.modelos_fallback[-1],
+            settings.modelo_barato,
             [{"role": "user", "content": prompt}],
             response_format={"type": "json_object"},
         )

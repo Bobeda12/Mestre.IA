@@ -20,12 +20,31 @@ class Settings(BaseSettings):
     # trava do SESSION_SECRET abaixo, nada de lógica de negócio.
     environment: str = "development"
     groq_api_key: str | None = None
-    model_name: str = "openai/gpt-oss-120b"
-    # Cadeia de fallback (ADR-0008): se `model_name` falhar (cota, timeout,
-    # indisponibilidade), tenta o próximo desta lista, na ordem. Todos na
-    # própria Groq por ora — ver ADR-0008 para o porquê de não ser um
-    # segundo provedor ainda.
-    modelos_fallback: list[str] = ["openai/gpt-oss-20b", "qwen/qwen3.6-27b"]
+    # Gemini (AI Studio) — chave sem cartão. Serve dois papéis desde a
+    # Etapa 14 (ADR-0023, ADR-0024): provedor dos embeddings
+    # (app/infra/embeddings.py) e segundo provedor na cadeia de fallback
+    # de chat abaixo. Sem esta chave, embeddings degradam para BM25 puro
+    # (ver embeddings.py) e `cadeia_llm` simplesmente pula qualquer elo
+    # "gemini:..." — o mesmo padrão condicional do Google OAuth/Langfuse.
+    gemini_api_key: str | None = None
+    # Cadeia de fallback (ADR-0008, revista pelo ADR-0024): cada item é
+    # "provedor:modelo" — `app/infra/llm_client.py` tenta em ordem, e
+    # `tenacity` cobre retry por erro transitório dentro de cada elo antes
+    # de cair para o próximo. Atravessa provedores de propósito: a cota do
+    # free tier da Groq (200k tokens/dia por modelo) e a do Gemini são
+    # contas separadas — um provedor esgotado no dia não derruba o outro.
+    cadeia_llm: list[str] = [
+        "groq:openai/gpt-oss-120b",
+        "gemini:gemini-3.5-flash",
+        "groq:openai/gpt-oss-20b",
+        "groq:qwen/qwen3.6-27b",
+    ]
+    # Chamada barata/de baixo risco: o resumo rolante (services/memory.py) e
+    # o padrão do LLM-as-judge (evals/judge.py) — este último de propósito
+    # num provedor DIFERENTE do primeiro elo de `cadeia_llm` acima, reduzindo
+    # o viés de o juiz "gostar" do próprio estilo do narrador (a limitação
+    # que o ADR-0011 já registrava como fica em aberto).
+    modelo_barato: str = "gemini:gemini-3.5-flash-lite"
     agent_max_passos: int = 6
     database_url: str = f"sqlite:///{(BASE_DIR / 'rpg_save.db').as_posix()}"
     # Cookie de sessão exige uma origem específica — "*" e credentials são

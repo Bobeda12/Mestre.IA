@@ -1,5 +1,14 @@
-"""Cliente da Groq com cadeia de fallback entre modelos (ADR-0008) e retry
-com backoff para erro transitório (`tenacity`).
+"""Cliente de chat com cadeia de fallback entre modelos e PROVEDORES (ADR-0008,
+revisto pelo ADR-0024), com retry por erro transitório (`tenacity`).
+
+Um SDK só (`openai`) fala com todo mundo: Groq, Gemini e outros provedores
+compatíveis expõem o mesmo endpoint OpenAI-compatible, só o `base_url` (e a
+chave) muda — um `openai.OpenAI(base_url=...)` por provedor, guardados em
+`clients` por nome (`"groq"`, `"gemini"`). Cada elo de `settings.cadeia_llm`
+é uma string `"provedor:modelo"` (ver `_parse_modelo`); atravessar provedores
+é o que transforma a cota diária *por conta* de cada um numa soma, não uma
+disputa pelo mesmo teto — o objetivo original do ADR-0008 ("por que não um
+segundo provedor ainda"), agora resolvido.
 
 `ErroMestre` mora aqui, não em `services/narrator.py` como antes da Etapa 4:
 é o tipo de erro do cliente de LLM, não uma regra de narrativa — outros
@@ -12,16 +21,20 @@ import time
 from collections.abc import Iterator
 from typing import Any
 
-import groq
+import openai
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 from app.infra.settings import settings
 from app.infra.tracing import langfuse_client
 
-MODEL_NAME = settings.model_name
-MODELOS = [settings.model_name, *settings.modelos_fallback]
+# Cada provedor compatível com o formato OpenAI só precisa de um base_url —
+# a chave (se configurada) decide se ele entra em `clients` abaixo.
+_BASE_URLS: dict[str, str] = {
+    "groq": "https://api.groq.com/openai/v1",
+    "gemini": "https://generativelanguage.googleapis.com/v1beta/openai/",
+}
 
-_ERROS_TRANSITORIOS = (groq.RateLimitError, groq.APITimeoutError, groq.APIConnectionError)
+_ERROS_TRANSITORIOS = (openai.RateLimitError, openai.APITimeoutError, openai.APIConnectionError)
 
 
 class ErroMestre(Exception):
@@ -32,24 +45,40 @@ class ErroMestre(Exception):
         super().__init__(mensagem)
 
 
-def _build_client() -> groq.Groq | None:
-    if not settings.groq_api_key:
-        return None
-    # max_retries=0 (Etapa 6, evals/): o SDK da Groq retenta 429/5xx sozinho
-    # por padrão (max_retries=2), honrando o header Retry-After do servidor
-    # ANTES de qualquer exceção chegar ao nosso código — descoberto rodando
-    # evals/run_eval.py --bake-off de verdade: uma chamada devolveu com
-    # ~3869s de latência (o SDK ficou preso num retry interno enquanto a
-    # cota estava esgotada). Isso também neutralizava a cadeia de fallback
-    # do ADR-0008 na prática: `chamar_com_fallback` só troca de modelo
-    # quando VÊ um `RateLimitError`, mas o SDK engolia esse erro por até
-    # ~64 minutos antes de deixá-lo passar. Com max_retries=0, o `tenacity`
-    # (rápido, no máx. ~4s) + a troca de modelo é a única política de
-    # retry — a que já está documentada e testada.
-    return groq.Groq(api_key=settings.groq_api_key, max_retries=0)
+def _chave_do_provedor(provedor: str) -> str | None:
+    return {"groq": settings.groq_api_key, "gemini": settings.gemini_api_key}.get(provedor)
 
 
-client = _build_client()
+def _build_clients() -> dict[str, openai.OpenAI]:
+    # max_retries=0 (herdado do ADR-0008, Etapa 6): o SDK retenta 429/5xx
+    # sozinho por padrão, honrando Retry-After ANTES de qualquer exceção
+    # chegar aqui — o que neutralizava a cadeia de fallback na prática
+    # (achado ao vivo: uma chamada com ~3869s de latência presa num retry
+    # interno enquanto a cota estava esgotada). `tenacity` (rápido, no
+    # máx. ~4s) + a troca de modelo/provedor é a única política de retry.
+    return {
+        provedor: openai.OpenAI(api_key=chave, base_url=base_url, max_retries=0)
+        for provedor, base_url in _BASE_URLS.items()
+        if (chave := _chave_do_provedor(provedor))
+    }
+
+
+clients = _build_clients()
+
+
+def _parse_modelo(espec: str) -> tuple[str, str]:
+    provedor, _, modelo = espec.partition(":")
+    if not modelo:
+        raise ValueError(f"Especificação de modelo inválida (esperado 'provedor:modelo'): {espec!r}")
+    return provedor, modelo
+
+
+CADEIA: list[tuple[str, str]] = [_parse_modelo(espec) for espec in settings.cadeia_llm]
+
+_SEM_PROVEDOR = (
+    "O mestre está sem acesso à IA — falta configurar ao menos uma chave de API "
+    "no servidor (GROQ_API_KEY ou GEMINI_API_KEY)."
+)
 
 
 @retry(
@@ -59,6 +88,8 @@ client = _build_client()
     reraise=True,
 )
 def _chamar_modelo(
+    cliente: openai.OpenAI,
+    provedor: str,
     modelo: str,
     msgs: list[dict],
     tools: list[dict] | None,
@@ -74,83 +105,93 @@ def _chamar_modelo(
         kwargs["response_format"] = response_format
     if stream:
         # Sem `stream_options={"include_usage": True}` aqui de propósito: o
-        # SDK da Groq instalado (0.37) não aceita esse parâmetro — tentei
-        # (Etapa 9) e quebrava toda chamada em streaming com TypeError, só
-        # apareceu testando ao vivo contra a API de verdade, não em teste
-        # nenhum. `chamar_stream_com_fallback` não reporta tokens ao
-        # Langfuse por isso; o resto da trace (modelo, texto, latência)
+        # SDK (0.37 da Groq, achado que sobrevive à troca pro `openai`) não
+        # aceitava esse parâmetro contra o endpoint da Groq — quebrava toda
+        # chamada em streaming com TypeError, só apareceu testando ao vivo
+        # contra a API de verdade, não em teste nenhum.
+        # `chamar_stream_com_fallback` não reporta tokens ao Langfuse por
+        # isso; o resto da trace (modelo, provedor, texto, latência)
         # continua valendo.
         kwargs["stream"] = True
-        return client.chat.completions.create(**kwargs)  # type: ignore[union-attr]
+        return cliente.chat.completions.create(**kwargs)
 
     # Etapa 9: uma trace por chamada de verdade ao modelo — não por turno,
     # porque um turno com ferramentas encadeia várias chamadas (ADR-0007).
     # `app/infra/tracing.py` é `None` sem conta no Langfuse configurada,
-    # aqui só isso já desliga o tracing (mesmo padrão de `client`/`groq_api_key`).
+    # aqui só isso já desliga o tracing (mesmo padrão de `clients`/chaves).
     if langfuse_client is None:
-        return client.chat.completions.create(**kwargs)  # type: ignore[union-attr]
+        return cliente.chat.completions.create(**kwargs)
 
     inicio = time.monotonic()
     with langfuse_client.start_as_current_observation(
-        as_type="generation", name="groq-chat", model=modelo, input=msgs
+        as_type="generation", name=f"{provedor}-chat", model=modelo, input=msgs
     ) as geracao:
-        resp = client.chat.completions.create(**kwargs)  # type: ignore[union-attr]
+        resp = cliente.chat.completions.create(**kwargs)
         uso = getattr(resp, "usage", None)
         geracao.update(
             output=resp.choices[0].message.content if resp.choices else None,
             usage_details={"input": uso.prompt_tokens, "output": uso.completion_tokens} if uso else None,
-            metadata={"latencia_s": round(time.monotonic() - inicio, 3)},
+            # `provedor` na metadata (não só no nome da observação) é o que
+            # permite somar tokens/custo POR PROVEDOR no Langfuse — a
+            # medição que falta hoje para `teto_turnos_conta` deixar de ser
+            # um chute (ver ADR-0024, "Como saber que erramos").
+            metadata={"latencia_s": round(time.monotonic() - inicio, 3), "provedor": provedor},
         )
     return resp
 
 
 def chamar_modelo_unico(
-    modelo: str,
+    modelo_espec: str,
     msgs: list[dict],
     tools: list[dict] | None = None,
     tool_choice: str = "auto",
     response_format: dict | None = None,
 ) -> Any:
-    """Chama um único modelo específico, sem a cadeia de fallback — usado
-    pelo resumo rolante (Etapa 5, services/memory.py), que aceita usar
-    sempre o modelo mais barato e falhar sem alternativa: comprimir memória
-    não vale o custo de escalar para um modelo caro, e uma falha aqui não
-    derruba o turno (o resumo antigo continua valendo).
+    """Chama um único modelo específico (`"provedor:modelo"`), sem a cadeia
+    de fallback — usado pelo resumo rolante e pelo LLM-as-judge
+    (`settings.modelo_barato`), que aceitam usar sempre o mesmo modelo
+    barato e falhar sem alternativa: nenhum dos dois vale o custo de
+    escalar para o resto da cadeia, e uma falha aqui não derruba o turno
+    (o resumo antigo continua valendo; o juiz conta como parse inválido).
 
     `tools`/`tool_choice` foram adicionados na Etapa 6 (evals/) para o
     bake-off de modelos poder rodar o turno inteiro (com ferramentas) contra
     um modelo específico, em vez de só a cadeia de fallback — que esconde
     qual modelo respondeu de fato."""
-    if not client:
+    provedor, modelo = _parse_modelo(modelo_espec)
+    cliente = clients.get(provedor)
+    if cliente is None:
         raise ErroMestre(
-            "O mestre está sem acesso à IA — falta configurar a chave da Groq no servidor (GROQ_API_KEY)."
+            f"O provedor '{provedor}' não está configurado (falta a chave de API correspondente no servidor)."
         )
     try:
-        return _chamar_modelo(modelo, msgs, tools, tool_choice, response_format)
+        return _chamar_modelo(cliente, provedor, modelo, msgs, tools, tool_choice, response_format)
     except _ERROS_TRANSITORIOS as e:
         raise ErroMestre("A cota de uso da IA acabou por agora, ou o serviço demorou demais.") from e
-    except groq.APIStatusError as e:
+    except openai.APIStatusError as e:
         raise ErroMestre(f"O serviço de IA recusou o pedido (código {e.status_code}).") from e
 
 
 def chamar_com_fallback(msgs: list[dict], tools: list[dict] | None = None, tool_choice: str = "auto") -> Any:
-    """Tenta cada modelo de `MODELOS` em ordem. Por modelo, `tenacity` cobre
-    até 2 tentativas com backoff curto para erro transitório (rate limit,
-    timeout, conexão) antes de desistir dele e cair para o próximo — é isto
-    que transforma o limite de free tier por modelo da Groq numa vantagem de
-    arquitetura em vez de um turno perdido (ADR-0008)."""
-    if not client:
-        raise ErroMestre(
-            "O mestre está sem acesso à IA — falta configurar a chave da Groq no servidor (GROQ_API_KEY)."
-        )
+    """Tenta cada elo de `CADEIA` em ordem, pulando qualquer provedor sem
+    chave configurada. Por elo, `tenacity` cobre até 2 tentativas com
+    backoff curto para erro transitório (rate limit, timeout, conexão)
+    antes de desistir dele e cair para o próximo — é isto que transforma o
+    limite de free tier de CADA PROVEDOR numa vantagem de arquitetura em
+    vez de um turno perdido (ADR-0008/ADR-0024)."""
+    if not clients:
+        raise ErroMestre(_SEM_PROVEDOR)
     ultimo_erro: Exception | None = None
-    for modelo in MODELOS:
+    for provedor, modelo in CADEIA:
+        cliente = clients.get(provedor)
+        if cliente is None:
+            continue  # provedor sem chave configurada — pulado, não é uma falha
         try:
-            return _chamar_modelo(modelo, msgs, tools, tool_choice)
+            return _chamar_modelo(cliente, provedor, modelo, msgs, tools, tool_choice)
         except _ERROS_TRANSITORIOS as e:
             ultimo_erro = e
             continue
-        except groq.APIStatusError as e:
+        except openai.APIStatusError as e:
             ultimo_erro = e
             continue
     raise ErroMestre(
@@ -171,22 +212,23 @@ def chamar_stream_com_fallback(
     diferentes, incoerente.
 
     Por isso o fallback aqui só vale **antes do primeiro chunk** — troca de
-    modelo se a conexão falhar na hora de abrir o stream (rate limit, 4xx/5xx,
-    timeout). Depois do primeiro chunk, a stream está "comprometida" com
-    aquele modelo: uma falha a partir daí vira `ErroMestre` (o router traduz
-    isso num evento SSE `error`), não uma troca silenciosa."""
-    if not client:
-        raise ErroMestre(
-            "O mestre está sem acesso à IA — falta configurar a chave da Groq no servidor (GROQ_API_KEY)."
-        )
+    modelo (ou provedor) se a conexão falhar na hora de abrir o stream (rate
+    limit, 4xx/5xx, timeout). Depois do primeiro chunk, a stream está
+    "comprometida" com aquele modelo: uma falha a partir daí vira `ErroMestre`
+    (o router traduz isso num evento SSE `error`), não uma troca silenciosa."""
+    if not clients:
+        raise ErroMestre(_SEM_PROVEDOR)
     ultimo_erro: Exception | None = None
-    for modelo in MODELOS:
+    for provedor, modelo in CADEIA:
+        cliente = clients.get(provedor)
+        if cliente is None:
+            continue
         try:
-            stream = _chamar_modelo(modelo, msgs, tools, tool_choice, stream=True)
+            stream = _chamar_modelo(cliente, provedor, modelo, msgs, tools, tool_choice, stream=True)
         except _ERROS_TRANSITORIOS as e:
             ultimo_erro = e
             continue
-        except groq.APIStatusError as e:
+        except openai.APIStatusError as e:
             ultimo_erro = e
             continue
 
@@ -199,7 +241,7 @@ def chamar_stream_com_fallback(
         # o `with` envolve o `for` (e não só a abertura da conexão).
         gerenciador = (
             langfuse_client.start_as_current_observation(
-                as_type="generation", name="groq-chat-stream", model=modelo, input=msgs
+                as_type="generation", name=f"{provedor}-chat-stream", model=modelo, input=msgs
             )
             if langfuse_client is not None
             else contextlib.nullcontext()
@@ -211,7 +253,7 @@ def chamar_stream_com_fallback(
                     # `getattr` em cascata (Etapa 9): evita depender do
                     # formato exato do objeto de chunk — os testes usam
                     # dublês simples (strings) no lugar do chunk real da
-                    # Groq, e a extração de texto/uso é só para a trace,
+                    # API, e a extração de texto/uso é só para a trace,
                     # nunca deve derrubar o turno se o formato não bater.
                     choices = getattr(chunk, "choices", None)
                     delta = getattr(choices[0], "delta", None) if choices else None
@@ -224,7 +266,7 @@ def chamar_stream_com_fallback(
                     geracao.update(
                         output="".join(pedacos),
                         usage_details={"input": uso.prompt_tokens, "output": uso.completion_tokens} if uso else None,
-                        metadata={"latencia_s": round(time.monotonic() - inicio, 3)},
+                        metadata={"latencia_s": round(time.monotonic() - inicio, 3), "provedor": provedor},
                     )
                 return
             except _ERROS_TRANSITORIOS as e:

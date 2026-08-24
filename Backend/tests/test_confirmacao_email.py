@@ -8,9 +8,9 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app import routers
+from app.infra import llm_client
 from app.infra.db import SessionLocal, Usuario
 from app.main import app
-from app.services import narrator
 from app.services.auth import get_current_user
 from tests.test_smoke import _payload_base
 
@@ -64,7 +64,7 @@ class TestBloqueioAntesDeConfirmar:
         assert resp.status_code == 403
 
     def test_convidado_nao_e_bloqueado(self, client, monkeypatch):
-        monkeypatch.setattr(narrator, "client", None)
+        monkeypatch.setattr(llm_client, "clients", {})
         client.post("/auth/convidado")
         resp = client.post("/create_character", json=_payload_base(nome="HeroiConvidadoLivre"))
         assert resp.status_code == 200
@@ -90,7 +90,7 @@ class TestConfirmar:
         assert client.get("/auth/eu").json()["email_verificado"] is True
 
     def test_confirmar_libera_criar_personagem(self, client, link_capturado, monkeypatch):
-        monkeypatch.setattr(narrator, "client", None)
+        monkeypatch.setattr(llm_client, "clients", {})
         client.post("/auth/registrar", json={"email": "libera@teste.com", "senha": "senha-forte-123"})
         token = _token_de(link_capturado[0][1])
         client.get(f"/auth/confirmar?token={token}", follow_redirects=False)
