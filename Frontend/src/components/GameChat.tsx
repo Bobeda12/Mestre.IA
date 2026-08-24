@@ -30,6 +30,12 @@ const ABAS = [
 
 type AbaFicha = (typeof ABAS)[number]['id'];
 
+// Ordem e siglas dos atributos, na mesma sequência da ficha de criação.
+const ATRIBUTOS = [
+  ['forca', 'FOR'], ['destreza', 'DES'], ['constituicao', 'CON'],
+  ['inteligencia', 'INT'], ['sabedoria', 'SAB'], ['carisma', 'CAR'],
+] as const;
+
 type Message =
   // `turnoIndex` (Etapa 9) chega no frame SSE "state", junto do resto do
   // HUD — é a posição desta narração em `historico_chat` no servidor
@@ -506,7 +512,10 @@ export default function GameChat() {
               identidade do menu — em JRPG o retrato não some quando você troca
               de aba, só o conteúdo abaixo dele muda. */}
           <div className="p-3 pb-0 shrink-0">
-              <div className="pixel-frame w-full aspect-[4/3] bg-black relative overflow-hidden">
+              {/* 3:4 e nao 4:3: o retrato gerado vem em 500x750 (retrato).
+                  Numa moldura deitada o `object-cover` recortava tudo menos a
+                  faixa dos olhos. */}
+              <div className="pixel-frame w-full aspect-[3/4] bg-black relative overflow-hidden">
                    <RetratoPixelado src={charImage} alt={`Retrato de ${charName}`} className="w-full h-full object-cover object-top opacity-90" />
                    <div className="absolute bottom-0 w-full bg-gradient-to-t from-black via-black/85 to-transparent p-2 pt-8">
                        <p className="text-white font-rpg text-lg leading-tight">{charName}</p>
@@ -573,11 +582,15 @@ export default function GameChat() {
                       </div>
                   </div>
 
+                  {/* Os SEIS atributos. Antes só FOR/DES/INT apareciam, fixos
+                      no código, embora o backend sempre mandasse os seis em
+                      `atributos` — quem jogava de Clérigo ou Bardo não via o
+                      atributo que mais importa pra ele. */}
                   <div className="grid grid-cols-3 gap-2">
-                     {([['FOR', attributes.forca], ['DES', attributes.destreza], ['INT', attributes.inteligencia]] as const).map(([sigla, valor]) => (
-                       <div key={sigla} className="bg-black/50 p-2 text-center border-2 border-gray-700">
+                     {ATRIBUTOS.map(([chave, sigla]) => (
+                       <div key={chave} className="bg-black/50 p-2 text-center border-2 border-gray-700">
                            <span className="text-[9px] text-gray-300 block font-rpg">{sigla}</span>
-                           <span className="font-rpg text-xl text-gray-100">{valor}</span>
+                           <span className="font-rpg text-xl text-gray-100">{attributes?.[chave] ?? '-'}</span>
                        </div>
                      ))}
                   </div>
