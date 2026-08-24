@@ -89,10 +89,25 @@ compatíveis em estilo (16×16, contorno grosso) com o que já estava no repo.
 Nenhuma licença exige atribuição (todas CC0) — está aqui por educação e
 para rastrear a origem de cada arquivo.
 
-**Composto a partir de tiles CC0**: `backgrounds/mapa-mundo.png` é um mapa de
-overworld montado tile a tile a partir do Roguelike/RPG Pack (grama, água,
-terra, árvores), numa grade toroidal pra ladrilhar sem emenda nos dois eixos —
-ver `MapaDeFundo.tsx`. Não é arte gerada, é composição de tiles existentes.
+**Cenário da tela inicial e do login** (`backgrounds/cidade-fundo.png` e
+`cidade-frente.png`):
+
+| Pacote | Autor | Licença | Fonte |
+|---|---|---|---|
+| GothicVania Town | ansimuz | [CC0](https://creativecommons.org/publicdomain/zero/1.0/) | [opengameart.org/content/gothicvania-town](https://opengameart.org/content/gothicvania-town) |
+
+São as camadas `background` e `middleground` do pacote, usadas em parallax
+(ver `MapaDeFundo.tsx`). Duas edições foram feitas: a saturação do céu baixou
+(o original é bem rosa e o app é ouro/couro), e a camada da frente virou a
+original seguida da própria imagem espelhada, porque sozinha ela não ladrilhava
+— espelhar faz a borda direita virar cópia da esquerda e a costura fecha por
+construção.
+
+Antes disto o fundo era um mapa de overworld que eu montava tile a tile por
+script. Passou por quatro abordagens (sorteio por tile, suavização celular,
+Voronoi toroidal, marcos esparsos) e em nenhuma deixou de parecer manchado —
+a mesma lição dos retratos de raça/classe: arte pronta feita à mão ganha de
+arte composta por algoritmo.
 
 **Desenhados à mão** (estrela/nível, fechar, menu, seta, som ligado/mudo,
 coroa, coração, menos, mais, dado, rosto, alerta, polegar cima/baixo, enviar,

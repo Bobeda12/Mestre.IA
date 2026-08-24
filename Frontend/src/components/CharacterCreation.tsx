@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
-import { getLocalImage } from '../lib/utils';
+import { getLocalImage, getRetrato } from '../lib/utils';
 import PixelIcon from './PixelIcon';
 import PixelButton from './PixelButton';
 import PanelFrame from './PanelFrame';
@@ -190,12 +190,12 @@ export default function CharacterCreation({ onCharacterCreated }: CharacterCreat
   // via.placeholder.com que o onError tentava carregar em seguida também
   // falha offline. Usa a cena de fundo local da Home, já dentro da mesma
   // regra do ADR-0017 (sem geração por IA).
-  // Fonte única de arte pra raça/classe (ADR-0025): o mesmo arquivo de 32×32
-  // serve ao ícone da lista e ao painel grande.
+  // Painel grande usa o RETRATO (arte gerada e pixelizada, ADR-0025); a lista
+  // da esquerda usa o sprite do Dungeon Crawl. Ver lib/utils.ts.
   // Nada escolhido ainda mostra um "?" em moldura tracejada. Antes caía no
   // mapa de fundo, que lia como "já escolhi e o resultado é uma paisagem" em
   // vez de "falta escolher".
-  const activeImage = step === 5 && finalImageUrl ? finalImageUrl : step === 2 && selectedClass ? getLocalImage('classes', selectedClass) : step === 1 && selectedRace ? getLocalImage('races', selectedRace) : "/assets/placeholder-selecao.png";
+  const activeImage = step === 5 && finalImageUrl ? finalImageUrl : step === 2 && selectedClass ? getRetrato('classes', selectedClass) : step === 1 && selectedRace ? getRetrato('races', selectedRace) : "/assets/placeholder-selecao.png";
   const semSelecao = !(step === 5 && finalImageUrl) && !(step === 2 && selectedClass) && !(step === 1 && selectedRace);
   const activeTitle = step === 5 ? name : step === 1 ? (selectedRace || "Linhagem") : step === 2 ? (selectedClass || "Vocação") : step === 3 ? "Identidade" : "Atributos";
   const currentDetails = step === 1 ? raceData : step === 2 ? classData : null;
@@ -299,20 +299,16 @@ export default function CharacterCreation({ onCharacterCreated }: CharacterCreat
                      `object-cover`, preenchendo o painel — o `object-contain`
                      com respiro que existia aqui era muleta pro sprite
                      minúsculo de antes e só deixava a imagem menor. */}
-                 {/* `cover` só serve ao retrato gerado do passo 5, que vem em
-                     500×750 e foi feito pra preencher o painel. Os sprites de
-                     raça/classe são personagens de corpo inteiro em 32×32:
-                     `cover` neles recorta a figura e amplia um pedaço até
-                     virar mancha — precisam de `contain`, que mostra o
-                     personagem inteiro na grade de pixel. */}
+                 {/* Tanto o retrato de raça/classe (48×48) quanto o gerado no
+                     passo 5 (500×750) são bustos feitos pra preencher o
+                     painel, então os dois usam `cover`. Só o placeholder,
+                     que é um ícone, usa `contain`. */}
                  <img
                      src={activeImage}
                      className={
                        semSelecao
                          ? "w-full h-full object-contain p-24 opacity-70"
-                         : step === 5
-                           ? "w-full h-full object-cover object-top"
-                           : "w-full h-full object-contain p-10"
+                         : "w-full h-full object-cover object-top"
                      }
                      alt=""
                      onError={(e) => (e.currentTarget.style.display = 'none')}

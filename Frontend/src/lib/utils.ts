@@ -12,13 +12,22 @@ export function cn(...inputs: ClassValue[]) {
 // docs/CREDITOS.md), por isso `.png` e não `.jpg`: perda de JPEG borra os
 // contornos de 1px.
 //
-// UMA função só, de propósito. Houve uma fase com dois conjuntos de arte
-// (sprite pequeno numa função, retrato grande noutra) porque nenhuma das
-// fontes de então servia aos dois tamanhos. Os sprites de 32×32 do Dungeon
-// Crawl (ADR-0025) resolvem os dois, então o segundo caminho foi removido em
-// vez de ficar mantendo duas pastas em sincronia.
+// Ícone pequeno: sprite do Dungeon Crawl (CC0, 32×32) — personagem completo,
+// silhueta própria, cada opção distinta da outra num quadrado de 48px.
 export function getLocalImage(type: 'classes' | 'races' | 'monstros', name: string) {
   return `/assets/${type}/${_arquivo(name)}.png`
+}
+
+// Painel grande: retrato gerado por IA e pixelizado pra 48×48 (ADR-0025).
+//
+// Os dois conjuntos existem porque cada um ganha num tamanho. O sprite do
+// Dungeon Crawl é feito pra ser lido a 32px: ampliado num painel de ~400px
+// ele continua correto, mas é uma figura pequena e simples ocupando muito
+// espaço. O retrato tem densidade pra sustentar esse tamanho — e é ilegível
+// reduzido a 48px, onde várias classes acabam parecidas entre si. Cada um
+// onde funciona, em vez de um só servindo mal aos dois.
+export function getRetrato(type: 'classes' | 'races', name: string) {
+  return `/assets/retratos/${type}/${_arquivo(name)}.png`
 }
 
 // `\p{Diacritic}` (Unicode property escape) tira os acentos depois do NFD,
