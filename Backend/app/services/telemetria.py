@@ -13,20 +13,26 @@ def registrar_evento(db: Session, usuario_id: int, tipo: str, personagem_id: int
     db.commit()
 
 
-def turnos_hoje(db: Session, usuario_id: int) -> int:
+def turnos_hoje(db: Session, usuario_id: int, tipo: str = "turno") -> int:
     """Etapa 10 (A-3) — quantos turnos este usuário já jogou desde a
     meia-noite UTC de hoje. Naive UTC de propósito, mesma convenção de
     `services/auth.py._agora()`: o Postgres de produção guarda
     `criado_em` sem timezone, e comparar um `datetime` "aware" contra um
     valor "naive" lido do banco levantaria `TypeError` em qualquer
     aritmética Python (a query em si tolera, mas a consistência importa
-    mais do que a exceção que não aconteceu desta vez)."""
+    mais do que a exceção que não aconteceu desta vez).
+
+    `tipo` (Etapa 15, BYOK) — turnos com chave própria são registrados como
+    `"turno_byok"` (não contam pra nenhum teto do servidor) e turnos do
+    "modo de emergência" como `"turno_emergencia"` (teto próprio, bem menor
+    — ver `routers/game.py._verificar_teto_diario`). O padrão `"turno"`
+    continua sendo o teto normal de conta/convidado."""
     inicio_do_dia = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=None)
     return (
         db.query(EventoTelemetria)
         .filter(
             EventoTelemetria.usuario_id == usuario_id,
-            EventoTelemetria.tipo == "turno",
+            EventoTelemetria.tipo == tipo,
             EventoTelemetria.criado_em >= inicio_do_dia,
         )
         .count()

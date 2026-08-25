@@ -8,8 +8,10 @@
   persistidos em `EventoMemoria` e recuperados por busca híbrida
   (services/hybrid_search.py), sempre filtrados por `personagem_id`."""
 
+import functools
 import json
 from collections.abc import Callable
+from typing import Any
 
 from sqlalchemy.orm import Session
 
@@ -101,7 +103,9 @@ def _mesclar(antigos: list[str], novos: list[str]) -> list[str]:
     return antigos + extras
 
 
-def atualizar_resumo_rolante(heroi: Personagem, k_turnos: int = 8) -> bool:
+def atualizar_resumo_rolante(
+    heroi: Personagem, k_turnos: int = 8, chamar_fn: Callable[..., Any] | None = None
+) -> bool:
     """Quando `k_turnos` turnos (pares user+assistant) saíram da janela
     curta desde o último checkpoint, comprime essa fatia num resumo
     estruturado, usando o modelo mais barato da cadeia de fallback
@@ -112,7 +116,13 @@ def atualizar_resumo_rolante(heroi: Personagem, k_turnos: int = 8) -> bool:
 
     Devolve se o resumo foi atualizado; uma falha do modelo (ErroMestre,
     JSON inválido) não derruba o turno — o resumo antigo continua valendo,
-    e a próxima chamada tenta de novo com uma janela maior."""
+    e a próxima chamada tenta de novo com uma janela maior.
+
+    `chamar_fn` (Etapa 15, BYOK): por padrão é `settings.modelo_barato` na
+    chave do servidor; `routers/game.py` injeta uma variante ligada à
+    chave do jogador quando ele tem uma — este resumo roda a cada poucos
+    turnos (não é um custo fixo como o RAG de regras), então também escala
+    com o uso."""
     historico = list(heroi.historico_chat)
     pendentes = len(historico) - heroi.turno_resumido_ate
     if pendentes < k_turnos * 2:
@@ -122,10 +132,10 @@ def atualizar_resumo_rolante(heroi: Personagem, k_turnos: int = 8) -> bool:
     eventos_texto = "\n".join(f"- {m['role']}: {m['content']}" for m in fatia if m.get("content"))
     resumo_atual = ResumoRolante.model_validate(heroi.resumo_rolante or {})
 
+    chamar_fn = chamar_fn or functools.partial(llm_client.chamar_modelo_unico, settings.modelo_barato)
     prompt = _PROMPT_RESUMO.format(resumo_atual=resumo_atual.model_dump_json(), eventos=eventos_texto)
     try:
-        resp = llm_client.chamar_modelo_unico(
-            settings.modelo_barato,
+        resp = chamar_fn(
             [{"role": "user", "content": prompt}],
             response_format={"type": "json_object"},
         )

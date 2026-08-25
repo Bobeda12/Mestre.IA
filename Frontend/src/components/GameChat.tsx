@@ -3,7 +3,7 @@ import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { isAxiosError } from 'axios';
 import { api, API_URL } from '../lib/api';
-import { postSse } from '../lib/sse';
+import { ErroSse, postSse } from '../lib/sse';
 import { getLocalImage, limparMarkdownLeve } from '../lib/utils';
 import { useAuth, useInvalidarAuth } from '../lib/auth';
 import { useTrilha, calcularTema } from '../lib/trilha';
@@ -169,6 +169,18 @@ export default function GameChat() {
   const [reivindicarErro, setReivindicarErro] = useState<string | null>(null);
   const [reivindicarEnviando, setReivindicarEnviando] = useState(false);
 
+  // BYOK (Etapa 15) — dois avisos distintos, cada um do seu lado do fluxo:
+  // `modalTetoAberto` aparece quando a COTA COMPARTILHADA do servidor
+  // acabou por hoje (antes de qualquer chamada à IA — vem do `postSse`
+  // rejeitando o POST); `modalEmergenciaAberto` aparece quando é a CHAVE
+  // PRÓPRIA do jogador que falhou no meio de um turno (vem do frame SSE
+  // `erro`) — os dois têm causas e ações diferentes, por isso não são o
+  // mesmo modal com texto trocado.
+  const [modalTetoAberto, setModalTetoAberto] = useState(false);
+  const [modalEmergenciaAberto, setModalEmergenciaAberto] = useState(false);
+  const [mensagemEmergencia, setMensagemEmergencia] = useState('');
+  const ultimaAcaoRef = useRef('');
+
   useEffect(() => {
     if (combatActive) combateFoiAtivoRef.current = true;
     else if (combateFoiAtivoRef.current && !gameOver) setPrimeiroCombateResolvido(true);
@@ -276,13 +288,16 @@ export default function GameChat() {
     });
   };
 
-  const sendAction = async (text: string) => {
+  const sendAction = async (text: string, opts?: { modoEmergencia?: boolean }) => {
     if (!sessionId || gameOver) return;
-    setMessages(prev => [...prev, { kind: 'texto', role: 'user', content: text }]);
+    ultimaAcaoRef.current = text;
+    // Reenvio em modo de emergência (Etapa 15, BYOK): a ação já apareceu na
+    // tela como bolha do jogador na tentativa original — não duplica aqui.
+    if (!opts?.modoEmergencia) setMessages(prev => [...prev, { kind: 'texto', role: 'user', content: text }]);
     setLoading(true);
 
     try {
-      const stream = await postSse(`${API_URL}/chat/stream`, { session_id: sessionId, action: text });
+      const stream = await postSse(`${API_URL}/chat/stream`, { session_id: sessionId, action: text }, opts);
 
       for await (const evt of stream) {
         if (evt.event === 'token') {
@@ -311,7 +326,17 @@ export default function GameChat() {
           // Etapa 10 (A-7): mensagem de sistema, sem `*(...)*` — a bolha
           // com `isError=true` já é visualmente distinta (ícone e cor
           // âmbar), não precisa de asterisco pra parecer "fora da narração".
-          acrescentarTexto((evt.data as { mensagem: string }).mensagem, true);
+          const dadosErro = evt.data as { mensagem: string; codigo?: string };
+          acrescentarTexto(dadosErro.mensagem, true);
+          // BYOK (Etapa 15) — só a CHAVE PRÓPRIA do jogador falha assim, no
+          // meio de um turno já em andamento (a chave do servidor cai na
+          // cadeia de fallback, que já tenta outro modelo sozinha). Oferece
+          // usar a do servidor "por enquanto" em vez de deixar o jogador
+          // preso sem saber o que fazer.
+          if (dadosErro.codigo === 'chave_usuario_falhou') {
+            setMensagemEmergencia(dadosErro.mensagem);
+            setModalEmergenciaAberto(true);
+          }
         } else if (evt.event === 'state') {
           const d = evt.data as EstadoJogo;
           if (d.hp_atual !== undefined && d.hp_atual < hpAtual) {
@@ -367,8 +392,20 @@ export default function GameChat() {
       // quando o problema é mesmo de rede/conexão, sem resposta nenhuma.
       const mensagem = err instanceof Error && err.message ? err.message : "Não consegui falar com o servidor. Confira sua conexão e tente de novo.";
       acrescentarTexto(`*(${mensagem})*`, true);
+      // BYOK (Etapa 15) — este é o teto da COTA COMPARTILHADA (checado
+      // antes da stream abrir, por isso chega aqui e não no frame `erro`
+      // acima). Oferece a própria chave como saída, em vez de só dizer
+      // "volte amanhã".
+      if (err instanceof ErroSse && err.codigo === 'teto_diario_atingido') {
+        setModalTetoAberto(true);
+      }
     }
     finally { setLoading(false); }
+  };
+
+  const tentarComChaveDoServidor = () => {
+    setModalEmergenciaAberto(false);
+    if (ultimaAcaoRef.current) sendAction(ultimaAcaoRef.current, { modoEmergencia: true });
   };
 
   // 👍/👎 por narração (Etapa 9) — sinal humano pro LLM-as-a-judge (ADR-0011)
@@ -781,6 +818,68 @@ export default function GameChat() {
                         </div>
                     </div>
                 </form>
+                </PanelFrame>
+            </div>
+        )}
+
+        {/* BYOK (Etapa 15) — a cota compartilhada do servidor acabou por
+            hoje. Abre direto nas Opções em vez de duplicar o campo de
+            chave aqui: um único lugar pra colar/remover a chave. */}
+        {modalTetoAberto && (
+            <div className="absolute inset-0 z-[90] bg-black/80 flex items-center justify-center p-4">
+                <PanelFrame borderWidth={10} className="w-full max-w-sm">
+                    <div className="bg-gray-900 p-6">
+                        <h2 className="font-rpg text-lg text-rpg-gold mb-1">Cota do servidor esgotada</h2>
+                        <p className="text-xs text-gray-400 leading-relaxed mb-4">
+                            Todo mundo divide a mesma cota gratuita de IA, e ela já foi usada por hoje. Pra
+                            continuar jogando sem esperar amanhã, cole sua própria chave gratuita do Google
+                            AI Studio nas Opções — leva menos de um minuto.
+                        </p>
+                        <div className="flex gap-2">
+                            <button
+                                onClick={() => setModalTetoAberto(false)}
+                                className="flex-1 border-2 border-gray-700 text-gray-400 hover:text-white py-2 text-sm"
+                            >
+                                Volto amanhã
+                            </button>
+                            <PixelButton
+                                variant="dourado"
+                                onClick={() => { setModalTetoAberto(false); setConfigAberta(true); }}
+                                className="flex-1 py-2 text-sm"
+                            >
+                                Configurar chave
+                            </PixelButton>
+                        </div>
+                    </div>
+                </PanelFrame>
+            </div>
+        )}
+
+        {/* BYOK (Etapa 15) — a CHAVE PRÓPRIA do jogador (não a do servidor)
+            falhou no meio de um turno. Diferente do modal acima: aqui a
+            saída é temporária (só este turno) e explícita — nunca cai pra
+            chave do servidor sem o jogador escolher. */}
+        {modalEmergenciaAberto && (
+            <div className="absolute inset-0 z-[90] bg-black/80 flex items-center justify-center p-4">
+                <PanelFrame borderWidth={10} className="w-full max-w-sm">
+                    <div className="bg-gray-900 p-6">
+                        <h2 className="font-rpg text-lg text-rpg-gold mb-1">Sua chave falhou</h2>
+                        <p className="text-xs text-gray-400 leading-relaxed mb-4">{mensagemEmergencia}</p>
+                        <p className="text-xs text-gray-400 leading-relaxed mb-4">
+                            Quer tentar essa ação de novo usando a cota do servidor, só por enquanto?
+                        </p>
+                        <div className="flex gap-2">
+                            <button
+                                onClick={() => setModalEmergenciaAberto(false)}
+                                className="flex-1 border-2 border-gray-700 text-gray-400 hover:text-white py-2 text-sm"
+                            >
+                                Cancelar
+                            </button>
+                            <PixelButton variant="dourado" onClick={tentarComChaveDoServidor} className="flex-1 py-2 text-sm">
+                                Usar chave do servidor
+                            </PixelButton>
+                        </div>
+                    </div>
                 </PanelFrame>
             </div>
         )}

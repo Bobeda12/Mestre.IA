@@ -5,11 +5,18 @@ jeito mais simples de montar um `openai.RateLimitError` de verdade — o SDK
 exige os dois no construtor."""
 
 import httpx
+import openai
 import pytest
 import tenacity
 
 from app.infra import llm_client
-from app.infra.llm_client import ErroMestre, chamar_com_fallback, chamar_stream_com_fallback
+from app.infra.llm_client import (
+    ErroMestre,
+    chamar_com_chave_usuario,
+    chamar_com_fallback,
+    chamar_stream_com_chave_usuario,
+    chamar_stream_com_fallback,
+)
 
 
 def _erro_rate_limit() -> Exception:
@@ -18,6 +25,12 @@ def _erro_rate_limit() -> Exception:
     import openai
 
     return openai.RateLimitError("cota estourada", response=resp, body=None)
+
+
+def _erro_autenticacao() -> Exception:
+    req = httpx.Request("POST", "https://example.com/x")
+    resp = httpx.Response(401, request=req)
+    return openai.AuthenticationError("chave inválida", response=resp, body=None)
 
 
 class _FakeCompletions:
@@ -183,3 +196,84 @@ class TestChamarStreamComFallback:
 
         with pytest.raises(ErroMestre, match="Todos os modelos"):
             list(chamar_stream_com_fallback([{"role": "user", "content": "oi"}]))
+
+
+class TestChamarComChaveUsuario:
+    """BYOK (Etapa 15) — `chamar_com_chave_usuario`/`chamar_stream_com_chave_usuario`
+    constroem um `openai.OpenAI` efêmero, fora do dict global `clients`
+    (nunca guardado, nunca reaproveitado entre requests) — por isso o dublê
+    aqui substitui `openai.OpenAI` em si, não `llm_client.clients`."""
+
+    def _fake_openai(self, monkeypatch, comportamento: dict[str, list]) -> _FakeClient:
+        fake = _FakeClient(comportamento)
+        monkeypatch.setattr(llm_client.openai, "OpenAI", lambda **kwargs: fake)
+        return fake
+
+    def test_chama_o_gemini_com_a_chave_do_usuario_sem_tocar_clients(self, monkeypatch):
+        resultado_ok = object()
+        fake = self._fake_openai(monkeypatch, {"gemini-3.5-flash": [resultado_ok]})
+        # `clients` fica vazio de propósito — o caminho BYOK não depende
+        # dele nem o toca.
+        monkeypatch.setattr(llm_client, "clients", {})
+
+        resultado = chamar_com_chave_usuario([{"role": "user", "content": "oi"}], api_key="chave-do-jogador")
+
+        assert resultado is resultado_ok
+        assert fake.chat.completions.chamadas == ["gemini-3.5-flash"]
+
+    def test_chave_invalida_vira_erro_mestre_especifico(self, monkeypatch):
+        self._fake_openai(monkeypatch, {"gemini-3.5-flash": [_erro_autenticacao()]})
+
+        with pytest.raises(ErroMestre, match="recusada"):
+            chamar_com_chave_usuario([{"role": "user", "content": "oi"}], api_key="chave-invalida")
+
+    def test_falha_transitoria_nao_cai_para_a_chave_do_servidor(self, monkeypatch):
+        # Sem cadeia de fallback no caminho BYOK: uma falha (rate limit,
+        # timeout) vira ErroMestre direto — nunca um fallback silencioso
+        # que gastaria a cota do servidor sem o jogador perceber.
+        self._fake_openai(monkeypatch, {"gemini-3.5-flash": [_erro_rate_limit(), _erro_rate_limit()]})
+
+        with pytest.raises(ErroMestre, match="limite de uso"):
+            chamar_com_chave_usuario([{"role": "user", "content": "oi"}], api_key="chave-do-jogador")
+
+    def test_modelo_customizado_e_repassado(self, monkeypatch):
+        resultado_ok = object()
+        fake = self._fake_openai(monkeypatch, {"gemini-3.5-flash-lite": [resultado_ok]})
+
+        resultado = chamar_com_chave_usuario(
+            [{"role": "user", "content": "oi"}], api_key="chave-do-jogador", modelo="gemini-3.5-flash-lite"
+        )
+
+        assert resultado is resultado_ok
+        assert fake.chat.completions.chamadas == ["gemini-3.5-flash-lite"]
+
+
+class TestChamarStreamComChaveUsuario:
+    def _fake_openai(self, monkeypatch, comportamento: dict[str, list]) -> _FakeClient:
+        fake = _FakeClient(comportamento)
+        monkeypatch.setattr(llm_client.openai, "OpenAI", lambda **kwargs: fake)
+        return fake
+
+    def test_stream_da_chave_do_usuario_funciona_de_ponta_a_ponta(self, monkeypatch):
+        chunks = ["a", "b", "c"]
+        fake = self._fake_openai(monkeypatch, {"gemini-3.5-flash": [chunks]})
+
+        resultado = list(chamar_stream_com_chave_usuario([{"role": "user", "content": "oi"}], api_key="chave"))
+
+        assert resultado == chunks
+        assert fake.chat.completions.chamadas == ["gemini-3.5-flash"]
+
+    def test_falha_no_meio_da_stream_vira_erro_mestre_sem_fallback(self, monkeypatch):
+        stream_quebrada = _StreamQuebrado(["a"], _erro_rate_limit())
+        self._fake_openai(monkeypatch, {"gemini-3.5-flash": [stream_quebrada]})
+
+        gerador = chamar_stream_com_chave_usuario([{"role": "user", "content": "oi"}], api_key="chave")
+        assert next(gerador) == "a"
+        with pytest.raises(ErroMestre, match="limite de uso"):
+            next(gerador)
+
+    def test_chave_invalida_vira_erro_mestre_antes_do_primeiro_chunk(self, monkeypatch):
+        self._fake_openai(monkeypatch, {"gemini-3.5-flash": [_erro_autenticacao()]})
+
+        with pytest.raises(ErroMestre, match="recusada"):
+            list(chamar_stream_com_chave_usuario([{"role": "user", "content": "oi"}], api_key="chave-invalida"))

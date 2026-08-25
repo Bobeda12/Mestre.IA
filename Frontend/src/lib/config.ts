@@ -47,3 +47,44 @@ export function useVelocidadeTexto() {
 
   return { velocidade, setVelocidade };
 }
+
+// BYOK (Etapa 15) — chave própria do jogador pro Gemini. Igual ao resto
+// deste arquivo, vive só no navegador: o back-end nunca a persiste (só
+// recebe no header `X-Gemini-Key` de cada pedido), e removê-la aqui é
+// suficiente pra voltar a usar a cota compartilhada do servidor.
+const CHAVE_GEMINI = 'mestre_ia_chave_gemini';
+
+export function getChaveGemini(): string | null {
+  return localStorage.getItem(CHAVE_GEMINI);
+}
+
+export function setChaveGemini(chave: string): void {
+  localStorage.setItem(CHAVE_GEMINI, chave);
+}
+
+export function removerChaveGemini(): void {
+  localStorage.removeItem(CHAVE_GEMINI);
+}
+
+export function useChaveGemini() {
+  const [chave, setEstado] = useState<string | null>(getChaveGemini);
+
+  useEffect(() => {
+    const aoMudar = (e: StorageEvent) => {
+      if (e.key === CHAVE_GEMINI) setEstado(getChaveGemini());
+    };
+    window.addEventListener('storage', aoMudar);
+    return () => window.removeEventListener('storage', aoMudar);
+  }, []);
+
+  const salvar = (v: string) => {
+    setChaveGemini(v);
+    setEstado(v);
+  };
+  const remover = () => {
+    removerChaveGemini();
+    setEstado(null);
+  };
+
+  return { chave, salvar, remover };
+}

@@ -73,12 +73,17 @@ def _usuario_autenticado():
     app.dependency_overrides.pop(get_current_user, None)
 
 
-def _embedding_falso(texto: str) -> list[float]:
+def _embedding_falso(texto: str, api_key: str | None = None) -> list[float]:
     """Hash determinístico, sem semântica real — só para nenhum teste de
     integração (ex. TestClient batendo em /chat) precisar baixar/carregar o
     modelo real de embeddings (Etapa 5). Relevância de busca é
     responsabilidade de tests/test_hybrid_search.py, que sempre passa seu
-    próprio `embed_fn` explícito."""
+    próprio `embed_fn` explícito.
+
+    `api_key` (Etapa 15, BYOK) — aceito e ignorado: o dublê não distingue
+    chave do jogador de chave do servidor, só precisa não quebrar quando
+    `routers/game.py` chama `embed_fn` como `functools.partial(embed_um,
+    api_key=...)`."""
     digest = hashlib.sha256(texto.encode("utf-8")).digest()
     return [b / 255 for b in digest[:16]]
 
@@ -88,7 +93,9 @@ def _embeddings_sem_rede(monkeypatch):
     from app.infra import embeddings
 
     monkeypatch.setattr(embeddings, "embed_um", _embedding_falso)
-    monkeypatch.setattr(embeddings, "embed", lambda textos: [_embedding_falso(t) for t in textos])
+    monkeypatch.setattr(
+        embeddings, "embed", lambda textos, api_key=None: [_embedding_falso(t, api_key) for t in textos]
+    )
 
 
 @pytest.fixture(autouse=True)

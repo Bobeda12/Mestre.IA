@@ -1,5 +1,6 @@
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useVelocidadeTexto, VELOCIDADES } from '../lib/config';
+import { useChaveGemini, useVelocidadeTexto, VELOCIDADES } from '../lib/config';
 import PixelIcon from './PixelIcon';
 import PixelButton from './PixelButton';
 
@@ -35,6 +36,8 @@ export default function MenuConfiguracao({
   const navigate = useNavigate();
   const { mudo, alternarMudo, volume, setVolume } = trilha;
   const { velocidade, setVelocidade } = useVelocidadeTexto();
+  const { chave: chaveGemini, salvar: salvarChaveGemini, remover: removerChaveGemini } = useChaveGemini();
+  const [campoChave, setCampoChave] = useState('');
 
   if (!aberto) return null;
 
@@ -114,6 +117,58 @@ export default function MenuConfiguracao({
                 </button>
               ))}
             </div>
+          </Secao>
+
+          <Secao titulo="Sua chave de API (Gemini)">
+            {/* BYOK (Etapa 15) — joga sem limite compartilhado usando a
+                própria chave gratuita do Google AI Studio. Nunca sai deste
+                navegador em texto salvo: o servidor só a recebe por pedido,
+                nunca a guarda (ver docs/BACKLOG_TECNICO.md). */}
+            <p className="text-[11px] text-gray-400 leading-relaxed mb-2">
+              Quer jogar sem depender da cota compartilhada do servidor? Gere uma chave
+              gratuita no{' '}
+              <a
+                href="https://aistudio.google.com/apikey"
+                target="_blank"
+                rel="noreferrer"
+                className="text-rpg-gold underline hover:text-white"
+              >
+                Google AI Studio
+              </a>{' '}
+              e cole aqui — leva menos de um minuto.
+            </p>
+            {chaveGemini ? (
+              <div className="flex items-center justify-between gap-2 p-2 border-2 border-rpg-gold/60 bg-rpg-gold/10">
+                <span className="text-xs font-rpg text-rpg-gold">Chave configurada</span>
+                <button
+                  onClick={removerChaveGemini}
+                  className="text-xs text-gray-400 hover:text-red-400 underline"
+                >
+                  Remover
+                </button>
+              </div>
+            ) : (
+              <div className="flex gap-2">
+                <input
+                  type="password"
+                  placeholder="Cole sua chave aqui"
+                  value={campoChave}
+                  onChange={(e) => setCampoChave(e.target.value)}
+                  className="flex-1 min-w-0 bg-black/60 border-2 border-gray-700 px-2 py-1.5 text-white text-xs outline-none focus:border-rpg-gold"
+                />
+                <button
+                  onClick={() => {
+                    if (!campoChave.trim()) return;
+                    salvarChaveGemini(campoChave.trim());
+                    setCampoChave('');
+                  }}
+                  disabled={!campoChave.trim()}
+                  className="shrink-0 text-xs font-bold text-black bg-rpg-gold hover:bg-white disabled:opacity-40 disabled:hover:bg-rpg-gold px-3 py-1.5"
+                >
+                  Salvar
+                </button>
+              </div>
+            )}
           </Secao>
 
           {mostrarVoltar && (

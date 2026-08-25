@@ -52,10 +52,10 @@ def _erro_transitorio(exc: BaseException) -> bool:
     retry=retry_if_exception(_erro_transitorio),
     reraise=True,
 )
-def _chamar_api(texto: str) -> list[float]:
+def _chamar_api(texto: str, api_key: str | None = None) -> list[float]:
     resp = httpx.post(
         _URL,
-        headers={"x-goog-api-key": settings.gemini_api_key or "", "Content-Type": "application/json"},
+        headers={"x-goog-api-key": api_key or settings.gemini_api_key or "", "Content-Type": "application/json"},
         json={
             "content": {"parts": [{"text": texto}]},
             # Achado ao vivo (Etapa 14, testando contra a API de verdade,
@@ -81,16 +81,22 @@ def _chamar_api(texto: str) -> list[float]:
     return valores if norma == 0 else [x / norma for x in valores]
 
 
-def embed(textos: list[str]) -> list[list[float]]:
+def embed(textos: list[str], api_key: str | None = None) -> list[list[float]]:
+    """`api_key` (Etapa 15, BYOK): quando o jogador tem chave própria, a
+    memória de longo prazo (services/memory.py) passa a chave dele aqui em
+    vez de usar a do servidor — é o embedding que cresce com o uso (um por
+    turno), diferente do RAG de regras (services/rag_regras.py), que embeda
+    um texto fixo uma vez só e por isso continua sempre na chave do
+    servidor (ver plano da Etapa 15)."""
     if not textos:
         return []
-    if not settings.gemini_api_key:
-        logger.warning("GEMINI_API_KEY não configurada — embeddings degradados para busca só léxica (BM25).")
+    if not (api_key or settings.gemini_api_key):
+        logger.warning("Nenhuma chave Gemini disponível — embeddings degradados para busca só léxica (BM25).")
         return [_VETOR_ZERO for _ in textos]
     resultado = []
     for texto in textos:
         try:
-            resultado.append(_chamar_api(texto))
+            resultado.append(_chamar_api(texto, api_key=api_key))
         except Exception:
             logger.warning(
                 "Falha ao chamar a API de embeddings — degradando este texto para vetor zero.", exc_info=True
@@ -99,5 +105,5 @@ def embed(textos: list[str]) -> list[list[float]]:
     return resultado
 
 
-def embed_um(texto: str) -> list[float]:
-    return embed([texto])[0]
+def embed_um(texto: str, api_key: str | None = None) -> list[float]:
+    return embed([texto], api_key=api_key)[0]

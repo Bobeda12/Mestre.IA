@@ -90,8 +90,25 @@ class Settings(BaseSettings):
     # uma só, do autor; sem isto, dez amigos animados no mesmo dia drenam
     # a cota compartilhada de todo mundo. Convidado tem teto menor: quem
     # ainda nem criou conta tem menos a perder desistindo por hoje.
-    teto_turnos_conta: int = 60
-    teto_turnos_convidado: int = 20
+    #
+    # Etapa 15 (BYOK) — baixado de 60/20 pra este valor mais conservador.
+    # Não é um número calculado: o Google parou de publicar uma tabela fixa
+    # de free tier pro Gemini (redireciona pro painel da conta), e a Groq
+    # documenta só 1.000 requisições/dia POR MODELO (3 modelos na cadeia),
+    # com cada "turno" podendo custar várias chamadas de verdade
+    # (`agent_max_passos`, o loop de ferramentas). Ponto de partida
+    # deliberadamente baixo, pra recalibrar depois com telemetria real
+    # (`EventoTelemetria`) — quem quiser mais sem esperar essa calibração já
+    # pode trazer a própria chave (`teto_turnos_conta`/`convidado` não se
+    # aplicam a quem manda `X-Gemini-Key`, ver `routers/game.py`).
+    teto_turnos_conta: int = 20
+    teto_turnos_convidado: int = 8
+    # Etapa 15 (BYOK) — quando a chave própria do jogador falha no meio do
+    # jogo e ele topa usar a chave do servidor "por enquanto" (modo de
+    # emergência), este teto (bem menor que o normal, contado à parte)
+    # evita que isso vire um jeito de sempre ter mais turnos trocando de
+    # chave. Ver `routers/game.py._verificar_teto_diario`.
+    teto_turnos_emergencia: int = 5
 
     # Etapa 10 (A-2) — confirmação de e-mail bloqueante. Mesmo padrão
     # condicional do Google/Langfuse: sem nenhum dos dois métodos abaixo

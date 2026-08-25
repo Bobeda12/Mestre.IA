@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { getChaveGemini } from './config';
 
 // Fonte única da URL da API (Etapa 7) — antes disso, "http://127.0.0.1:8000"
 // estava escrito à mão em 8 lugares (Home.tsx, CharacterCreation.tsx,
@@ -31,3 +32,13 @@ export const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 // credentials para isso funcionar (allow_origins=["*"] não é compatível
 // com cookies).
 export const api = axios.create({ baseURL: API_URL, withCredentials: true });
+
+// BYOK (Etapa 15) — o jogo de verdade fala com o servidor via `lib/sse.ts`
+// (`/chat/stream`, `fetch` direto, não passa por aqui), mas `/chat` sem
+// streaming também existe (evals/testes) e qualquer chamada futura por este
+// cliente deve carregar a mesma chave, se o jogador tiver uma configurada.
+api.interceptors.request.use((config) => {
+  const chave = getChaveGemini();
+  if (chave) config.headers.set('X-Gemini-Key', chave);
+  return config;
+});

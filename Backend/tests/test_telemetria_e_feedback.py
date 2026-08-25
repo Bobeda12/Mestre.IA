@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 
 from app.infra import llm_client
 from app.infra.db import EventoTelemetria, FeedbackNarracao, Personagem, SessionLocal, Usuario
+from app.infra.llm_client import ErroMestre
 from app.infra.settings import settings
 from app.main import app
 from app.services.auth import get_current_user
@@ -159,7 +160,9 @@ def test_teto_diario_bloqueia_apos_o_limite(client, monkeypatch):
 
     resp = client.post("/chat", json={"session_id": session_id, "action": "Eu observo de novo."})
     assert resp.status_code == 429
-    assert "amanhã" in resp.json()["detail"]
+    detalhe = resp.json()["detail"]
+    assert detalhe["codigo"] == "teto_diario_atingido"
+    assert "amanhã" in detalhe["mensagem"]
 
 
 def test_teto_diario_do_convidado_e_menor(client, monkeypatch):
@@ -205,6 +208,106 @@ def test_teto_diario_bloqueia_o_stream_tambem(client, monkeypatch):
 
     resp = client.post("/chat/stream", json={"session_id": session_id, "action": "De novo."})
     assert resp.status_code == 429
+
+
+# ---------------------------------------------------------------------------
+# BYOK — chave própria do jogador (Etapa 15)
+# ---------------------------------------------------------------------------
+
+
+def _preparar_chat_byok_falso(monkeypatch):
+    """Mesmo espírito de `_preparar_chat_falso`, mas para o caminho BYOK:
+    substitui `llm_client.chamar_com_chave_usuario` (que `routers/game.py`
+    referencia via `functools.partial` a cada request) por um dublê que
+    nunca bate na rede de verdade."""
+    monkeypatch.setattr(llm_client, "chamar_com_chave_usuario", lambda *a, **k: _RespostaFalsa())
+
+
+def test_header_com_chave_propria_ignora_o_teto_diario(client, monkeypatch):
+    monkeypatch.setattr(llm_client, "clients", {})
+    monkeypatch.setattr(settings, "teto_turnos_conta", 1)
+    _preparar_chat_falso(monkeypatch)
+    _preparar_chat_byok_falso(monkeypatch)
+    _registrar(client, "byok-sem-teto@teste.com")
+    session_id = client.post("/create_character", json=_payload_base(nome="HeroiByok")).json()["session_id"]
+
+    # Gasta o teto normal (1 turno) sem chave própria.
+    assert client.post("/chat", json={"session_id": session_id, "action": "Eu observo."}).status_code == 200
+    assert client.post("/chat", json={"session_id": session_id, "action": "De novo."}).status_code == 429
+
+    # Com a própria chave, o mesmo teto (já esgotado) não se aplica mais.
+    for _ in range(3):
+        resp = client.post(
+            "/chat",
+            json={"session_id": session_id, "action": "Com minha chave."},
+            headers={"X-Gemini-Key": "chave-de-teste"},
+        )
+        assert resp.status_code == 200, resp.text
+
+
+def test_turno_com_chave_propria_e_registrado_como_turno_byok(client, monkeypatch):
+    monkeypatch.setattr(llm_client, "clients", {})
+    _preparar_chat_falso(monkeypatch)
+    _preparar_chat_byok_falso(monkeypatch)
+    _registrar(client, "byok-telemetria@teste.com")
+    session_id = client.post("/create_character", json=_payload_base(nome="HeroiByokTelemetria")).json()["session_id"]
+
+    antes_turno = len(_eventos_do_tipo("turno"))
+    antes_byok = len(_eventos_do_tipo("turno_byok"))
+    resp = client.post(
+        "/chat", json={"session_id": session_id, "action": "Ação"}, headers={"X-Gemini-Key": "chave-de-teste"}
+    )
+    assert resp.status_code == 200, resp.text
+
+    assert len(_eventos_do_tipo("turno")) == antes_turno  # não conta pro teto normal
+    assert len(_eventos_do_tipo("turno_byok")) == antes_byok + 1
+
+
+def test_chave_propria_invalida_devolve_codigo_para_o_front(client, monkeypatch):
+    monkeypatch.setattr(llm_client, "clients", {})
+
+    def _chave_falha(*a, **k):
+        raise ErroMestre("Sua chave foi recusada pelo Gemini — confira se ela está correta.")
+
+    monkeypatch.setattr(llm_client, "chamar_com_chave_usuario", _chave_falha)
+    _registrar(client, "byok-falha@teste.com")
+    session_id = client.post("/create_character", json=_payload_base(nome="HeroiByokFalha")).json()["session_id"]
+
+    resp = client.post(
+        "/chat", json={"session_id": session_id, "action": "Ação"}, headers={"X-Gemini-Key": "chave-invalida"}
+    )
+    assert resp.status_code == 200, resp.text  # ErroMestre no turno principal não vira HTTP 4xx/5xx, ver chat_endpoint
+    corpo = resp.json()
+    assert corpo["erro"] is True
+    assert corpo["erro_codigo"] == "chave_usuario_falhou"
+
+
+def test_modo_emergencia_tem_teto_proprio_bem_menor(client, monkeypatch):
+    monkeypatch.setattr(llm_client, "clients", {})
+    monkeypatch.setattr(settings, "teto_turnos_conta", 100)  # não é o teto normal que deve travar aqui
+    monkeypatch.setattr(settings, "teto_turnos_emergencia", 1)
+    _preparar_chat_falso(monkeypatch)
+    _registrar(client, "byok-emergencia@teste.com")
+    session_id = client.post("/create_character", json=_payload_base(nome="HeroiEmergencia")).json()["session_id"]
+
+    resp1 = client.post(
+        "/chat",
+        json={"session_id": session_id, "action": "Ação de emergência."},
+        headers={"X-Modo-Emergencia": "1"},
+    )
+    assert resp1.status_code == 200, resp1.text
+
+    resp2 = client.post(
+        "/chat",
+        json={"session_id": session_id, "action": "Mais uma."},
+        headers={"X-Modo-Emergencia": "1"},
+    )
+    assert resp2.status_code == 429
+    assert resp2.json()["detail"]["codigo"] == "teto_diario_atingido"
+
+    # O teto normal (100) continua intacto — modo de emergência não gasta dele.
+    resp3 = client.post("/chat", json={"session_id": session_id, "action": "Sem emergência."})
+    assert resp3.status_code == 200, resp3.text
 
 
 # ---------------------------------------------------------------------------

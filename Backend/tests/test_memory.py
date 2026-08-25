@@ -149,3 +149,28 @@ class TestAtualizarResumoRolante:
         assert atualizou is False
         assert heroi.resumo_rolante["fatos_estabelecidos"] == ["fato preservado"]
         assert heroi.turno_resumido_ate == 0
+
+    def test_chamar_fn_injetado_e_usado_no_lugar_do_default(self, db):
+        # BYOK (Etapa 15) — `routers/game.py` injeta um `chamar_fn` ligado à
+        # chave do jogador; aqui só confirmamos que, quando informado, ele é
+        # usado no lugar do `chamar_modelo_unico(settings.modelo_barato, ...)`
+        # padrão (sem precisar tocar `llm_client` nem rede nenhuma).
+        heroi = _personagem(db, "sessao-resumo-byok")
+        heroi.historico_chat = [{"role": "user", "content": f"ação {i}"} for i in range(4)]
+
+        resposta_fake = json.dumps(_resumo_com(["resumo via chave do jogador"]))
+
+        class _Resp:
+            choices = [type("C", (), {"message": type("M", (), {"content": resposta_fake})()})]
+
+        chamadas: list[tuple] = []
+
+        def _chamar_fn(msgs, **kwargs):
+            chamadas.append((msgs, kwargs))
+            return _Resp()
+
+        atualizou = memory.atualizar_resumo_rolante(heroi, k_turnos=2, chamar_fn=_chamar_fn)
+
+        assert atualizou is True
+        assert len(chamadas) == 1
+        assert "resumo via chave do jogador" in heroi.resumo_rolante["fatos_estabelecidos"]

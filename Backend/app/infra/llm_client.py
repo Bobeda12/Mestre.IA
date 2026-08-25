@@ -199,6 +199,53 @@ def chamar_com_fallback(msgs: list[dict], tools: list[dict] | None = None, tool_
     ) from ultimo_erro
 
 
+def chamar_com_chave_usuario(
+    msgs: list[dict],
+    api_key: str,
+    tools: list[dict] | None = None,
+    tool_choice: str = "auto",
+    modelo: str = "gemini-3.5-flash",
+) -> Any:
+    """BYOK (Etapa 15) — mesma forma de `chamar_modelo_unico`, mas o cliente
+    é efêmero (chave do jogador, nunca guardada em `clients`) e sem cadeia
+    de fallback: é só o Gemini, com a chave que ele forneceu. Erros viram
+    `ErroMestre` com mensagens específicas ("sua chave..."), pra o router
+    distinguir de uma falha da chave do servidor e não cair num fallback
+    silencioso que gastaria a cota do servidor sem o jogador perceber."""
+    cliente = openai.OpenAI(api_key=api_key, base_url=_BASE_URLS["gemini"], max_retries=0)
+    try:
+        return _chamar_modelo(cliente, "gemini", modelo, msgs, tools, tool_choice)
+    except openai.AuthenticationError as e:
+        raise ErroMestre("Sua chave foi recusada pelo Gemini — confira se ela está correta.") from e
+    except _ERROS_TRANSITORIOS as e:
+        raise ErroMestre("Sua chave bateu no limite de uso, ou o Gemini demorou demais para responder.") from e
+    except openai.APIStatusError as e:
+        raise ErroMestre(f"Sua chave foi recusada pelo Gemini (código {e.status_code}).") from e
+
+
+def chamar_stream_com_chave_usuario(
+    msgs: list[dict],
+    api_key: str,
+    tools: list[dict] | None = None,
+    tool_choice: str = "auto",
+    modelo: str = "gemini-3.5-flash",
+) -> Iterator[Any]:
+    """Versão em streaming de `chamar_com_chave_usuario`. Sem cadeia pra
+    cair — qualquer falha (antes ou depois do primeiro chunk) vira
+    `ErroMestre` direto, nunca um fallback silencioso para outro provedor
+    ou pra chave do servidor (ver docstring acima)."""
+    cliente = openai.OpenAI(api_key=api_key, base_url=_BASE_URLS["gemini"], max_retries=0)
+    try:
+        stream = _chamar_modelo(cliente, "gemini", modelo, msgs, tools, tool_choice, stream=True)
+        yield from stream
+    except openai.AuthenticationError as e:
+        raise ErroMestre("Sua chave foi recusada pelo Gemini — confira se ela está correta.") from e
+    except _ERROS_TRANSITORIOS as e:
+        raise ErroMestre("Sua chave bateu no limite de uso, ou a conexão caiu no meio da resposta.") from e
+    except openai.APIStatusError as e:
+        raise ErroMestre(f"Sua chave foi recusada pelo Gemini (código {e.status_code}).") from e
+
+
 def chamar_stream_com_fallback(
     msgs: list[dict], tools: list[dict] | None = None, tool_choice: str = "auto"
 ) -> Iterator[Any]:

@@ -1,7 +1,9 @@
+import functools
 import json
-from collections.abc import Generator
+from collections.abc import Callable, Generator
+from typing import Any
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from starlette.background import BackgroundTask
@@ -9,6 +11,7 @@ from starlette.background import BackgroundTask
 from app.domain.character import LoadRequest, UserAction
 from app.domain.memoria import ResumoRolante
 from app.domain.state import CombatState, QuestLog, WorldState
+from app.infra import embeddings, llm_client
 from app.infra.data_manager import regras
 from app.infra.db import Personagem, SessionLocal, Usuario, get_db
 from app.infra.llm_client import ErroMestre, chamar_com_fallback
@@ -25,6 +28,35 @@ from app.services.tools import ToolExecutor
 
 router = APIRouter(tags=["game"])
 
+# Etapa 15 (BYOK) — modelo usado pro resumo rolante quando ele é ligado à
+# chave do jogador (`chamar_com_chave_usuario`), no mesmo tier barato de
+# `settings.modelo_barato` ("gemini:gemini-3.5-flash-lite"), só que sem o
+# prefixo "provedor:" (que `chamar_com_chave_usuario` já fixa em "gemini").
+_MODELO_BARATO_BYOK = settings.modelo_barato.rsplit(":", 1)[-1]
+
+
+class _ChaveUsuario:
+    """BYOK (Etapa 15) — agrupa as variantes de `chamar_fn`/`embed_fn`
+    ligadas à chave que o jogador mandou no header `X-Gemini-Key` (nunca
+    persistida — só vive como closure de `functools.partial` durante este
+    request/BackgroundTask). Quando `chave` é `None`, todos os campos ficam
+    `None` e quem consome usa o próprio default (cadeia/chave do
+    servidor)."""
+
+    def __init__(self, chave: str | None) -> None:
+        self.presente = chave is not None
+        self.chamar_fn: Callable[..., Any] | None = None
+        self.chamar_fn_stream: Callable[..., Any] | None = None
+        self.chamar_fn_barato: Callable[..., Any] | None = None
+        self.embed_fn: Callable[[str], list[float]] | None = None
+        if chave is not None:
+            self.chamar_fn = functools.partial(llm_client.chamar_com_chave_usuario, api_key=chave)
+            self.chamar_fn_stream = functools.partial(llm_client.chamar_stream_com_chave_usuario, api_key=chave)
+            self.chamar_fn_barato = functools.partial(
+                llm_client.chamar_com_chave_usuario, api_key=chave, modelo=_MODELO_BARATO_BYOK
+            )
+            self.embed_fn = functools.partial(embeddings.embed_um, api_key=chave)
+
 
 def _buscar_personagem(db: Session, current_user: Usuario, session_id: str, mensagem_404: str) -> Personagem:
     heroi = db.query(Personagem).filter(Personagem.session_id == session_id).first()
@@ -38,33 +70,71 @@ def _buscar_personagem(db: Session, current_user: Usuario, session_id: str, mens
     return heroi
 
 
-def _verificar_teto_diario(db: Session, current_user: Usuario) -> None:
+def _verificar_teto_diario(db: Session, current_user: Usuario, chave: _ChaveUsuario, modo_emergencia: bool) -> None:
     """Etapa 10 (A-3) — teto de turnos por usuário/dia, checado antes de
     gastar uma chamada à Groq. `EventoTelemetria` (Postgres) é quem conta,
     não `slowapi` (em memória): a máquina do Fly desliga sozinha quando
     ninguém joga (`min_machines_running = 0`), e um contador em memória
-    zeraria a cada boot — o teto precisa sobreviver a isso."""
-    teto = settings.teto_turnos_conta if current_user.email is not None else settings.teto_turnos_convidado
-    if telemetria.turnos_hoje(db, current_user.id) >= teto:
-        raise HTTPException(status_code=429, detail="A taverna fecha ao anoitecer; volte amanhã.")
+    zeraria a cada boot — o teto precisa sobreviver a isso.
+
+    Etapa 15 (BYOK) — quem manda a própria chave não consome cota do
+    servidor, então não tem teto (`return` cedo). O "modo de emergência"
+    (chave própria falhou, jogador topou usar a do servidor) tem um teto
+    dedicado e bem mais curto que o normal, contado à parte
+    (`tipo="turno_emergencia"`) — não vira um jeito de burlar o teto de
+    conta só trocando de chave no meio do dia."""
+    if chave.presente:
+        return
+    if modo_emergencia:
+        teto = settings.teto_turnos_emergencia
+        contados = telemetria.turnos_hoje(db, current_user.id, tipo="turno_emergencia")
+    else:
+        teto = settings.teto_turnos_conta if current_user.email is not None else settings.teto_turnos_convidado
+        contados = telemetria.turnos_hoje(db, current_user.id)
+    if contados >= teto:
+        raise HTTPException(
+            status_code=429,
+            detail={"codigo": "teto_diario_atingido", "mensagem": "A taverna fecha ao anoitecer; volte amanhã."},
+        )
+
+
+def _tipo_telemetria_turno(chave: _ChaveUsuario, modo_emergencia: bool) -> str:
+    """Etapa 15 (BYOK) — discrimina o tipo de `EventoTelemetria` gravado por
+    turno, pra `turnos_hoje` conseguir contar cada teto separadamente sem
+    misturar turnos que não consomem cota nenhuma (`turno_byok`) com os que
+    consomem a cota normal (`turno`) ou a de emergência (`turno_emergencia`)."""
+    if chave.presente:
+        return "turno_byok"
+    return "turno_emergencia" if modo_emergencia else "turno"
 
 
 def _persistir_memoria_em_segundo_plano(
-    heroi_id: int, turno: int, tipo: str, texto: str, personagens: list[str]
+    heroi_id: int,
+    turno: int,
+    tipo: str,
+    texto: str,
+    personagens: list[str],
+    chamar_fn_barato: Callable[..., Any] | None = None,
+    embed_fn: Callable[[str], list[float]] | None = None,
 ) -> None:
     """Etapa 10 (A-6) — roda depois que a resposta já chegou ao jogador: nem
     o embedding (`infra/embeddings.embed_um`) nem a chamada ao modelo do
     resumo rolante (`memory.atualizar_resumo_rolante`) seguram mais o
     turno. Sessão própria (`SessionLocal`), não a do pedido — que já pode
-    estar fechada quando isto roda, especialmente no `/chat/stream`."""
+    estar fechada quando isto roda, especialmente no `/chat/stream`.
+
+    `chamar_fn_barato`/`embed_fn` (Etapa 15, BYOK): capturados como closure
+    (`functools.partial` com a chave do jogador) ANTES desta tarefa ser
+    agendada — o header HTTP que originou a chave já não existe mais
+    quando isto roda em segundo plano."""
     db = SessionLocal()
     try:
         heroi = db.get(Personagem, heroi_id)
         if heroi is None:  # personagem arquivado/apagado entre o turno e isto rodar
             return
-        memory.atualizar_resumo_rolante(heroi)
+        memory.atualizar_resumo_rolante(heroi, chamar_fn=chamar_fn_barato)
         db.commit()
-        memory.registrar_evento(db, heroi_id, turno, tipo=tipo, texto=texto, personagens=personagens)
+        memory.registrar_evento(db, heroi_id, turno, tipo=tipo, texto=texto, personagens=personagens, embed_fn=embed_fn)
     finally:
         db.close()
 
@@ -121,9 +191,13 @@ async def chat_endpoint(
     background_tasks: BackgroundTasks,
     current_user: Usuario = Depends(get_current_verified_user),
     db: Session = Depends(get_db),
+    chave_usuario: str | None = Header(default=None, alias="X-Gemini-Key"),
+    x_modo_emergencia: str | None = Header(default=None, alias="X-Modo-Emergencia"),
 ) -> dict:
+    chave = _ChaveUsuario(chave_usuario)
+    modo_emergencia = bool(x_modo_emergencia)
     heroi = _buscar_personagem(db, current_user, user_input.session_id, "Sessão não encontrada.")
-    _verificar_teto_diario(db, current_user)
+    _verificar_teto_diario(db, current_user, chave, modo_emergencia)
 
     w_state = WorldState.model_validate(heroi.world_state or {})
     c_state = CombatState.model_validate(heroi.combat_state or {})
@@ -148,7 +222,7 @@ async def chat_endpoint(
         msgs = [{"role": "system", "content": prompt_morte}] + hist + [{"role": "user", "content": user_input.action}]
         try:
             with turno_span(personagem_id=heroi.id, usuario_id=current_user.id, turno=w_state.turno):
-                resp = chamar_com_fallback(msgs)
+                resp = (chave.chamar_fn or chamar_com_fallback)(msgs)
             narrativa = resp.choices[0].message.content or ""
         except ErroMestre:
             narrativa = ""
@@ -160,7 +234,14 @@ async def chat_endpoint(
         # services/rag_regras.py.
         resumo = ResumoRolante.model_validate(heroi.resumo_rolante or {})
         with medir("memoria", personagem_id=heroi.id, turno=w_state.turno):
-            memorias = memory.memorias_relevantes(db, heroi.id, user_input.action, w_state.turno)
+            memorias = memory.memorias_relevantes(
+                db, heroi.id, user_input.action, w_state.turno, embed_fn=chave.embed_fn
+            )
+        # Etapa 15 (BYOK) — RAG de regras fica sempre na chave do servidor
+        # (`embed_fn` não é passado aqui de propósito): é um texto fixo,
+        # cacheado por processo por `id(embed_fn)`; ligar à chave do
+        # jogador criaria um `functools.partial` novo a cada request e
+        # reembedaria a bíblia inteira em toda chamada.
         regras_relevantes = rag_regras.regras_relevantes(user_input.action)
         nomes_na_cena = {i.nome for i in c_state.inimigos} | set(resumo.npcs_conhecidos)
         reputacoes = {nome: valor for nome, valor in heroi.reputacao_npcs.items() if nome in nomes_na_cena}
@@ -176,21 +257,26 @@ async def chat_endpoint(
             reputacoes=reputacoes,
         )
         msgs = [{"role": "system", "content": prompt}] + hist + [{"role": "user", "content": user_input.action}]
-        executor = ToolExecutor(heroi, c_state, w_state)
+        executor = ToolExecutor(heroi, c_state, w_state, q_state)
         try:
             with (
                 turno_span(personagem_id=heroi.id, usuario_id=current_user.id, turno=w_state.turno),
                 medir("agente", personagem_id=heroi.id, turno=w_state.turno),
             ):
-                narrativa, eventos_ferramentas, _chamadas = executar_turno(msgs, executor)
+                narrativa, eventos_ferramentas, _chamadas = executar_turno(msgs, executor, chamar_fn=chave.chamar_fn)
         except ErroMestre as e:
             # Etapa 10 (A-7) — a mensagem de erro é um campo próprio, não
             # texto embutido em `narrativa` com `*(...)*`: o histórico
             # nunca vê essa linha (o `return` é antes de persistir), e o
             # cliente sabe que é um aviso do sistema pelo campo, não por
             # decorar um padrão de asterisco no texto.
+            #
+            # Etapa 15 (BYOK) — `erro_codigo` distingue uma falha da chave
+            # do jogador (o front oferece o modo de emergência) de qualquer
+            # outra falha do mestre (mensagem genérica, sem essa oferta).
             return _resposta(
-                heroi, c_state, q_state, narrativa="", erro=True, erro_mensagem=e.mensagem, turno_mundo=w_state.turno
+                heroi, c_state, q_state, narrativa="", erro=True, erro_mensagem=e.mensagem,
+                erro_codigo="chave_usuario_falhou" if chave.presente else None, turno_mundo=w_state.turno,
             )
 
     violacoes = validar_narrativa(narrativa, heroi, c_state, w_state)
@@ -214,6 +300,7 @@ async def chat_endpoint(
     heroi.historico_chat = novo_hist
     heroi.combat_state = c_state.model_dump()
     heroi.world_state = w_state.model_dump()
+    heroi.quest_log = q_state.model_dump()
     db.commit()
 
     # Etapa 10 (A-6) — resumo rolante e evento de memória saem do caminho
@@ -226,8 +313,12 @@ async def chat_endpoint(
         "morte" if eventos_morte else "turno",
         f"{user_input.action} → {narrativa[:300]}",
         [i.nome for i in c_state.inimigos],
+        chamar_fn_barato=chave.chamar_fn_barato,
+        embed_fn=chave.embed_fn,
     )
-    telemetria.registrar_evento(db, current_user.id, "turno", personagem_id=heroi.id)
+    telemetria.registrar_evento(
+        db, current_user.id, _tipo_telemetria_turno(chave, modo_emergencia), personagem_id=heroi.id
+    )
 
     return _resposta(
         heroi, c_state, q_state, narrativa=narrativa,
@@ -246,6 +337,8 @@ def chat_stream_endpoint(
     user_input: UserAction,
     current_user: Usuario = Depends(get_current_verified_user),
     db: Session = Depends(get_db),
+    chave_usuario: str | None = Header(default=None, alias="X-Gemini-Key"),
+    x_modo_emergencia: str | None = Header(default=None, alias="X-Modo-Emergencia"),
 ) -> StreamingResponse:
     """Versão em streaming de `/chat` (Etapa 7, ADR-0012) — mesma regra de
     jogo, mesma persistência, só a entrega ao cliente muda. Duplica a
@@ -264,11 +357,13 @@ def chat_stream_endpoint(
     - `state`: sempre o último frame — o mesmo formato de `_resposta()`,
       pra o HUD atualizar HP/inventário/combate de uma vez.
     """
+    chave = _ChaveUsuario(chave_usuario)
+    modo_emergencia = bool(x_modo_emergencia)
     heroi = _buscar_personagem(db, current_user, user_input.session_id, "Sessão não encontrada.")
     # Checado aqui, antes de `StreamingResponse` existir — depois que a
     # stream abre, a rota não pode mais levantar `HTTPException` normal
     # (ver a mesma observação nos frames `erro`/`state` mais abaixo).
-    _verificar_teto_diario(db, current_user)
+    _verificar_teto_diario(db, current_user, chave, modo_emergencia)
 
     w_state = WorldState.model_validate(heroi.world_state or {})
     c_state = CombatState.model_validate(heroi.combat_state or {})
@@ -302,7 +397,7 @@ def chat_stream_endpoint(
             )
             try:
                 with turno_span(personagem_id=heroi.id, usuario_id=current_user.id, turno=w_state.turno):
-                    resp = chamar_com_fallback(msgs)
+                    resp = (chave.chamar_fn or chamar_com_fallback)(msgs)
                 narrativa = resp.choices[0].message.content or ""
             except ErroMestre:
                 narrativa = ""
@@ -311,7 +406,11 @@ def chat_stream_endpoint(
         else:
             resumo = ResumoRolante.model_validate(heroi.resumo_rolante or {})
             with medir("memoria", personagem_id=heroi.id, turno=w_state.turno):
-                memorias = memory.memorias_relevantes(db, heroi.id, user_input.action, w_state.turno)
+                memorias = memory.memorias_relevantes(
+                    db, heroi.id, user_input.action, w_state.turno, embed_fn=chave.embed_fn
+                )
+            # Etapa 15 (BYOK) — mesma razão de `chat_endpoint`: RAG de
+            # regras fica sempre na chave do servidor (cache por processo).
             regras_relevantes = rag_regras.regras_relevantes(user_input.action)
             nomes_na_cena = {i.nome for i in c_state.inimigos} | set(resumo.npcs_conhecidos)
             reputacoes = {nome: valor for nome, valor in heroi.reputacao_npcs.items() if nome in nomes_na_cena}
@@ -321,7 +420,7 @@ def chat_stream_endpoint(
                 regras_relevantes=regras_relevantes, memorias=memorias, resumo=resumo, reputacoes=reputacoes,
             )
             msgs = [{"role": "system", "content": prompt}] + hist + [{"role": "user", "content": user_input.action}]
-            executor = ToolExecutor(heroi, c_state, w_state)
+            executor = ToolExecutor(heroi, c_state, w_state, q_state)
 
             pedacos: list[str] = []
             erro_turno: str | None = None
@@ -329,7 +428,7 @@ def chat_stream_endpoint(
                 turno_span(personagem_id=heroi.id, usuario_id=current_user.id, turno=w_state.turno),
                 medir("agente", personagem_id=heroi.id, turno=w_state.turno),
             ):
-                for evento in executar_turno_stream(msgs, executor):
+                for evento in executar_turno_stream(msgs, executor, chamar_fn=chave.chamar_fn_stream):
                     if evento.tipo == "token":
                         pedacos.append(evento.dados)
                         yield _sse("token", {"texto": evento.dados})
@@ -337,7 +436,13 @@ def chat_stream_endpoint(
                         yield _sse("tool_event", evento.dados)
                     elif evento.tipo == "erro":
                         erro_turno = evento.dados
-                        yield _sse("erro", {"mensagem": erro_turno})
+                        # Etapa 15 (BYOK) — `codigo` deixa o front oferecer
+                        # o modo de emergência só quando a falha veio da
+                        # chave do próprio jogador.
+                        dados_erro: dict = {"mensagem": erro_turno}
+                        if chave.presente:
+                            dados_erro["codigo"] = "chave_usuario_falhou"
+                        yield _sse("erro", dados_erro)
 
             if erro_turno is not None:
                 # O frame `erro` já mandou a mensagem estruturada, ao vivo
@@ -384,6 +489,7 @@ def chat_stream_endpoint(
         heroi.historico_chat = novo_hist
         heroi.combat_state = c_state.model_dump()
         heroi.world_state = w_state.model_dump()
+        heroi.quest_log = q_state.model_dump()
         db.commit()
 
         # Etapa 10 (A-6) — só agenda; quem executa é `_tarefa_pos_stream`,
@@ -394,8 +500,12 @@ def chat_stream_endpoint(
             tipo="morte" if eventos_morte else "turno",
             texto=f"{user_input.action} → {narrativa[:300]}",
             personagens=[i.nome for i in c_state.inimigos],
+            chamar_fn_barato=chave.chamar_fn_barato,
+            embed_fn=chave.embed_fn,
         )
-        telemetria.registrar_evento(db, current_user.id, "turno", personagem_id=heroi.id)
+        telemetria.registrar_evento(
+            db, current_user.id, _tipo_telemetria_turno(chave, modo_emergencia), personagem_id=heroi.id
+        )
 
         yield _sse(
             "state",
