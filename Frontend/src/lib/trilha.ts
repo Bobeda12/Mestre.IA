@@ -14,8 +14,18 @@ export const FAIXAS: Record<TemaMusical, string> = {
 };
 
 const CHAVE_MUDO = 'mestre_ia_trilha_muda';
+const CHAVE_VOLUME = 'mestre_ia_trilha_volume';
 const DURACAO_CROSSFADE_MS = 1500;
-const VOLUME_ALVO = 0.35;
+// Volume padrão quando a pessoa nunca mexeu. Deixar de ser constante foi o
+// que permitiu o controle no menu de configuração: antes 0.35 era o único
+// volume possível, no código.
+const VOLUME_PADRAO = 0.35;
+
+function lerVolumeInicial(): number {
+  const salvo = localStorage.getItem(CHAVE_VOLUME);
+  const n = salvo === null ? NaN : Number(salvo);
+  return Number.isFinite(n) && n >= 0 && n <= 1 ? n : VOLUME_PADRAO;
+}
 
 function lerMudoInicial(): boolean {
   // Começar mudo é defensável — o amigo pode estar no ônibus, e ninguém
@@ -36,6 +46,19 @@ export function useTrilha(tema: TemaMusical) {
   mudoRef.current = mudo;
   const atualRef = useRef<HTMLAudioElement | null>(null);
   const temaAtualRef = useRef<TemaMusical | null>(null);
+
+  const [volume, setVolumeState] = useState(lerVolumeInicial);
+  // Ref além do state porque a rampa de fade roda fora do ciclo de render e
+  // precisa do valor corrente, não do capturado quando o efeito começou.
+  const volumeRef = useRef(volume);
+  volumeRef.current = volume;
+
+  const setVolume = (v: number) => {
+    const preso = v < 0 ? 0 : v > 1 ? 1 : v;
+    setVolumeState(preso);
+    localStorage.setItem(CHAVE_VOLUME, String(preso));
+    if (atualRef.current) atualRef.current.volume = preso;
+  };
 
   const setMudo = (valor: boolean) => {
     setMudoState(valor);
@@ -61,8 +84,8 @@ export function useTrilha(tema: TemaMusical) {
     const passo = (agora: number) => {
       if (cancelado) return;
       const t = Math.min(1, (agora - inicio) / DURACAO_CROSSFADE_MS);
-      novo.volume = VOLUME_ALVO * t;
-      if (anterior) anterior.volume = VOLUME_ALVO * (1 - t);
+      novo.volume = volumeRef.current * t;
+      if (anterior) anterior.volume = volumeRef.current * (1 - t);
       if (t < 1) {
         requestAnimationFrame(passo);
       } else if (anterior) {
@@ -87,7 +110,7 @@ export function useTrilha(tema: TemaMusical) {
       //
       // Encerrar a rampa levando o volume ao alvo torna o resultado o mesmo
       // com ou sem interrupção: o fade é um enfeite, o volume final não é.
-      novo.volume = VOLUME_ALVO;
+      novo.volume = volumeRef.current;
     };
   }, [tema]);
 
@@ -98,7 +121,7 @@ export function useTrilha(tema: TemaMusical) {
     };
   }, []);
 
-  return { mudo, alternarMudo: () => setMudo(!mudoRef.current) };
+  return { mudo, alternarMudo: () => setMudo(!mudoRef.current), volume, setVolume };
 }
 
 // Trocar faixa a seco é pior que não ter música (backlog B-4) — o tema só

@@ -38,6 +38,7 @@ const ICON_PATHS = {
   enviar: '/assets/icons/enviar.png',
   cura: '/assets/icons/cura.png',
   caveira: '/assets/icons/caveira.png',
+  config: '/assets/icons/config.png',
 } as const;
 
 export type PixelIconName = keyof typeof ICON_PATHS;

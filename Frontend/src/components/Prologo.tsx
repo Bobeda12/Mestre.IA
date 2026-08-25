@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import RetratoPixelado from './RetratoPixelado';
+import { useVelocidadeTexto } from '../lib/config';
 
 // Etapa 11 (B-7) — o prólogo (narrator.gerar_prologo_missao) sempre existiu
 // como texto pronto, mas virava só mais uma bolha de chat igual às outras
@@ -21,18 +22,24 @@ interface PrologoProps {
   onComecar: () => void;
 }
 
-const VELOCIDADE_MS = 12;
 const CARACTERES_POR_TICK = 2;
 
 export default function Prologo({
   nome, raca, classe, local, clima, background, objetivo, charImage, texto, onComecar,
 }: PrologoProps) {
+  // Velocidade vem das opções; 0 mostra o texto de uma vez.
+  const { velocidade } = useVelocidadeTexto();
   const [visivel, setVisivel] = useState('');
   const [concluido, setConcluido] = useState(false);
 
   useEffect(() => {
     setVisivel('');
     setConcluido(false);
+    if (velocidade === 0) {
+      setVisivel(texto);
+      setConcluido(true);
+      return;
+    }
     let i = 0;
     const id = setInterval(() => {
       i += CARACTERES_POR_TICK;
@@ -41,9 +48,9 @@ export default function Prologo({
         clearInterval(id);
         setConcluido(true);
       }
-    }, VELOCIDADE_MS);
+    }, velocidade);
     return () => clearInterval(id);
-  }, [texto]);
+  }, [texto, velocidade]);
 
   const pular = () => {
     setVisivel(texto);

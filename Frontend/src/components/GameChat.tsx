@@ -17,6 +17,8 @@ import PixelButton from './PixelButton';
 import InventoryGrid from './InventoryGrid';
 import Carregando from './Carregando';
 import RetratoPixelado from './RetratoPixelado';
+import MenuConfiguracao from './MenuConfiguracao';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip';
 
 // Etapa 14 (revisão) — a ficha virou menu de abas estilo JRPG. Antes tudo
 // (retrato, barras, atributos, missão, inventário) era uma pilha só numa
@@ -108,6 +110,7 @@ export default function GameChat() {
   const [showSidebar, setShowSidebar] = useState(true);
   const [abaAtiva, setAbaAtiva] = useState<AbaFicha>('status');
   const [retratoAberto, setRetratoAberto] = useState(false);
+  const [configAberta, setConfigAberta] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // FICHA — sempre a verdade que vem do backend (load_game / chat)
@@ -174,7 +177,7 @@ export default function GameChat() {
   // Etapa 11 (B-4) — trilha por tema. O tema é derivado do estado (combate,
   // HP baixo, game over), nunca pedido ao modelo.
   const temaMusical = calcularTema({ gameOver, combateAtivo: combatActive, hpAtual, hpMax });
-  const { mudo, alternarMudo } = useTrilha(temaMusical);
+  const trilha = useTrilha(temaMusical);
 
   const maiorTurnoIndex = messages.reduce(
     (max, m) => (m.kind === 'texto' && m.turnoIndex !== undefined ? Math.max(max, m.turnoIndex) : max),
@@ -493,26 +496,17 @@ export default function GameChat() {
               transition-all duration-300 bg-gray-900 border-r border-gray-800 flex flex-col shrink-0 overflow-hidden`}
       >
           <div className="p-4 border-b border-gray-800 flex justify-between items-center bg-black/20">
-              {/* Voltar ao menu. Nao existia saida do jogo pela interface: so
-                  dava pra sair pelo botao do navegador ou editando a URL. O
-                  progresso e salvo no servidor a cada turno, entao sair nao
-                  perde nada e nao precisa de confirmacao. */}
-              <div className="flex items-center gap-2 min-w-0">
-                  <button
-                      onClick={() => navigate('/')}
-                      aria-label="Voltar ao menu inicial"
-                      title="Voltar ao menu inicial"
-                      className="flex items-center gap-1 px-2 py-1 border-2 border-gray-700 hover:border-rpg-gold text-gray-300 hover:text-rpg-gold font-rpg text-xs transition-colors focus-visible:outline-none focus-visible:border-rpg-gold shrink-0"
-                  ><PixelIcon name="seta" size={12} className="rotate-180"/> Menu</button>
-                  <h2 className="font-pixel-title text-sm text-rpg-gold flex items-center gap-2 truncate"><PixelIcon name="pergaminho" size={18}/> FICHA</h2>
-              </div>
+              <h2 className="font-pixel-title text-sm text-rpg-gold flex items-center gap-2 truncate"><PixelIcon name="pergaminho" size={18}/> FICHA</h2>
               <div className="flex items-center gap-3">
+                  {/* Som e "voltar ao menu" saíram daqui: viraram itens do
+                      menu de opções, que é onde o jogador procura por eles e
+                      onde cabem os próximos ajustes. */}
                   <button
-                      onClick={alternarMudo}
-                      aria-label={mudo ? "Ativar música" : "Silenciar música"}
-                      title={mudo ? "Ativar música" : "Silenciar música"}
-                      className="text-gray-500 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rpg-gold"
-                  ><PixelIcon name={mudo ? 'som-mudo' : 'som-ligado'} size={18}/></button>
+                      onClick={() => setConfigAberta(true)}
+                      aria-label="Abrir configurações"
+                      title="Configurações"
+                      className="text-gray-300 hover:text-rpg-gold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rpg-gold"
+                  ><PixelIcon name="config" size={18}/></button>
                   <button
                       onClick={() => setShowSidebar(false)}
                       aria-label="Fechar ficha do personagem"
@@ -647,42 +641,78 @@ export default function GameChat() {
           </div>
       )}
 
+      <MenuConfiguracao aberto={configAberta} aoFechar={() => setConfigAberta(false)} trilha={trilha} />
+
       {/* CHAT AREA */}
       <div className="flex-1 flex flex-col relative bg-[#050505]">
         {/* Vitais sobre a área de jogo, não dentro da ficha: vida, nível e
             defesa são o que se olha NO MEIO da luta, e aqui continuam
             visíveis mesmo com a ficha fechada — que é como jogo faz. De
             quebra devolveram ~150px de altura pra barra lateral. */}
-        <div className="shrink-0 flex items-center gap-4 px-3 py-2 border-b-2 border-gray-800 bg-black/60">
-            <div className="flex items-center gap-2 min-w-0 flex-1">
-                <PixelIcon name="coracao" size={14} />
-                <span className="text-[11px] font-rpg text-gray-200 shrink-0">{hpAtual}/{hpMax}</span>
-                <div className="flex-1 min-w-[60px] max-w-[180px]"><PixelBar value={hpAtual} max={hpMax} colorClass="bg-red-600" /></div>
-            </div>
-            <div className="hidden sm:flex items-center gap-2 min-w-0 flex-1">
-                <PixelIcon name="estrela" size={14} />
-                <span className="text-[11px] font-rpg text-gray-200 shrink-0">Nv {nivel}</span>
-                <div className="flex-1 min-w-[60px] max-w-[180px]">
-                    <PixelBar
-                        value={xpProximoNivel != null ? xp : 1}
-                        max={xpProximoNivel != null ? xpProximoNivel : 1}
-                        colorClass="bg-rpg-gold"
-                    />
-                </div>
-            </div>
-            <div className="flex items-center gap-1 shrink-0">
-                <PixelIcon name="escudo" size={14} />
-                <span className="text-[11px] font-rpg text-blue-200">{defesa ?? "?"}</span>
-            </div>
-        </div>
+        <div className="shrink-0 flex items-center gap-3 md:gap-4 px-3 py-2 border-b-2 border-gray-800 bg-black/60">
+            {/* Abrir a ficha mora DENTRO da faixa, nao flutuando sobre ela.
+                Antes era `absolute top-4 left-4` e cobria o numero de vida
+                quando a ficha estava fechada — parecia defeito de layout. */}
+            {!showSidebar && (
+                <button
+                    onClick={() => setShowSidebar(true)}
+                    aria-label="Abrir ficha do personagem"
+                    className="shrink-0 p-1 border-2 border-gray-700 hover:border-rpg-gold text-gray-300 hover:text-rpg-gold transition-colors focus-visible:outline-none focus-visible:border-rpg-gold"
+                ><PixelIcon name="menu" size={16}/></button>
+            )}
+            {/* As tres medidas reagem ao mouse e dizem o que sao. Sem isso a
+                faixa era uma fileira de barras coloridas sem legenda: dava pra
+                jogar sem saber qual e vida e qual e experiencia. O mesmo
+                `ui/tooltip` que o RollCard e o inventario ja usam. */}
+            <TooltipProvider delayDuration={120}>
+                <Tooltip>
+                    <TooltipTrigger asChild>
+                        <div tabIndex={0} className="flex items-center gap-2 min-w-0 flex-1 cursor-help px-1 py-0.5 border-2 border-transparent hover:border-gray-700 focus-visible:outline-none focus-visible:border-rpg-gold transition-colors">
+                            <PixelIcon name="coracao" size={14} />
+                            <span className="text-[11px] font-rpg text-gray-200 shrink-0">{hpAtual}/{hpMax}</span>
+                            <div className="flex-1 min-w-[60px] max-w-[180px]"><PixelBar value={hpAtual} max={hpMax} colorClass="bg-red-600" /></div>
+                        </div>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                        Vida: {hpAtual} de {hpMax}
+                        {hpMax > 0 && ` (${Math.round((hpAtual / hpMax) * 100)}%)`}
+                    </TooltipContent>
+                </Tooltip>
 
-        {!showSidebar && (
-            <button
-                onClick={() => setShowSidebar(true)}
-                aria-label="Abrir ficha do personagem"
-                className="absolute top-4 left-4 z-40 p-2 bg-black/50 text-gray-400 border border-gray-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rpg-gold"
-            ><PixelIcon name="menu" size={20}/></button>
-        )}
+                <Tooltip>
+                    <TooltipTrigger asChild>
+                        <div tabIndex={0} className="hidden sm:flex items-center gap-2 min-w-0 flex-1 cursor-help px-1 py-0.5 border-2 border-transparent hover:border-gray-700 focus-visible:outline-none focus-visible:border-rpg-gold transition-colors">
+                            <PixelIcon name="estrela" size={14} />
+                            <span className="text-[11px] font-rpg text-gray-200 shrink-0">Nv {nivel}</span>
+                            <div className="flex-1 min-w-[60px] max-w-[180px]">
+                                <PixelBar
+                                    value={xpProximoNivel != null ? xp : 1}
+                                    max={xpProximoNivel != null ? xpProximoNivel : 1}
+                                    colorClass="bg-rpg-gold"
+                                />
+                            </div>
+                        </div>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                        {xpProximoNivel != null
+                            ? `Experiência: ${xp} de ${xpProximoNivel} para o nível ${nivel + 1}`
+                            : `Nível ${nivel} — experiência no máximo`}
+                    </TooltipContent>
+                </Tooltip>
+
+                <Tooltip>
+                    <TooltipTrigger asChild>
+                        <div tabIndex={0} className="flex items-center gap-1 shrink-0 cursor-help px-1 py-0.5 border-2 border-transparent hover:border-gray-700 focus-visible:outline-none focus-visible:border-rpg-gold transition-colors">
+                            <PixelIcon name="escudo" size={14} />
+                            <span className="text-[11px] font-rpg text-blue-200">{defesa ?? "?"}</span>
+                        </div>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                        Defesa {defesa ?? "?"} — o número que um ataque precisa alcançar para acertar você.
+                    </TooltipContent>
+                </Tooltip>
+            </TooltipProvider>
+        </div>
 
         {/* Convite pra reivindicar (Etapa 10, A-1) — aparece só pro
             convidado, depois do primeiro momento bom. Fica embaixo, longe

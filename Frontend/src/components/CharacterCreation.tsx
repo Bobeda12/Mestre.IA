@@ -230,13 +230,13 @@ export default function CharacterCreation({ onCharacterCreated }: CharacterCreat
   const currentDetails = step === 1 ? raceData : step === 2 ? classData : null;
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-black font-sans text-gray-100">
+    <div className="flex flex-col md:flex-row min-h-[100dvh] w-screen md:overflow-hidden bg-black text-gray-100">
       <div className="absolute top-4 left-4 z-50 flex items-center gap-3">
         <button onClick={() => navigate('/')} className="text-gray-300 hover:text-rpg-gold flex items-center gap-2 font-rpg"><PixelIcon name="seta" className="rotate-180" /> Sair</button>
         <BotaoSom tema="aventura" />
       </div>
 
-      <div className="w-1/3 h-full flex flex-col bg-gray-900 border-r border-gray-800 z-20 shadow-2xl relative">
+      <div className="w-full md:w-1/3 md:h-full flex flex-col bg-gray-900 border-b-2 md:border-b-0 md:border-r border-gray-800 z-20 shadow-2xl relative">
         <div className="p-6 border-b border-gray-800 bg-black/40 mt-10">
            <h1 className="text-xl font-pixel-title text-rpg-gold flex items-center gap-2"><PixelIcon name="coroa" size={20} /> CRIAÇÃO</h1>
            {/* Etapa 14 (C-4) — passos em blocos discretos, mesmo espírito do
@@ -245,7 +245,7 @@ export default function CharacterCreation({ onCharacterCreated }: CharacterCreat
            <p className="text-xs text-gray-300 mt-1 uppercase tracking-widest text-right font-rpg">{step === 5 ? "Ficha Final" : `Passo ${step}/5`}</p>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-4 space-y-2 custom-scrollbar pb-24">
+        <div className="flex-1 max-h-[45vh] md:max-h-none overflow-y-auto p-4 space-y-2 custom-scrollbar pb-6 md:pb-24">
             
             {/* PASSO 1: RAÇA */}
             {step === 1 && races.map(r => <OptionButton key={r} label={r} active={selectedRace === r} image={getLocalImage('races', r)} onClick={() => setSelectedRace(r)} />)}
@@ -318,13 +318,13 @@ export default function CharacterCreation({ onCharacterCreated }: CharacterCreat
         </div>
       </div>
 
-      <div className="flex-1 h-full relative bg-gray-900 overflow-hidden flex items-center justify-center p-8 bg-[url('/assets/backgrounds/textura-ruido.png')] bg-repeat">
+      <div className="flex-1 md:h-full relative bg-gray-900 overflow-hidden flex items-center justify-center p-3 md:p-8 bg-[url('/assets/backgrounds/textura-ruido.png')] bg-repeat">
          {/* `h-[600px]` fixo cortava o conteudo: a revisao acrescentou arma,
              atributo principal e proficiencias ao painel da classe, e o bloco
              "Sabe usar" ficava clipado sem aviso. Altura passa a acompanhar a
              janela, com piso pra nao espremer em tela baixa. */}
-         <PanelFrame borderWidth={16} className="relative z-30 w-full max-w-5xl h-[min(760px,90vh)] min-h-[460px] flex bg-[#121212] shadow-2xl overflow-hidden animate-scale-in">
-             <div className="w-[45%] h-full relative border-r border-rpg-gold/30 bg-black">
+         <PanelFrame borderWidth={16} className="relative z-30 w-full max-w-5xl md:h-[min(760px,90vh)] md:min-h-[460px] flex flex-col md:flex-row bg-[#121212] shadow-2xl overflow-hidden animate-scale-in">
+             <div className="w-full h-52 md:h-full md:w-[45%] relative border-b md:border-b-0 md:border-r border-rpg-gold/30 bg-black shrink-0">
                  {/* Revisão da Etapa 14 (ADR-0025): os retratos de raça/classe
                      deixaram de ser sprites de 16×16 e passaram a ser arte de
                      48×48 enquadrada como busto. Agora todos os passos usam
@@ -361,7 +361,7 @@ export default function CharacterCreation({ onCharacterCreated }: CharacterCreat
                      {step === 5 && <p className="text-rpg-gold text-center font-bold text-xs uppercase tracking-widest opacity-80">{selectedRace} • {selectedClass}</p>}
                  </div>
              </div>
-             <div className="w-[55%] p-8 flex flex-col relative overflow-y-auto custom-scrollbar">
+             <div className="w-full md:w-[55%] p-4 md:p-8 flex flex-col relative overflow-y-auto custom-scrollbar">
                  <div className="absolute top-4 right-4 opacity-10 pointer-events-none"><PixelIcon name="coroa" size={120}/></div>
                  <h3 className="text-rpg-gold font-rpg text-2xl border-b-2 border-gray-700 pb-3 mb-6 flex items-center gap-2">
                     {step === 5 ? <PixelIcon name="pergaminho" size={24}/> : step === 1 ? <PixelIcon name="coroa" size={24}/> : step === 2 ? <PixelIcon name="espada" size={24}/> : <PixelIcon name="estrela" size={24}/>}
