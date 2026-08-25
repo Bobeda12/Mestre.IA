@@ -22,31 +22,44 @@ do [OpenGameArt.org](https://opengameart.org):
 ## Sprites de raça/classe/monstro (Etapa 11, B-1)
 
 > **Atualizado na revisão da Etapa 14 ([ADR-0025](adr/0025-retratos-por-ia-pixelizados-por-script.md)):**
-> os **21 retratos de raça e classe** passaram a vir do **Dungeon Crawl Stone
-> Soup** (tabela abaixo). Os sprites Kenney descritos aqui continuam sendo a
-> fonte dos **5 monstros** (`monstros/`), dos ícones e das molduras.
+> raça e classe passaram a ter DUAS fontes de arte, uma por tamanho — não uma
+> substituindo a outra. O ícone pequeno da lista de seleção (`races/`,
+> `classes/`) vem do **Dungeon Crawl Stone Soup** (tabela abaixo). O painel
+> grande da criação e o retrato do herói na ficha (`retratos/races/`,
+> `retratos/classes/`) usam arte gerada por IA e pixelizada por script — a
+> **única** exceção no projeto à regra "sem geração por IA" do ADR-0017,
+> registrada porque colide com ela, não porque a substitui. Os sprites Kenney
+> descritos aqui continuam sendo a fonte dos **5 monstros** (`monstros/`), dos
+> ícones e das molduras.
 
-## Retratos de raça e classe (revisão da Etapa 14)
+## Ícone pequeno de raça e classe (revisão da Etapa 14)
 
 | Pacote | Autor | Licença | Fonte |
 |---|---|---|---|
 | Dungeon Crawl 32x32 tiles | equipe do Dungeon Crawl Stone Soup | [CC0](https://creativecommons.org/publicdomain/zero/1.0/) | [opengameart.org/content/dungeon-crawl-32x32-tiles](https://opengameart.org/content/dungeon-crawl-32x32-tiles) |
 
 São personagens de fantasia completos (com equipamento e silhueta própria)
-em 32×32, o dobro da resolução dos sprites de 16×16 — é isso que permite o
-MESMO arquivo servir ao ícone de 48px da lista e ao painel grande, sem os dois
-conjuntos de arte que existiram na fase intermediária.
+em 32×32, o dobro da resolução dos sprites de 16×16 — legíveis e distintos
+entre si num ícone de 48px, que era o problema do pacote anterior.
 
-O catálogo cobre justamente os arquétipos que faltavam no pacote anterior:
-draconiano alado para o Draconato, *demonspawn* com chifres para o Tiefling e
-orc armado para o Meio-Orc — os três "encaixes forçados" que o ADR-0017
+O catálogo cobre justamente os arquétipos que faltavam nele: draconiano
+alado para o Draconato, *demonspawn* com chifres para o Tiefling e orc
+armado para o Meio-Orc — os três "encaixes forçados" que o ADR-0017
 registrava. Para as classes há mago, necromante, arqueiro élfico, ladrão
 encapuzado e sacerdote, entre outros.
 
-Os 5 sprites de monstro em `Frontend/public/assets/monstros/` (e,
-historicamente, os 21 retratos) vêm de dois pacotes CC0 feitos para serem
-compatíveis entre si (mesmo estilo 16×16, mesma paleta fechada), sem geração
-por IA:
+## Retrato grande de raça/classe e retrato do herói
+
+Gerado por IA (image.pollinations.ai) e pixelizado por script/no navegador
+(`getRetrato` em `Frontend/src/lib/utils.ts`; `RetratoPixelado.tsx` para o
+retrato do herói, que muda a cada personagem). **Não é CC0** — é a única arte
+do projeto que não é. O ADR-0025 explica por que essa exceção existe (o
+sprite de 32×32 ampliado num painel de ~400px é pequeno demais pra ocupar o
+espaço) e por que ela não se estendeu ao ícone pequeno.
+
+Os 5 sprites de monstro em `Frontend/public/assets/monstros/` vêm de dois
+pacotes CC0 feitos para serem compatíveis entre si (mesmo estilo 16×16, mesma
+paleta fechada), sem geração por IA:
 
 | Pacote | Autor | Licença | Fonte |
 |---|---|---|---|
