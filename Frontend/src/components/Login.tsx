@@ -9,6 +9,7 @@ import PixelIcon from './PixelIcon';
 import PixelButton from './PixelButton';
 import Carregando from './Carregando';
 import MapaDeFundo from './MapaDeFundo';
+import BotaoConfig from './BotaoConfig';
 
 // Etapa 14 (revisão) — a tela de login tinha passado inteira por fora do
 // sistema pixel: `font-sans` (Geist), cantos arredondados e ícones
@@ -94,6 +95,7 @@ export default function Login() {
         <Link to="/" className="absolute top-4 left-4 text-gray-400 hover:text-rpg-gold flex items-center gap-2 text-sm font-rpg">
           <PixelIcon name="seta" size={16} className="rotate-180" /> Voltar
         </Link>
+        <div className="absolute top-4 right-4"><BotaoConfig tema="aventura" mostrarVoltar={false} /></div>
 
         <PixelIcon name="coroa" size={48} className="mx-auto mb-4" />
         <h1 className="text-base md:text-lg font-pixel-title text-rpg-gold mb-6 leading-relaxed">

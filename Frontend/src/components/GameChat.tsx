@@ -667,7 +667,7 @@ export default function GameChat() {
             <TooltipProvider delayDuration={120}>
                 <Tooltip>
                     <TooltipTrigger asChild>
-                        <div tabIndex={0} className="flex items-center gap-2 min-w-0 flex-1 cursor-help px-1 py-0.5 border-2 border-transparent hover:border-gray-700 focus-visible:outline-none focus-visible:border-rpg-gold transition-colors">
+                        <div tabIndex={0} className="flex items-center gap-2 min-w-0 max-w-[260px] cursor-help px-1 py-0.5 border-2 border-transparent hover:border-gray-700 focus-visible:outline-none focus-visible:border-rpg-gold transition-colors">
                             <PixelIcon name="coracao" size={14} />
                             <span className="text-[11px] font-rpg text-gray-200 shrink-0">{hpAtual}/{hpMax}</span>
                             <div className="flex-1 min-w-[60px] max-w-[180px]"><PixelBar value={hpAtual} max={hpMax} colorClass="bg-red-600" /></div>
@@ -681,7 +681,7 @@ export default function GameChat() {
 
                 <Tooltip>
                     <TooltipTrigger asChild>
-                        <div tabIndex={0} className="hidden sm:flex items-center gap-2 min-w-0 flex-1 cursor-help px-1 py-0.5 border-2 border-transparent hover:border-gray-700 focus-visible:outline-none focus-visible:border-rpg-gold transition-colors">
+                        <div tabIndex={0} className="hidden sm:flex items-center gap-2 min-w-0 max-w-[260px] cursor-help px-1 py-0.5 border-2 border-transparent hover:border-gray-700 focus-visible:outline-none focus-visible:border-rpg-gold transition-colors">
                             <PixelIcon name="estrela" size={14} />
                             <span className="text-[11px] font-rpg text-gray-200 shrink-0">Nv {nivel}</span>
                             <div className="flex-1 min-w-[60px] max-w-[180px]">
@@ -702,7 +702,7 @@ export default function GameChat() {
 
                 <Tooltip>
                     <TooltipTrigger asChild>
-                        <div tabIndex={0} className="flex items-center gap-1 shrink-0 cursor-help px-1 py-0.5 border-2 border-transparent hover:border-gray-700 focus-visible:outline-none focus-visible:border-rpg-gold transition-colors">
+                        <div tabIndex={0} className="flex items-center gap-1 shrink-0 ml-auto cursor-help px-1 py-0.5 border-2 border-transparent hover:border-gray-700 focus-visible:outline-none focus-visible:border-rpg-gold transition-colors">
                             <PixelIcon name="escudo" size={14} />
                             <span className="text-[11px] font-rpg text-blue-200">{defesa ?? "?"}</span>
                         </div>

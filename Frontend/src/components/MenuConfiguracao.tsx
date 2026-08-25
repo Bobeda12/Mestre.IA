@@ -19,9 +19,12 @@ export default function MenuConfiguracao({
   aberto,
   aoFechar,
   trilha,
+  mostrarVoltar = true,
 }: {
   aberto: boolean;
   aoFechar: () => void;
+  /** Na própria tela inicial não faz sentido oferecer "voltar ao menu". */
+  mostrarVoltar?: boolean;
   trilha: {
     mudo: boolean;
     alternarMudo: () => void;
@@ -113,17 +116,21 @@ export default function MenuConfiguracao({
             </div>
           </Secao>
 
-          <PixelButton
-            variant="vermelho"
-            onClick={() => navigate('/')}
-            className="w-full py-4 text-[10px] flex items-center justify-center gap-2"
-          >
-            <PixelIcon name="seta" size={14} className="rotate-180" />
-            MENU PRINCIPAL
-          </PixelButton>
-          <p className="text-[10px] text-gray-400 font-rpg text-center -mt-3">
-            Seu progresso é salvo a cada turno.
-          </p>
+          {mostrarVoltar && (
+            <>
+              <PixelButton
+                variant="vermelho"
+                onClick={() => navigate('/')}
+                className="w-full py-4 text-[10px] flex items-center justify-center gap-2"
+              >
+                <PixelIcon name="seta" size={14} className="rotate-180" />
+                MENU PRINCIPAL
+              </PixelButton>
+              <p className="text-[10px] text-gray-400 font-rpg text-center -mt-3">
+                Seu progresso é salvo a cada turno.
+              </p>
+            </>
+          )}
         </div>
       </div>
     </div>

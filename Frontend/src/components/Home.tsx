@@ -7,7 +7,7 @@ import PixelIcon from './PixelIcon';
 import PixelButton from './PixelButton';
 import MapaDeFundo from './MapaDeFundo';
 import Carregando from './Carregando';
-import BotaoSom from './BotaoSom';
+import BotaoConfig from './BotaoConfig';
 
 interface Personagem {
   session_id: string;
@@ -73,7 +73,7 @@ export default function Home() {
           música. Fica fora do bloco de auth abaixo pra aparecer mesmo enquanto
           a sessão ainda está carregando. */}
       <div className="absolute top-4 left-4 z-30">
-        <BotaoSom tema="aventura" />
+        <BotaoConfig tema="aventura" mostrarVoltar={false} />
       </div>
 
       {!carregandoAuth && (

@@ -5,7 +5,7 @@ import { getLocalImage, getRetrato } from '../lib/utils';
 import PixelIcon from './PixelIcon';
 import PixelButton from './PixelButton';
 import PanelFrame from './PanelFrame';
-import BotaoSom from './BotaoSom';
+import BotaoConfig from './BotaoConfig';
 import RetratoPixelado from './RetratoPixelado';
 
 interface CharacterCreationProps {
@@ -233,7 +233,7 @@ export default function CharacterCreation({ onCharacterCreated }: CharacterCreat
     <div className="flex flex-col md:flex-row min-h-[100dvh] w-screen md:overflow-hidden bg-black text-gray-100">
       <div className="absolute top-4 left-4 z-50 flex items-center gap-3">
         <button onClick={() => navigate('/')} className="text-gray-300 hover:text-rpg-gold flex items-center gap-2 font-rpg"><PixelIcon name="seta" className="rotate-180" /> Sair</button>
-        <BotaoSom tema="aventura" />
+        <BotaoConfig tema="aventura" />
       </div>
 
       <div className="w-full md:w-1/3 md:h-full flex flex-col bg-gray-900 border-b-2 md:border-b-0 md:border-r border-gray-800 z-20 shadow-2xl relative">
