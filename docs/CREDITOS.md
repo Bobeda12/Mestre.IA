@@ -135,7 +135,12 @@ que tirou o `lucide-react` das telas de jogo (`GameChat`, `RollCard`,
 `StatusCard`) — hoje o pacote não é mais importado em lugar nenhum do `src/`.
 `espada` entrou nesta lista na rodada de polimento de UX pós-lançamento
 (26/08/2026): o recorte original do Tiny Dungeon ficava com contraste baixo
-e silhueta confusa em 16px — o redesenho reaproveita a mesma paleta exata já
-usada por estrela/fechar/coroa/seta (contorno `#0A0806`, off-white `#EBE8E0`,
-dourado `#C5A059`), então continua indistinguível em estilo dos ícones
-vizinhos que continuam vindo do Kenney.
+e silhueta confusa em 16px. A primeira tentativa de redesenho (lâmina
+vertical) não agradou — em vez de tentar de novo às cegas, foram geradas
+várias variações (vertical/diagonal × paleta fria dos vizinhos Kenney/paleta
+preto+dourado dos ícones à mão) e enviadas como preview antes de aplicar
+qualquer uma. A escolhida foi a lâmina **diagonal**, na paleta preto+dourado
+já usada por estrela/fechar/coroa/seta (contorno `#0A0806`, off-white
+`#EBE8E0`, dourado `#C5A059`) — diferente da orientação vertical dos vizinhos
+Kenney (adaga/machado/maça/escudo), mas consistente com a família de ícones
+desenhados à mão do projeto.

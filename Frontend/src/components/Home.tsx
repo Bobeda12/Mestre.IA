@@ -89,7 +89,7 @@ export default function Home() {
 
       {transicao && (
         <div className="fixed inset-0 z-50 w-full bg-rpg-darker flex flex-col items-center justify-center gap-4 animate-fade-in">
-          <PixelIcon name="espada" size={40} className="animate-pulse-slow" />
+          <PixelIcon name="espada" size={40} className="animate-balancar" />
           <Carregando tamanho={10} rotulo={transicao} />
           <p className="text-rpg-gold font-rpg text-sm uppercase tracking-widest">{transicao}</p>
         </div>
