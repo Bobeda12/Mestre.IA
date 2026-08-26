@@ -1,0 +1,22 @@
+{
+  "Tocha": {
+    "descricao": "Uma tocha que ainda arde, prendendo luz e calor.",
+    "tags": ["Fogo", "Luz"]
+  },
+  "Símbolo Sagrado": {
+    "descricao": "Um pingente abençoado, gasto pelo tempo.",
+    "tags": ["Sagrado"]
+  },
+  "Corda e Gancho": {
+    "descricao": "Uma corda resistente com um gancho de ferro na ponta.",
+    "tags": ["Utilidade"]
+  },
+  "Frasco de Óleo": {
+    "descricao": "Óleo inflamável, útil além de acender lamparinas.",
+    "tags": ["Fogo"]
+  },
+  "Água Benta": {
+    "descricao": "Água abençoada por um sacerdote, guardada num frasco de vidro.",
+    "tags": ["Sagrado"]
+  }
+}

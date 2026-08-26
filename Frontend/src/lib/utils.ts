@@ -45,3 +45,23 @@ function _arquivo(name: string) {
 export function limparMarkdownLeve(texto: string) {
   return texto.replace(/\*{1,3}([^*\n]+?)\*{1,3}/g, '$1').replace(/`([^`\n]+?)`/g, '$1')
 }
+
+// Fase 1 da revisão de gameplay — o narrador sempre termina com
+// `[OPCOES]: ...` (narrator.montar_contexto); o servidor a remove antes de
+// persistir (guardrail.extrair_opcoes), mas o texto cru ainda passa pelos
+// frames `token` ao vivo. Mesma lógica de "limpeza leve" do markdown: corta
+// a exibição no primeiro sinal da tag e nunca mais volta a mostrar depois
+// dele — a tag é sempre a última coisa que o modelo escreve, por instrução
+// do prompt, então isto nunca esconde narrativa de verdade.
+//
+// O prompt pede "[OPCOES]" sem acento, mas ao vivo o modelo "corrige" pra
+// "[OPÇÕES]" (grafia correta em português) — achado testando contra a
+// Groq de verdade, não em teste automatizado. `/\[OP.{0,2}ES/i` casa as
+// duas grafias (e variações de acento) sem enumerar cada uma; mesmo regex
+// usado no servidor (guardrail.extrair_opcoes).
+const _PADRAO_OPCOES = /\[OP.{0,2}ES/i
+
+export function esconderTagOpcoes(texto: string) {
+  const m = _PADRAO_OPCOES.exec(texto)
+  return m ? texto.slice(0, m.index).trimEnd() : texto
+}

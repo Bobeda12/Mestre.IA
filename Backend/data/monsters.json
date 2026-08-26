@@ -25,12 +25,72 @@
       "xp": 25
     }
   },
+  "Nivel_2": {
+    "Orc": {
+      "hp": 15, "ac": 13, "forca": 16, "destreza": 12,
+      "ataque": "Machado Grande (+5 para acertar, 1d12+3 dano)",
+      "comportamento": "Agressivo. Avança e ataca sem hesitar.",
+      "xp": 100
+    },
+    "Aranha Gigante": {
+      "hp": 18, "ac": 14, "forca": 14, "destreza": 16,
+      "ataque": "Mordida Venenosa (+5 para acertar, 2d6+3 dano)",
+      "comportamento": "Emboscada. Ataca de surpresa a partir de uma teia; recua se ferida.",
+      "xp": 100
+    },
+    "Capitão Bandido": {
+      "hp": 16, "ac": 14, "forca": 12, "destreza": 14,
+      "ataque": "Espada Curta (+4 para acertar, 1d6+2 dano)",
+      "comportamento": "Calculista. Foge se estiver em desvantagem numérica.",
+      "xp": 100
+    }
+  },
+  "Nivel_3": {
+    "Ogro": {
+      "hp": 34, "ac": 11, "forca": 19, "destreza": 8,
+      "ataque": "Porrete Grande (+6 para acertar, 2d8+4 dano)",
+      "comportamento": "Bruto simples. Ataca o alvo mais próximo, sem tática.",
+      "xp": 200
+    },
+    "Harpia": {
+      "hp": 21, "ac": 12, "forca": 12, "destreza": 13,
+      "ataque": "Garras (+5 para acertar, 2d4+2 dano)",
+      "comportamento": "Cruel. Sobrevoa e ataca alvos feridos primeiro.",
+      "xp": 200
+    },
+    "Múmia": {
+      "hp": 30, "ac": 14, "forca": 16, "destreza": 8,
+      "ataque": "Punho Amaldiçoado (+5 para acertar, 2d6+3 dano)",
+      "comportamento": "Implacável. Nunca recua, avança devagar e sem pressa.",
+      "xp": 200
+    }
+  },
+  "Nivel_4": {
+    "Troll": {
+      "hp": 48, "ac": 15, "forca": 18, "destreza": 13,
+      "ataque": "Garras (+7 para acertar, 2d6+4 dano)",
+      "comportamento": "Regenera. Volta a atacar mesmo gravemente ferido.",
+      "xp": 400
+    },
+    "Espectro": {
+      "hp": 32, "ac": 12, "forca": 6, "destreza": 13,
+      "ataque": "Toque Drenante (+6 para acertar, 3d6 dano)",
+      "comportamento": "Etéreo. Ignora terreno, ataca e some entre os turnos.",
+      "xp": 400
+    }
+  },
   "Chefe": {
     "Bugbear": {
       "hp": 27, "ac": 16, "forca": 15, "destreza": 14,
       "ataque": "Maça Estrela (+4 para acertar, 2d8+2 dano)",
       "comportamento": "Brutal. Tenta matar com um golpe surpresa.",
       "xp": 200
+    },
+    "Dragão Jovem": {
+      "hp": 78, "ac": 18, "forca": 19, "destreza": 10,
+      "ataque": "Garras e Presas (+8 para acertar, 2d10+4 dano)",
+      "comportamento": "Territorial. Recua para o ar quando abaixo de 30% de HP e ataca de longe.",
+      "xp": 700
     }
   }
 }

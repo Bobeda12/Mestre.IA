@@ -23,6 +23,27 @@ _PADRAO_LISTA = re.compile(r"^\s*(?:[-*+]|\d+\.)\s+", flags=re.MULTILINE)
 _PADRAO_BLOCO_CODIGO = re.compile(r"```.*?```", flags=re.DOTALL)
 _PADRAO_CODIGO_INLINE = re.compile(r"`([^`\n]+?)`")
 
+# Fase 1 da revisão de gameplay (Etapa 12/13) — `narrator.montar_contexto`
+# instrui o modelo a escrever exatamente "[OPCOES]" (sem acento), mas ao
+# vivo o modelo "corrige" pra grafia correta em português — "[OPÇÕES]" —
+# quebrando um regex exato (achado testando contra a Groq de verdade, não
+# em teste com RNG fixo). `OP.{0,2}ES` casa "OPCOES", "OPÇÕES", "OPÇOES" e
+# "OPCÕES" sem enumerar cada combinação de acento. DOTALL porque o resto do
+# texto até o fim da string são as opções — a tag é sempre a última coisa
+# que o modelo escreve, por instrução do prompt.
+_PADRAO_OPCOES = re.compile(r"\[OP.{0,2}ES\]:?\s*(.+)", re.IGNORECASE | re.DOTALL)
+
+
+def extrair_opcoes(texto: str) -> tuple[str, list[str]]:
+    """Separa a tag `[OPCOES]: opt1|opt2|opt3` do texto exibido/persistido.
+    Sem a tag (ex: o prompt de morte, que não a pede), devolve o texto
+    intacto e lista vazia — o frontend simplesmente não mostra botões."""
+    m = _PADRAO_OPCOES.search(texto)
+    if not m:
+        return texto, []
+    opcoes = [o.strip(" .") for o in m.group(1).split("|") if o.strip()]
+    return texto[: m.start()].rstrip(), opcoes[:3]
+
 
 def limpar_formatacao(texto: str) -> str:
     """Remove marcação markdown da narrativa, mantendo o texto — o jogador

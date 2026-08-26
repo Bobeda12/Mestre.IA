@@ -81,18 +81,36 @@ class ResultadoAtaque:
     critico: bool
     falha_critica: bool
     acerto: bool
+    # Fase 0 da revisão de gameplay (Etapa 12/13) — vantagem/desvantagem rola
+    # dois d20 e fica com o melhor/pior. `d20_extra` é o dado descartado,
+    # guardado só para o card de rolagem mostrar os dois (ex: "d20(7)
+    # d20(18) → 18, vantagem"); `None` quando a rolagem foi normal.
+    d20_extra: int | None = None
+    vantagem: bool | None = None
 
 
-def resolver_ataque(bonus_ataque: int, ca_alvo: int, rng: random.Random | None = None) -> ResultadoAtaque:
+def resolver_ataque(
+    bonus_ataque: int, ca_alvo: int, rng: random.Random | None = None, vantagem: bool | None = None
+) -> ResultadoAtaque:
     """d20 + bônus contra a CA do alvo. Natural 20 sempre acerta (e é
-    crítico); natural 1 sempre erra, mesmo que o total bata a CA."""
+    crítico); natural 1 sempre erra, mesmo que o total bata a CA.
+
+    `vantagem=True` rola 2d20 e fica com o maior; `vantagem=False`
+    (desvantagem) fica com o menor; `None` é a rolagem normal de um d20 só."""
     dado = rng or random
-    rolagem = dado.randint(1, 20)
+    d1 = dado.randint(1, 20)
+    d20_extra: int | None = None
+    if vantagem is None:
+        rolagem = d1
+    else:
+        d2 = dado.randint(1, 20)
+        rolagem = max(d1, d2) if vantagem else min(d1, d2)
+        d20_extra = d2 if rolagem == d1 else d1
     total = rolagem + bonus_ataque
     critico = rolagem == 20
     falha_critica = rolagem == 1
     acerto = critico or (not falha_critica and total >= ca_alvo)
-    return ResultadoAtaque(rolagem, bonus_ataque, total, ca_alvo, critico, falha_critica, acerto)
+    return ResultadoAtaque(rolagem, bonus_ataque, total, ca_alvo, critico, falha_critica, acerto, d20_extra, vantagem)
 
 
 def rolar_iniciativa(mod_destreza: int, rng: random.Random | None = None) -> int:
@@ -107,19 +125,32 @@ class ResultadoTeste:
     total: int
     cd: int
     sucesso: bool
+    d20_extra: int | None = None
+    vantagem: bool | None = None
 
 
-def resolver_teste_atributo(modificador: int, cd: int, rng: random.Random | None = None) -> ResultadoTeste:
+def resolver_teste_atributo(
+    modificador: int, cd: int, rng: random.Random | None = None, vantagem: bool | None = None
+) -> ResultadoTeste:
     """d20 + modificador de atributo contra uma Classe de Dificuldade — a
     forma genérica de teste (furtividade, persuasão, percepção...) que a
     Etapa 3 previu em `PLANO_MESTRE.md` mas nunca chegou a escrever: só
     ataque (`resolver_ataque`) e teste de morte (`rolar_teste_morte`) tinham
     resolução própria até a Etapa 4 precisar de uma ferramenta `rolar_teste`
-    genérica para o modelo chamar."""
+    genérica para o modelo chamar.
+
+    Mesma regra de vantagem/desvantagem de `resolver_ataque`."""
     dado = rng or random
-    rolagem = dado.randint(1, 20)
+    d1 = dado.randint(1, 20)
+    d20_extra: int | None = None
+    if vantagem is None:
+        rolagem = d1
+    else:
+        d2 = dado.randint(1, 20)
+        rolagem = max(d1, d2) if vantagem else min(d1, d2)
+        d20_extra = d2 if rolagem == d1 else d1
     total = rolagem + modificador
-    return ResultadoTeste(rolagem, modificador, total, cd, sucesso=total >= cd)
+    return ResultadoTeste(rolagem, modificador, total, cd, sucesso=total >= cd, d20_extra=d20_extra, vantagem=vantagem)
 
 
 @dataclass
@@ -166,6 +197,31 @@ def subir_nivel(
         return ResultadoNivel(nivel_novo=nivel_atual, hp_ganho=0, subiu=False)
     hp_ganho = max(1, rolar_dado(f"1d{dado_vida}", rng) + mod_constituicao)
     return ResultadoNivel(nivel_novo=nivel_atual + 1, hp_ganho=hp_ganho, subiu=True)
+
+
+# Fase 0 da revisão de gameplay (Etapa 12/13) — escalonamento de perigo:
+# qual banda de `data/monsters.json` (via infra/data_manager.get_monstros_por_banda)
+# é apropriada para o nível do herói. Python decide a faixa; o LLM continua
+# propondo o nome do monstro dentro dela (ADR-0006: o modelo não arbitra
+# dificuldade). Nível 5 pode puxar tanto Nivel_4 quanto Chefe — é o único
+# nível "livre" porque não há Nivel_5 dedicado no bestiário ainda.
+BANDA_POR_NIVEL: dict[int, list[str]] = {
+    1: ["Nivel_1"],
+    2: ["Nivel_1", "Nivel_2"],
+    3: ["Nivel_2", "Nivel_3"],
+    4: ["Nivel_3", "Nivel_4"],
+    5: ["Nivel_4", "Chefe"],
+}
+
+
+def desafio_sugerido(nivel_heroi: int) -> list[str]:
+    """Bandas de bestiário compatíveis com `nivel_heroi` — a lista que
+    `narrator.montar_contexto` injeta como `[DESAFIO SUGERIDO]` para o modelo
+    nunca propor um Dragão Jovem pra um herói nível 1, nem um Goblin sozinho
+    pra um nível 5. Níveis fora de 1..NIVEL_MAXIMO caem para a banda mais
+    próxima (nunca uma lista vazia)."""
+    nivel = max(1, min(nivel_heroi, NIVEL_MAXIMO))
+    return BANDA_POR_NIVEL[nivel]
 
 
 def parse_ataque_monstro(texto: str) -> tuple[str, int, str]:

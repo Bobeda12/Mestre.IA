@@ -84,6 +84,35 @@ def memorias_relevantes(
     return [d.texto for d in encontrados]
 
 
+def eventos_marcantes(db: Session, personagem_id: int, k: int = 8) -> list[str]:
+    """Fase 7 da revisão de gameplay (Etapa 12/13) — eventos recentes de um
+    personagem, sem busca híbrida: não há uma pergunta natural pra "o que
+    foi marcante" na hora da morte, e gastar um embedding extra num momento
+    que já é caro (o epitáfio é sua própria chamada ao modelo) não vale a
+    pena. Usado só por `narrator.gerar_epitafio`, uma vez por morte."""
+    eventos = (
+        db.query(EventoMemoria)
+        .filter(EventoMemoria.personagem_id == personagem_id)
+        .order_by(EventoMemoria.turno.desc())
+        .limit(k)
+        .all()
+    )
+    return [e.texto for e in reversed(eventos)]
+
+
+def eventos_cronologicos(db: Session, personagem_id: int) -> list[str]:
+    """Fase 7 — a campanha inteira, em ordem, pra costurar a Crônica
+    exportável. Sem limite de quantidade (diferente de `eventos_marcantes`/
+    `memorias_relevantes`): a Crônica É o registro completo, não um recorte."""
+    eventos = (
+        db.query(EventoMemoria)
+        .filter(EventoMemoria.personagem_id == personagem_id)
+        .order_by(EventoMemoria.turno.asc())
+        .all()
+    )
+    return [e.texto for e in eventos]
+
+
 _PROMPT_RESUMO = """Você resume eventos de uma sessão de RPG em campos estruturados, em português.
 
 Resumo acumulado até agora (JSON): {resumo_atual}

@@ -28,10 +28,15 @@ Template: [`0000-template.md`](0000-template.md) · Sistema completo: [`../READM
 | [0023](0023-embeddings-via-api-gemini.md) | Embeddings via API (Gemini) em vez de modelo local (`fastembed`) | 14 | ✅ aceito | 24/08/2026 |
 | [0024](0024-cadeia-multi-provedor-groq-gemini.md) | Cadeia de fallback atravessando provedores (Groq + Gemini) | 14 | ✅ aceito | 24/08/2026 |
 | [0025](0025-retratos-por-ia-pixelizados-por-script.md) | Retratos de raça/classe: sprites CC0 do Dungeon Crawl | 14 | ✅ aceito | 24/08/2026 |
+| [0026](0026-curva-de-xp-propria-e-escalonamento-de-perigo.md) | Curva de XP própria, XP fora de combate e escalonamento de perigo pelo servidor | Revisão de gameplay (Fase 0) | ✅ aceito | 25/08/2026 |
+| [0027](0027-companheiros-mecanicos-revisao-do-9-3.md) | Companheiros mecânicos: revisão parcial do §9.3 (single-player) | Revisão de gameplay (Fase 2) | ✅ aceito | 25/08/2026 |
+| [0028](0028-locais-inventados-revisao-da-validacao-fechada-de-mover.md) | Locais inventados: revisão da validação fechada de `mover` | Revisão de gameplay (Fase 5) | ✅ aceito | 25/08/2026 |
 
 **Legenda:** 🕓 previsto · ✅ aceito · ⛔ substituído
 
 > A numeração acima é uma **previsão**, não um contrato. Decisões que aparecerem no caminho entram na sequência real; as previstas que se mostrarem desnecessárias simplesmente não nascem, e a lacuna no número fica como registro. Nunca renumere um ADR já escrito.
+>
+> A lacuna entre 0017 e 0021 (0018-0020) era a numeração prevista pelo antigo `docs/backlog-pos-lancamento.md` para as Etapas 12a/13/12b — nenhuma das duas etapas rodou, então esses ADRs nunca nasceram. A revisão de gameplay que os substitui começa em **0026** (ver a nota no topo do backlog).
 
 ## Decisões já tomadas sem ADR
 

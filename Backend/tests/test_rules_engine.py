@@ -15,6 +15,7 @@ from app.services.rules_engine import (
     bonus_proficiencia,
     calcular_dano,
     calcular_modificador,
+    desafio_sugerido,
     parse_ataque_monstro,
     resolver_ataque,
     resolver_teste_atributo,
@@ -100,6 +101,24 @@ class TestResolverAtaque:
         assert resultado.acerto is False
         assert resultado.falha_critica is True
 
+    def test_sem_vantagem_roda_um_d20_so(self):
+        resultado = resolver_ataque(bonus_ataque=4, ca_alvo=15, rng=RngFixo([12]))
+        assert resultado.rolagem == 12
+        assert resultado.d20_extra is None
+        assert resultado.vantagem is None
+
+    def test_vantagem_fica_com_o_maior_dos_dois_d20(self):
+        resultado = resolver_ataque(bonus_ataque=4, ca_alvo=15, rng=RngFixo([7, 18]), vantagem=True)
+        assert resultado.rolagem == 18
+        assert resultado.d20_extra == 7
+        assert resultado.vantagem is True
+
+    def test_desvantagem_fica_com_o_menor_dos_dois_d20(self):
+        resultado = resolver_ataque(bonus_ataque=4, ca_alvo=15, rng=RngFixo([7, 18]), vantagem=False)
+        assert resultado.rolagem == 7
+        assert resultado.d20_extra == 18
+        assert resultado.vantagem is False
+
 
 class TestRolarIniciativa:
     def test_soma_d20_ao_modificador_de_destreza(self):
@@ -121,6 +140,28 @@ class TestResolverTesteAtributo:
         # acerta"/"sempre erra" no d20 — é só a soma contra a CD.
         assert resolver_teste_atributo(modificador=-10, cd=15, rng=RngFixo([20])).sucesso is False
         assert resolver_teste_atributo(modificador=99, cd=15, rng=RngFixo([1])).sucesso is True
+
+    def test_vantagem_fica_com_o_maior_dos_dois_d20(self):
+        resultado = resolver_teste_atributo(modificador=2, cd=15, rng=RngFixo([6, 14]), vantagem=True)
+        assert resultado.rolagem == 14
+        assert resultado.d20_extra == 6
+
+    def test_desvantagem_fica_com_o_menor_dos_dois_d20(self):
+        resultado = resolver_teste_atributo(modificador=2, cd=15, rng=RngFixo([6, 14]), vantagem=False)
+        assert resultado.rolagem == 6
+        assert resultado.d20_extra == 14
+
+
+class TestDesafioSugerido:
+    def test_nivel_1_so_sugere_banda_nivel_1(self):
+        assert desafio_sugerido(1) == ["Nivel_1"]
+
+    def test_nivel_5_sugere_nivel_4_e_chefe(self):
+        assert desafio_sugerido(5) == ["Nivel_4", "Chefe"]
+
+    def test_nivel_fora_do_intervalo_cai_para_a_banda_mais_proxima(self):
+        assert desafio_sugerido(0) == desafio_sugerido(1)
+        assert desafio_sugerido(99) == desafio_sugerido(NIVEL_MAXIMO)
 
 
 class TestRolarTesteMorte:

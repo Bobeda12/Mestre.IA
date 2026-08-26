@@ -3,8 +3,9 @@ from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
 
 from app.infra.db import FeedbackNarracao, Personagem, Usuario, get_db
-from app.services import telemetria
+from app.services import memory, telemetria
 from app.services.auth import get_current_user
+from app.services.narrator import gerar_cronica
 
 router = APIRouter(prefix="/personagens", tags=["personagens"])
 
@@ -101,3 +102,23 @@ def registrar_feedback(
     )
     db.commit()
     return {"status": "registrado"}
+
+
+@router.get("/{session_id}/cronica")
+def exportar_cronica(
+    session_id: str, current_user: Usuario = Depends(get_current_user), db: Session = Depends(get_db)
+) -> dict:
+    """Fase 7 da revisão de gameplay (Etapa 12/13) — "Exportar Crônica": os
+    eventos de memória de longo prazo (`EventoMemoria`), tecidos numa
+    narrativa por `narrator.gerar_cronica`. Gerada a cada pedido (ao
+    contrário do epitáfio, que é fixado uma vez) — a campanha pode ter
+    avançado desde a última exportação, e não há um "resultado final"
+    fixo pra cachear enquanto o herói está vivo."""
+    personagem = db.query(Personagem).filter(Personagem.session_id == session_id).first()
+    if personagem is None:
+        raise HTTPException(status_code=404, detail="Personagem não encontrado.")
+    if personagem.usuario_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Este personagem não pertence a você.")
+    eventos = memory.eventos_cronologicos(db, personagem.id)
+    texto = gerar_cronica(personagem, eventos)
+    return {"nome": personagem.nome, "cronica": texto}

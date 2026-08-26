@@ -90,6 +90,20 @@ class Personagem(Base):
     # ToolExecutor nunca toca o banco diretamente, só reatribui esta coluna
     # (ver services/tools.py:ajustar_reputacao_npc e Lição 03).
     reputacao_npcs: Mapped[dict] = mapped_column(JSON, default=dict)
+    # Fase 3 da revisão de gameplay (Etapa 12/13, ADR-0027) — roster de
+    # companheiros recrutados: [{"nome", "classe", "hp", "hp_max",
+    # "lealdade", "inventario"}]. HP aqui é o que sobrevive entre combates e
+    # sessões; o HP "de agora" durante uma luta vive em
+    # `combat_state.aliados` (domain/state.py:Aliado) e é sincronizado de
+    # volta pra cá a cada turno (services/tools.py:sincronizar_aliados) —
+    # senão dano em combate "some" assim que o turno termina.
+    aliados: Mapped[list] = mapped_column(JSON, default=list)
+    # Fase 7 da revisão de gameplay (Etapa 12/13) — gerado uma vez por
+    # `narrator.gerar_epitafio` quando `c_state.resultado == "morte"` se
+    # confirma (routers/game.py), e nunca mais regenerado: regerar a cada
+    # visita custaria dinheiro e daria uma memória diferente da mesma morte
+    # a cada vez. `None` enquanto o herói está vivo.
+    epitafio: Mapped[dict | None] = mapped_column(JSON, default=None)
     # Progressão (Etapa 7) — XP e nível, tabela SRD 5e (rules_engine.py:
     # XP_POR_NIVEL). `ToolExecutor._conceder_xp` é quem muta isso, nunca o
     # modelo diretamente (mesmo princípio de rules_engine.py como juiz).

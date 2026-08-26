@@ -5,7 +5,10 @@ import PixelIcon from './PixelIcon';
 // RollCard, mas mereciam o mesmo tratamento de card em vez de texto solto
 // com emoji dentro da narrativa.
 export interface EventoStatus {
-  tipo: 'cura' | 'morte_inimigo';
+  // Fase 2 (revisão de gameplay) — 'morte_aliado' some pelo mesmo card,
+  // igual a 'morte_inimigo'; o dado distingue os dois mesmo sem a tela
+  // diferenciar ainda (ver Backend/app/domain/eventos.py).
+  tipo: 'cura' | 'morte_inimigo' | 'morte_aliado';
   quem: string;
   valor?: number | null;
 }

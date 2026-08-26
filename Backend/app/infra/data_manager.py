@@ -12,6 +12,12 @@ class DataManager:
         self.monsters = self._load_json("monsters.json")
         self.weapons = self._load_json("weapons.json")
         self.locations = self._load_json("locations.json")
+        # Fase 6 da revisão de gameplay (Etapa 12/13) — catálogo de itens
+        # narrativos com tags (Tocha=[Fogo], Símbolo Sagrado=[Sagrado]...).
+        # Diferente das `propriedades` de arma (Sutil/Munição — já afetam a
+        # matemática de ataque, ver services/combat.py): tags são pra uso
+        # criativo fora do combate (rolar_teste), não pra dano.
+        self.items = self._load_json("items.json")
 
         self.biblia_text = self._load_text("biblia_mestre.txt")
 
@@ -66,6 +72,12 @@ class DataManager:
         alto impacto na narração (narrator.py:montar_contexto)."""
         return list(self.monsters.get("Chefe", {}).keys())
 
+    def get_monstros_por_banda(self, banda: str) -> list[str]:
+        """Bestiário por banda de nível (Nivel_1..Nivel_4, Chefe) — usado pelo
+        escalonamento de perigo (rules_engine.desafio_sugerido) para sugerir
+        encontros compatíveis com o nível do herói."""
+        return list(self.monsters.get(banda, {}).keys())
+
     def get_weapon(self, nome: str) -> dict | None:
         for grupo in self.weapons.values():
             if nome in grupo:
@@ -81,6 +93,23 @@ class DataManager:
 
     def get_locations_list(self) -> list[str]:
         return list(self.locations.keys())
+
+    def get_item(self, nome: str) -> dict | None:
+        dados = self.items.get(nome)
+        return dict(dados) if dados is not None else None
+
+    def get_tags(self, nome: str) -> list[str]:
+        """Fase 6 — tags de um item OU arma, pra `rolar_teste` conceder
+        bônus por uso criativo (`services/tools.py`). Armas reaproveitam
+        `propriedades` como tag ("Pesada" ajuda a arrombar uma porta tanto
+        quanto "cortar") — sem duplicar o dado em dois lugares."""
+        item = self.get_item(nome)
+        if item is not None:
+            return item.get("tags", [])
+        arma = self.get_weapon(nome)
+        if arma is not None:
+            return arma.get("propriedades", [])
+        return []
 
 
 regras = DataManager()

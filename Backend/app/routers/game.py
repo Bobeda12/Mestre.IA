@@ -21,10 +21,10 @@ from app.infra.tracing import medir, turno_span
 from app.services import combat, memory, rag_regras, rules_engine, telemetria
 from app.services.agent_loop import executar_turno, executar_turno_stream
 from app.services.auth import get_current_user, get_current_verified_user
-from app.services.guardrail import corrigir_narrativa, limpar_formatacao, validar_narrativa
+from app.services.guardrail import corrigir_narrativa, extrair_opcoes, limpar_formatacao, validar_narrativa
 from app.services.memory import contexto_recente
-from app.services.narrator import montar_contexto
-from app.services.tools import ToolExecutor
+from app.services.narrator import gerar_epitafio, montar_contexto
+from app.services.tools import ToolExecutor, sincronizar_aliados
 
 router = APIRouter(tags=["game"])
 
@@ -150,9 +150,34 @@ def _resposta(heroi: Personagem, c_state: CombatState, q_state: QuestLog, **extr
         "xp_proximo_nivel": regras_xp_proximo_nivel(heroi.nivel),
         "inventory": heroi.inventario,
         "atributos": heroi.atributos,
+        # Fase 3 da revisão de gameplay — roster persistente (fora e dentro
+        # de combate; o HP em combate vem sincronizado de volta pra cá em
+        # `sincronizar_aliados`, chamado antes desta função). Sem consumidor
+        # no frontend ainda — nenhuma fase pediu HUD de aliado até aqui.
+        "aliados": heroi.aliados,
+        # Fase 8 da revisão de gameplay (Etapa 12/13) — a ferramenta
+        # `ajustar_reputacao_npc` (Etapa 5) já existe e já entra no
+        # contexto do narrador; nunca teve um consumidor no frontend até
+        # aqui. Devolve todo o mapa (não só quem mudou neste turno) — é
+        # pouca coisa, e o front decide sozinho o que faz sentido mostrar.
+        "reputacao_npcs": heroi.reputacao_npcs,
         "combat_active": c_state.ativo,
         "ordem_iniciativa": c_state.ordem_iniciativa,
         "turno_atual": c_state.turno_atual,
+        # Fase 1 da revisão de gameplay — o momento mais tenso do jogo
+        # (herói a 0 PV, três falhas = morte) era calculado e nunca saía do
+        # backend; o HUD desenha as caveiras/escudos a partir daqui.
+        "sucessos_morte": c_state.sucessos_morte,
+        "falhas_morte": c_state.falhas_morte,
+        # Fase 1 — antes disto o frontend tratava QUALQUER `hp_atual <= 0`
+        # como fim de jogo (GameChat.tsx), cobrindo a tela com "GAME OVER"
+        # antes mesmo do primeiro teste de morte rodar. `resultado_combate`
+        # é o sinal real: só "morte" (três falhas) é definitivo.
+        "resultado_combate": c_state.resultado,
+        # Fase 7 da revisão de gameplay — {"retrospectiva", "epitafio_curto"}
+        # gerado uma vez quando `resultado_combate` vira "morte"; `None`
+        # enquanto o herói está vivo.
+        "epitafio": heroi.epitafio,
         "inimigos": [i.model_dump() for i in c_state.inimigos],
         "missao": q_state.model_dump(),
         **extra,
@@ -163,6 +188,19 @@ def regras_xp_proximo_nivel(nivel: int) -> int | None:
     """`None` no nível máximo — não existe "próximo limiar" pra mostrar na
     barra de XP do HUD (Fase 3)."""
     return rules_engine.XP_POR_NIVEL.get(nivel + 1)
+
+
+def _persistir_epitafio_se_confirmado(db: Session, heroi: Personagem, c_state: CombatState) -> None:
+    """Fase 7 da revisão de gameplay — gerado uma vez, na primeira vez que
+    `c_state.resultado` vira "morte" (chamado logo depois de
+    `combat.turno_morte`, nos dois caminhos de `/chat`). `heroi.epitafio`
+    já preenchido é o guarda: regerar a cada visita custaria dinheiro e
+    daria uma memória diferente da mesma morte a cada vez."""
+    if c_state.resultado != "morte" or heroi.epitafio is not None:
+        return
+    resumo = ResumoRolante.model_validate(heroi.resumo_rolante or {})
+    marcantes = memory.eventos_marcantes(db, heroi.id)
+    heroi.epitafio = gerar_epitafio(heroi, marcantes, resumo)
 
 
 @router.post("/load_game")
@@ -214,6 +252,7 @@ async def chat_endpoint(
     if heroi.hp_atual <= 0:
         eventos_morte, hp_morte = combat.turno_morte(c_state)
         heroi.hp_atual = hp_morte
+        _persistir_epitafio_se_confirmado(db, heroi, c_state)
         prompt_morte = (
             f"{regras.get_biblia()}\n[HEROI] {heroi.nome} está inconsciente, a 0 PV, lutando contra a morte. "
             "[MOMENTO DE ALTO IMPACTO] — a vida por um fio, o momento mais tenso do jogo. Deixe a "
@@ -287,6 +326,10 @@ async def chat_endpoint(
     # contexto do próximo turno, e markdown sujo ali ensina o modelo a
     # formatar mais, não menos.
     narrativa = limpar_formatacao(narrativa)
+    # Fase 1 da revisão de gameplay — a tag `[OPCOES]` nunca chega ao
+    # jogador como texto; vira uma lista estruturada pro frontend renderizar
+    # como botões (mantendo a caixa de texto livre como está).
+    narrativa, opcoes = extrair_opcoes(narrativa)
 
     todos_eventos = eventos_morte + eventos_ferramentas
     if todos_eventos:
@@ -298,6 +341,7 @@ async def chat_endpoint(
     # Reatribuição, não mutação in-place: é assim que o SQLAlchemy detecta
     # a mudança numa coluna JSON. Ver Lição 03.
     heroi.historico_chat = novo_hist
+    sincronizar_aliados(heroi, c_state)  # Fase 3 — HP de aliado em combate precisa sobreviver ao turno
     heroi.combat_state = c_state.model_dump()
     heroi.world_state = w_state.model_dump()
     heroi.quest_log = q_state.model_dump()
@@ -321,7 +365,7 @@ async def chat_endpoint(
     )
 
     return _resposta(
-        heroi, c_state, q_state, narrativa=narrativa,
+        heroi, c_state, q_state, narrativa=narrativa, opcoes=opcoes,
         turno_index=len(heroi.historico_chat) - 1, turno_mundo=w_state.turno,
     )
 
@@ -387,6 +431,7 @@ def chat_stream_endpoint(
         if heroi.hp_atual <= 0:
             eventos_morte, hp_morte = combat.turno_morte(c_state)
             heroi.hp_atual = hp_morte
+            _persistir_epitafio_se_confirmado(db, heroi, c_state)
             prompt_morte = (
                 f"{regras.get_biblia()}\n[HEROI] {heroi.nome} está inconsciente, a 0 PV, lutando contra a morte. "
                 "[MOMENTO DE ALTO IMPACTO] — a vida por um fio, o momento mais tenso do jogo. Deixe a "
@@ -478,6 +523,11 @@ def chat_stream_endpoint(
         # e vira contexto futuro) — a limpeza leve *durante* o streaming
         # é responsabilidade do cliente (GameChat.tsx).
         narrativa = limpar_formatacao(narrativa)
+        # Fase 1 da revisão de gameplay — mesma extração do `/chat` síncrono.
+        # A tag chega crua nos frames `token` ao vivo (o cliente já esconde
+        # a cauda "[OPCOES" enquanto ela chega — GameChat.tsx); aqui é onde
+        # o texto persistido/retomado nunca mais carrega a tag.
+        narrativa, opcoes = extrair_opcoes(narrativa)
 
         todos_eventos = eventos_morte + eventos_ferramentas
         if todos_eventos:
@@ -487,6 +537,7 @@ def chat_stream_endpoint(
         novo_hist.append({"role": "user", "content": user_input.action})
         novo_hist.append({"role": "assistant", "content": narrativa})
         heroi.historico_chat = novo_hist
+        sincronizar_aliados(heroi, c_state)  # Fase 3 — HP de aliado em combate precisa sobreviver ao turno
         heroi.combat_state = c_state.model_dump()
         heroi.world_state = w_state.model_dump()
         heroi.quest_log = q_state.model_dump()
@@ -510,7 +561,7 @@ def chat_stream_endpoint(
         yield _sse(
             "state",
             _resposta(
-                heroi, c_state, q_state, narrativa=narrativa,
+                heroi, c_state, q_state, narrativa=narrativa, opcoes=opcoes,
                 turno_index=len(heroi.historico_chat) - 1, turno_mundo=w_state.turno,
             ),
         )

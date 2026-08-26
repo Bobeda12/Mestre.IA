@@ -102,6 +102,51 @@ class TestMemoriasRelevantes:
         assert all(texto in ("evento 7", "evento 8", "evento 9") for texto in encontrados)
 
 
+class TestEventosMarcantes:
+    """Fase 7 da revisão de gameplay (Etapa 12/13) — usado pelo epitáfio."""
+
+    def test_devolve_em_ordem_cronologica(self, db):
+        heroi = _personagem(db, "sessao-marcantes")
+        for i in range(3):
+            memory.registrar_evento(db, heroi.id, turno=i, tipo="turno", texto=f"evento {i}", embed_fn=_embed_fake)
+        assert memory.eventos_marcantes(db, heroi.id) == ["evento 0", "evento 1", "evento 2"]
+
+    def test_respeita_o_teto_k_pegando_os_mais_recentes(self, db):
+        heroi = _personagem(db, "sessao-marcantes-teto")
+        for i in range(5):
+            memory.registrar_evento(db, heroi.id, turno=i, tipo="turno", texto=f"evento {i}", embed_fn=_embed_fake)
+        assert memory.eventos_marcantes(db, heroi.id, k=2) == ["evento 3", "evento 4"]
+
+    def test_filtra_por_personagem(self, db):
+        heroi_a = _personagem(db, "sessao-marcantes-a")
+        heroi_b = _personagem(db, "sessao-marcantes-b")
+        memory.registrar_evento(db, heroi_a.id, 1, "turno", "evento do A", embed_fn=_embed_fake)
+        memory.registrar_evento(db, heroi_b.id, 1, "turno", "evento do B", embed_fn=_embed_fake)
+        assert memory.eventos_marcantes(db, heroi_a.id) == ["evento do A"]
+
+    def test_sem_eventos_devolve_lista_vazia(self, db):
+        heroi = _personagem(db, "sessao-marcantes-vazia")
+        assert memory.eventos_marcantes(db, heroi.id) == []
+
+
+class TestEventosCronologicos:
+    """Fase 7 — usado pela Crônica exportável."""
+
+    def test_devolve_todos_em_ordem_sem_teto(self, db):
+        heroi = _personagem(db, "sessao-cronica")
+        for i in range(12):
+            memory.registrar_evento(db, heroi.id, turno=i, tipo="turno", texto=f"evento {i}", embed_fn=_embed_fake)
+        resultado = memory.eventos_cronologicos(db, heroi.id)
+        assert resultado == [f"evento {i}" for i in range(12)]
+
+    def test_filtra_por_personagem(self, db):
+        heroi_a = _personagem(db, "sessao-cronica-a")
+        heroi_b = _personagem(db, "sessao-cronica-b")
+        memory.registrar_evento(db, heroi_a.id, 1, "turno", "evento do A", embed_fn=_embed_fake)
+        memory.registrar_evento(db, heroi_b.id, 1, "turno", "evento do B", embed_fn=_embed_fake)
+        assert memory.eventos_cronologicos(db, heroi_a.id) == ["evento do A"]
+
+
 class TestAtualizarResumoRolante:
     def test_nao_atualiza_antes_do_limiar_de_turnos(self, db):
         heroi = _personagem(db, "sessao-resumo-1")

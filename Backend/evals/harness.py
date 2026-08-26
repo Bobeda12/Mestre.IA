@@ -17,6 +17,7 @@ from typing import Any
 from app.infra import embeddings
 from app.infra.db import Personagem
 from app.infra.llm_client import chamar_com_fallback
+from app.domain.state import QuestLog
 from app.services import agent_loop
 from app.services.agent_loop import ChamadaFerramenta
 from app.services.guardrail import validar_narrativa
@@ -123,7 +124,7 @@ def rodar_cenario(
 
     registros: list[ChamadaLLMRegistrada] = []
     chamada_registrada = _com_registro(chamar_fn or chamar_com_fallback, registros)
-    executor = ToolExecutor(heroi, combate, mundo, rng=rng)
+    executor = ToolExecutor(heroi, combate, mundo, QuestLog(), rng=rng)
 
     try:
         narrativa, _eventos, chamadas = agent_loop.executar_turno(

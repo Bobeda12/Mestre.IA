@@ -4,10 +4,10 @@ import { useQuery } from '@tanstack/react-query';
 import { isAxiosError } from 'axios';
 import { api, API_URL } from '../lib/api';
 import { ErroSse, postSse } from '../lib/sse';
-import { getLocalImage, limparMarkdownLeve } from '../lib/utils';
+import { esconderTagOpcoes, getLocalImage, limparMarkdownLeve } from '../lib/utils';
 import { useAuth, useInvalidarAuth } from '../lib/auth';
 import { useTrilha, calcularTema } from '../lib/trilha';
-import RollCard, { type DadosRolagem } from './RollCard';
+import RollCard, { DURACAO_ANIMACAO_DADO_MS, type DadosRolagem } from './RollCard';
 import StatusCard, { type EventoStatus } from './StatusCard';
 import PixelBar from './PixelBar';
 import Prologo from './Prologo';
@@ -28,6 +28,7 @@ const ABAS = [
   { id: 'status', rotulo: 'STATUS', icone: 'coracao' },
   { id: 'itens', rotulo: 'ITENS', icone: 'mochila' },
   { id: 'missao', rotulo: 'MISSÃO', icone: 'pergaminho' },
+  { id: 'relacoes', rotulo: 'RELAÇÕES', icone: 'rosto' },
 ] as const satisfies readonly { id: string; rotulo: string; icone: PixelIconName }[];
 
 type AbaFicha = (typeof ABAS)[number]['id'];
@@ -44,7 +45,12 @@ type Message =
   // (Personagem.historico_chat), o que o botão 👍/👎 manda pra
   // POST /personagens/:id/feedback. `feedback` é só o que ESTE navegador já
   // votou, pra não deixar votar duas vezes na mesma aba.
-  | { kind: 'texto'; role: 'user' | 'assistant' | 'system'; content: string; isError?: boolean; turnoIndex?: number; feedback?: 1 | -1 }
+  // `raw` (Fase 1, revisão de gameplay) só existe em bolhas de assistente
+  // em streaming: o texto CRU acumulado, nunca limpo/truncado — precisa
+  // viver no estado (não numa ref) porque o updater de `setMessages` roda
+  // puro a partir de `prev`; uma ref mutada dentro do updater duplica
+  // texto sob o StrictMode do React (chama o updater duas vezes).
+  | { kind: 'texto'; role: 'user' | 'assistant' | 'system'; content: string; raw?: string; isError?: boolean; turnoIndex?: number; feedback?: 1 | -1 }
   // Etapa 10 (A-7): cura e morte de inimigo chegam pelo mesmo frame
   // `tool_event` que ataque/teste, só com um `dados.tipo` diferente.
   | { kind: 'rolagem'; dados: DadosRolagem | EventoStatus };
@@ -70,6 +76,21 @@ interface EstadoJogo {
   xp_proximo_nivel?: number | null;
   ordem_iniciativa?: number[];
   turno_atual?: number;
+  // Fase 1 (revisão de gameplay) — testes de morte visíveis. Antes disto o
+  // front não sabia diferenciar "caído, em teste de morte" de "morto de
+  // verdade" — os dois eram só `hp_atual <= 0`.
+  sucessos_morte?: number;
+  falhas_morte?: number;
+  resultado_combate?: 'vitoria' | 'morte' | 'estabilizado' | null;
+  // Fase 1 — as 3 sugestões de ação extraídas da tag [OPCOES].
+  opcoes?: string[];
+  // Fase 7 (revisão de gameplay) — gerado uma vez quando resultado_combate
+  // vira "morte"; já vem preenchido no mesmo frame que confirma a morte
+  // (o servidor gera antes de narrar o turno).
+  epitafio?: { retrospectiva: string; epitafio_curto: string } | null;
+  // Fase 8 — a ferramenta ajustar_reputacao_npc (Etapa 5) já existia sem
+  // nenhum consumidor no frontend.
+  reputacao_npcs?: Record<string, number>;
   inventory?: string[];
   combat_active: boolean;
   inimigos?: Inimigo[];
@@ -128,6 +149,8 @@ export default function GameChat() {
   const [inventory, setInventory] = useState<string[]>([]);
   const [attributes, setAttributes] = useState<any>({ forca: 10, destreza: 10, inteligencia: 10 });
   const [quest, setQuest] = useState<any>(null);
+  // Fase 8 (revisão de gameplay) — cards de atitude de NPC.
+  const [reputacoes, setReputacoes] = useState<Record<string, number>>({});
 
   // COMBATE
   const [combatActive, setCombatActive] = useState(false);
@@ -136,6 +159,19 @@ export default function GameChat() {
   const [turnoAtual, setTurnoAtual] = useState(0);
   const [turnoMundo, setTurnoMundo] = useState(0);
   const [gameOver, setGameOver] = useState(false);
+  // Fase 1 da revisão de gameplay — o momento mais tenso do jogo (herói a
+  // 0 PV, três falhas = morte) já era calculado no backend e nunca chegava
+  // à tela; agora vem em todo frame "state" (routers/game.py:_resposta).
+  const [sucessosMorte, setSucessosMorte] = useState(0);
+  const [falhasMorte, setFalhasMorte] = useState(0);
+  // As 3 sugestões de ação da narração ([OPCOES], Fase 1) — nunca aparecem
+  // como texto (GameChat esconde a tag ao vivo, o servidor a remove antes
+  // de persistir); viram botões que preenchem a caixa de texto livre, sem
+  // enviar sozinhos — o jogador ainda decide a frase final.
+  const [opcoes, setOpcoes] = useState<string[]>([]);
+  // Fase 7 — a retrospectiva/epitáfio gerados quando o herói morre de
+  // verdade (resultado_combate === 'morte').
+  const [epitafio, setEpitafio] = useState<{ retrospectiva: string; epitafio_curto: string } | null>(null);
   // Etapa 11 (B-7) — a tela de abertura aparece só na primeira visita
   // (historico_chat ainda com só o prólogo, nenhum turno jogado) e some
   // pro resto da sessão assim que o jogador clica "Começar" — não volta a
@@ -252,6 +288,10 @@ export default function GameChat() {
     setNivel(cargaJogo.nivel ?? 1);
     setXp(cargaJogo.xp ?? 0);
     setXpProximoNivel(cargaJogo.xp_proximo_nivel ?? null);
+    setSucessosMorte(cargaJogo.sucessos_morte ?? 0);
+    setFalhasMorte(cargaJogo.falhas_morte ?? 0);
+    setEpitafio(cargaJogo.epitafio ?? null);
+    setReputacoes(cargaJogo.reputacao_npcs || {});
     setInventory(cargaJogo.inventory || []);
     setAttributes(cargaJogo.atributos || {});
     setQuest(cargaJogo.missao);
@@ -261,7 +301,7 @@ export default function GameChat() {
     setTurnoAtual(cargaJogo.turno_atual ?? 0);
     setTurnoMundo(cargaJogo.turno_mundo ?? 0);
 
-    if (cargaJogo.hp_atual <= 0) setGameOver(true);
+    if (cargaJogo.resultado_combate === 'morte') setGameOver(true);
     setMessages([{ kind: 'texto', role: 'assistant', content: `Conectado ao mundo. Local: ${cargaJogo.local}.` }]);
   }, [cargaJogo, charImageFromNav]);
 
@@ -276,15 +316,20 @@ export default function GameChat() {
     setMessages(prev => {
       const ultima = prev[prev.length - 1];
       if (ultima && ultima.kind === 'texto' && ultima.role === 'assistant' && !ultima.isError === !isError) {
+        const raw = (ultima.raw ?? ultima.content) + pedaco;
         const copia = [...prev];
-        // Etapa 10 (A-7): limpeza leve sobre o texto ACUMULADO, nunca só o
-        // pedaço novo — um `**` pode chegar partido entre dois frames SSE.
-        // A limpeza de verdade é no servidor, antes de persistir; isto é
-        // só pra tela não piscar o markdown cru por meio segundo.
-        copia[copia.length - 1] = { ...ultima, content: limparMarkdownLeve(ultima.content + pedaco), isError };
+        // Etapa 10 (A-7) + Fase 1 (revisão de gameplay): limpeza leve sobre
+        // o texto CRU acumulado, nunca só o pedaço novo — um `**` ou a tag
+        // `[OPCOES` podem chegar partidos entre dois frames SSE. A limpeza
+        // de verdade (markdown e a tag [OPCOES]) é no servidor, antes de
+        // persistir; isto é só pra tela não piscar por meio segundo. `raw`
+        // precisa viver na mensagem (não numa ref) porque este updater
+        // roda puro a partir de `prev` — uma ref mutada aqui dentro
+        // duplicaria texto sob o StrictMode do React.
+        copia[copia.length - 1] = { ...ultima, raw, content: limparMarkdownLeve(esconderTagOpcoes(raw)), isError };
         return copia;
       }
-      return [...prev, { kind: 'texto', role: 'assistant', content: pedaco, isError }];
+      return [...prev, { kind: 'texto', role: 'assistant', raw: pedaco, content: limparMarkdownLeve(esconderTagOpcoes(pedaco)), isError }];
     });
   };
 
@@ -295,6 +340,7 @@ export default function GameChat() {
     // tela como bolha do jogador na tentativa original — não duplica aqui.
     if (!opts?.modoEmergencia) setMessages(prev => [...prev, { kind: 'texto', role: 'user', content: text }]);
     setLoading(true);
+    setOpcoes([]); // as sugestões do turno anterior não valem mais pro novo turno
 
     try {
       const stream = await postSse(`${API_URL}/chat/stream`, { session_id: sessionId, action: text }, opts);
@@ -305,7 +351,15 @@ export default function GameChat() {
         } else if (evt.event === 'tool_event') {
           // Etapa 10 (A-7): cura e morte de inimigo chegam pelo mesmo
           // frame, discriminados por `dados.tipo` na hora de renderizar.
-          setMessages(prev => [...prev, { kind: 'rolagem', dados: evt.data as DadosRolagem | EventoStatus }]);
+          const dadosEvento = evt.data as DadosRolagem | EventoStatus;
+          setMessages(prev => [...prev, { kind: 'rolagem', dados: dadosEvento }]);
+          // Fase 8 (revisão de gameplay) — "fator cassino": segura o
+          // consumo do stream (então a narração que vem a seguir) pela
+          // mesma duração da animação do dado em RollCard.tsx, pra ela
+          // nunca aparecer resolvida antes do dado "parar de girar".
+          if ('d20' in dadosEvento && dadosEvento.d20 != null) {
+            await new Promise(resolve => setTimeout(resolve, DURACAO_ANIMACAO_DADO_MS));
+          }
         } else if (evt.event === 'correcao') {
           // O guardrail reescreveu a narrativa depois de já ter sido
           // mostrada ao vivo — a versão persistida (memória futura) é a
@@ -366,9 +420,14 @@ export default function GameChat() {
           setEnemies(novosInimigos);
           setOrdemIniciativa(d.ordem_iniciativa || []);
           setTurnoAtual(d.turno_atual ?? 0);
+          setSucessosMorte(d.sucessos_morte ?? 0);
+          setFalhasMorte(d.falhas_morte ?? 0);
+          if (d.epitafio) setEpitafio(d.epitafio);
+          if (d.reputacao_npcs) setReputacoes(d.reputacao_npcs);
+          setOpcoes(d.opcoes || []);
           if (d.turno_mundo !== undefined) setTurnoMundo(d.turno_mundo);
           if (d.missao) setQuest(d.missao);
-          if (d.hp_atual <= 0) setGameOver(true);
+          if (d.resultado_combate === 'morte') setGameOver(true);
 
           if (d.turno_index !== undefined) {
             const turnoIndex = d.turno_index;
@@ -414,6 +473,30 @@ export default function GameChat() {
   const enviarFeedback = (idx: number, turnoIndex: number, valor: 1 | -1, comentario?: string) => {
     setMessages(prev => prev.map((m, i) => (i === idx && m.kind === 'texto' ? { ...m, feedback: valor } : m)));
     api.post(`/personagens/${sessionId}/feedback`, { turno_index: turnoIndex, valor, comentario }).catch(() => {});
+  };
+
+  // Fase 7 (revisão de gameplay) — "Exportar Crônica": baixa um .txt com a
+  // campanha inteira costurada em prosa (services/narrator.gerar_cronica).
+  // Download client-side de verdade (Blob + <a download>) — este é o
+  // próprio app, não um Artifact publicado, então o link funciona normal.
+  const [exportandoCronica, setExportandoCronica] = useState(false);
+  const exportarCronica = async () => {
+    if (!sessionId || exportandoCronica) return;
+    setExportandoCronica(true);
+    try {
+      const res = await api.get<{ nome: string; cronica: string }>(`/personagens/${sessionId}/cronica`);
+      const blob = new Blob([res.data.cronica], { type: 'text/plain;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${res.data.nome} - Cronica.txt`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      // Exportar não é crítico o bastante pra travar a tela de fim de jogo com um erro.
+    } finally {
+      setExportandoCronica(false);
+    }
   };
 
   // "Isso ficou estranho" (Etapa 10, A-4) — o 👎 abre um campo opcional em
@@ -491,20 +574,36 @@ export default function GameChat() {
             </p>
           )}
 
-          {/* Etapa 12b (C-4): aqui entra a retrospectiva gerada por IA sobre
-              esta run (memórias mais marcantes + epitáfio de uma linha) —
-              por enquanto o placar acima é tudo que existe. */}
+          {/* Fase 7 (revisão de gameplay) — retrospectiva + epitáfio
+              gerados por IA uma vez, na primeira morte confirmada
+              (routers/game.py:_persistir_epitafio_se_confirmado). */}
           <div className="mt-8 border-t border-gray-800 pt-4 w-full max-w-sm">
             <p className="text-[10px] uppercase tracking-widest text-gray-600">O relato do mestre</p>
-            <p className="text-sm text-gray-500 italic mt-1">Em breve, o mestre vai contar como termina esta jornada.</p>
+            {epitafio ? (
+              <>
+                <p className="text-sm text-gray-400 mt-2 whitespace-pre-wrap text-left">{epitafio.retrospectiva}</p>
+                <p className="text-sm text-rpg-gold italic mt-3">"{epitafio.epitafio_curto}"</p>
+              </>
+            ) : (
+              <p className="text-sm text-gray-500 italic mt-1">O mestre ainda está reunindo as palavras...</p>
+            )}
           </div>
 
-          <button
-            onClick={() => navigate('/')}
-            className="mt-8 border-2 border-gray-700 px-4 py-2 text-gray-400 hover:text-white hover:border-gray-500 transition-colors"
-          >
-            Voltar
-          </button>
+          <div className="mt-8 flex gap-3">
+            <button
+              onClick={() => navigate('/')}
+              className="border-2 border-gray-700 px-4 py-2 text-gray-400 hover:text-white hover:border-gray-500 transition-colors"
+            >
+              Voltar
+            </button>
+            <button
+              onClick={exportarCronica}
+              disabled={exportandoCronica}
+              className="border-2 border-gray-700 px-4 py-2 text-gray-400 hover:text-rpg-gold hover:border-rpg-gold transition-colors disabled:opacity-50"
+            >
+              {exportandoCronica ? 'Escrevendo...' : 'Exportar Crônica'}
+            </button>
+          </div>
         </div>
       )}
 
@@ -632,7 +731,10 @@ export default function GameChat() {
                         <h3 className="text-[10px] text-gray-300 uppercase font-rpg tracking-widest flex items-center gap-2"><PixelIcon name="mochila" size={12}/> Mochila</h3>
                         <span className="text-sm text-rpg-gold font-rpg flex items-center gap-1"><PixelIcon name="moeda" size={14}/> {ouro}</span>
                     </div>
-                    <InventoryGrid items={inventory} />
+                    <InventoryGrid
+                      items={inventory}
+                      onUsarItem={(item) => setInput(prev => `${prev}${prev && !prev.endsWith(' ') ? ' ' : ''}[${item}] `)}
+                    />
                 </div>
               )}
 
@@ -646,6 +748,37 @@ export default function GameChat() {
                       </div>
                   ) : (
                       <p className="text-sm text-gray-400 font-rpg text-center py-8">Nenhuma missão em andamento.</p>
+                  )}
+                </div>
+              )}
+
+              {/* Fase 8 (revisão de gameplay) — cards de atitude de NPC.
+                  A ferramenta `ajustar_reputacao_npc` (Etapa 5) já existia
+                  e já entrava no contexto do narrador; até aqui não tinha
+                  nenhum consumidor no frontend. -100 (Inimigo) a +100
+                  (Aliado); a barra reaproveita PixelBar deslocando o
+                  intervalo pra 0..200. */}
+              {abaAtiva === 'relacoes' && (
+                <div className="space-y-2 animate-fade-in">
+                  {Object.keys(reputacoes).length > 0 ? (
+                    Object.entries(reputacoes).map(([npc, valor]) => {
+                      const cor = valor > 15 ? 'bg-emerald-600' : valor < -15 ? 'bg-red-600' : 'bg-gray-500';
+                      return (
+                        <div key={npc} className="bg-black/50 border-2 border-gray-700 p-2">
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-xs text-gray-200 font-rpg truncate">{npc}</span>
+                            <span className="text-[10px] text-gray-400 font-rpg shrink-0">{valor > 0 ? `+${valor}` : valor}</span>
+                          </div>
+                          <PixelBar value={valor + 100} max={200} segments={10} colorClass={cor} />
+                          <div className="flex justify-between mt-0.5 text-[8px] text-gray-600 uppercase tracking-widest">
+                            <span>Inimigo</span>
+                            <span>Aliado</span>
+                          </div>
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <p className="text-sm text-gray-400 font-rpg text-center py-8">Nenhum NPC conhecido ainda.</p>
                   )}
                 </div>
               )}
@@ -938,6 +1071,32 @@ export default function GameChat() {
             </div>
         )}
 
+        {/* Fase 1 (revisão de gameplay) — testes de morte visíveis: o herói
+            caído a 0 PV está a três falhas de perder o personagem, e essa
+            informação existia no backend (CombatState.sucessos_morte/
+            falhas_morte) desde a Etapa 7 sem nunca chegar à tela. */}
+        {hpAtual <= 0 && !gameOver && (
+            <div className="absolute top-14 w-full flex justify-center z-30 animate-fade-in" role="status" aria-live="assertive">
+                <div className="bg-black/85 border-2 border-red-900/60 px-3 py-2 flex flex-col items-center gap-1 backdrop-blur-sm">
+                    <span className="text-[10px] uppercase tracking-widest text-red-400">Teste de morte</span>
+                    <div className="flex gap-3">
+                        <div className="flex gap-1" aria-label={`${sucessosMorte} de 3 sucessos`}>
+                            {[0, 1, 2].map(i => (
+                                <PixelIcon key={i} name="escudo" size={14}
+                                    className={i < sucessosMorte ? 'opacity-100' : 'opacity-20'} />
+                            ))}
+                        </div>
+                        <div className="flex gap-1" aria-label={`${falhasMorte} de 3 falhas`}>
+                            {[0, 1, 2].map(i => (
+                                <PixelIcon key={i} name="caveira" size={14}
+                                    className={i < falhasMorte ? 'opacity-100' : 'opacity-20'} />
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        )}
+
         {/* `aria-live="polite"` avisa leitor de tela sobre narração/rolagens
             chegando — a ressalva honesta (Lição 08, Etapa 7) é que o
             streaming token a token pode soar picotado num leitor de tela
@@ -951,7 +1110,7 @@ export default function GameChat() {
                     // Etapa 10 (A-7): cura/morte de inimigo usam o card de
                     // status; o resto (ataque, teste, dano, morte do herói)
                     // continua no RollCard de sempre.
-                    if (msg.dados.tipo === 'cura' || msg.dados.tipo === 'morte_inimigo') {
+                    if (msg.dados.tipo === 'cura' || msg.dados.tipo === 'morte_inimigo' || msg.dados.tipo === 'morte_aliado') {
                         return <StatusCard key={idx} dados={msg.dados} />;
                     }
                     return <RollCard key={idx} dados={msg.dados as DadosRolagem} />;
@@ -1058,6 +1217,25 @@ export default function GameChat() {
 
         {/* INPUT AREA */}
         <div className="p-4 border-t border-gray-800 bg-gray-900 z-40 relative">
+            {/* Fase 1 (revisão de gameplay) — sugestões extraídas da tag
+                [OPCOES]: preenchem a caixa, nunca enviam sozinhas. A caixa
+                de texto livre continua sendo o caminho principal — isto é
+                um atalho pra quem não sabe o que digitar, não uma troca
+                dela por um menu (mesmo espírito do clique no inimigo). */}
+            {opcoes.length > 0 && !loading && !gameOver && (
+                <div className="max-w-4xl mx-auto flex flex-wrap gap-2 mb-2 animate-fade-in">
+                    {opcoes.map((op, i) => (
+                        <button
+                            key={i}
+                            type="button"
+                            onClick={() => setInput(op)}
+                            className="text-xs px-3 py-1.5 bg-black/40 border border-gray-700 text-gray-300 hover:border-rpg-gold hover:text-rpg-gold transition-colors"
+                        >
+                            {op}
+                        </button>
+                    ))}
+                </div>
+            )}
             <div className="max-w-4xl mx-auto flex gap-2 bg-black/40 p-1.5 border-2 border-gray-700 focus-within:border-rpg-gold transition-colors shadow-inner">
                 <textarea
                     value={input}

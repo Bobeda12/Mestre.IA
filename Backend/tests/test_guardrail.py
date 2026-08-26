@@ -87,6 +87,41 @@ class TestLimparFormatacao:
         assert guardrail.limpar_formatacao("3 * 4 = 12") == "3 * 4 = 12"
 
 
+class TestExtrairOpcoes:
+    """Fase 1 da revisão de gameplay — a tag `[OPCOES]` nunca deve chegar
+    ao jogador como texto cru; vira uma lista estruturada."""
+
+    def test_sem_tag_devolve_texto_intacto_e_lista_vazia(self):
+        texto = "Você avança pela vila, atento ao goblin ferido."
+        limpo, opcoes = guardrail.extrair_opcoes(texto)
+        assert limpo == texto
+        assert opcoes == []
+
+    def test_extrai_as_tres_opcoes_e_remove_a_tag(self):
+        texto = "O goblin recua para a escuridão.\n[OPCOES]: Perseguir|Recuar|Examinar o corpo"
+        limpo, opcoes = guardrail.extrair_opcoes(texto)
+        assert limpo == "O goblin recua para a escuridão."
+        assert opcoes == ["Perseguir", "Recuar", "Examinar o corpo"]
+
+    def test_cd_com_ponto_final_e_espacos_e_normalizado(self):
+        texto = "Cena.\n[OPCOES]:  Atacar. | Fugir . |Esperar"
+        _, opcoes = guardrail.extrair_opcoes(texto)
+        assert opcoes == ["Atacar", "Fugir", "Esperar"]
+
+    def test_mais_de_tres_opcoes_e_truncado_em_tres(self):
+        texto = "Cena.\n[OPCOES]: A|B|C|D"
+        _, opcoes = guardrail.extrair_opcoes(texto)
+        assert opcoes == ["A", "B", "C"]
+
+    def test_grafia_acentuada_do_modelo_tambem_e_reconhecida(self):
+        # Achado ao vivo (Fase 4): o prompt pede "[OPCOES]" sem acento, mas
+        # o modelo "corrige" pra "[OPÇÕES]" (grafia correta em português).
+        texto = "O goblin recua.\n[OPÇÕES]: Perseguir|Recuar|Examinar o corpo"
+        limpo, opcoes = guardrail.extrair_opcoes(texto)
+        assert limpo == "O goblin recua."
+        assert opcoes == ["Perseguir", "Recuar", "Examinar o corpo"]
+
+
 class _MensagemFalsa:
     def __init__(self, content: str) -> None:
         self.content = content

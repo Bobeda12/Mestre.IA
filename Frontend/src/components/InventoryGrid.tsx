@@ -36,7 +36,14 @@ function categoriaDe(nome: string): Categoria {
 // com uma linha incompleta e leia como "mochila com espaço", não como bug.
 const SLOTS_MINIMOS = 12;
 
-export default function InventoryGrid({ items }: { items: string[] }) {
+// Fase 8 da revisão de gameplay (Etapa 12/13) — clicar num item não usa ele
+// direto: injeta `[Nome do Item]` na caixa de texto livre (mesmo padrão do
+// clique no nome do inimigo em combate, GameChat.tsx). O jogador completa a
+// frase como quiser ("Eu jogo a [Poção de Água] na cara do guarda") — o
+// inventário vira apoio criativo, não um botão de "usar". Isto substitui a
+// ideia antiga do backlog ("abrir inventário e usar de verdade"); as duas
+// conflitavam, e esta foi a escolhida (ver docs/backlog-pos-lancamento.md, D-3).
+export default function InventoryGrid({ items, onUsarItem }: { items: string[]; onUsarItem?: (item: string) => void }) {
   const [selecionado, setSelecionado] = useState<number | null>(null);
   const vazios = Math.max(0, SLOTS_MINIMOS - items.length);
   const itemAberto = selecionado != null ? items[selecionado] : null;
@@ -52,8 +59,8 @@ export default function InventoryGrid({ items }: { items: string[] }) {
               <TooltipTrigger asChild>
                 <button
                   type="button"
-                  onClick={() => setSelecionado(ativo ? null : i)}
-                  aria-label={item}
+                  onClick={() => { setSelecionado(ativo ? null : i); onUsarItem?.(item); }}
+                  aria-label={`Mencionar ${item} na ação`}
                   aria-pressed={ativo}
                   className={`aspect-square flex items-center justify-center border-2 transition-colors animate-fade-in focus-visible:outline-none focus-visible:border-rpg-gold ${
                     ativo

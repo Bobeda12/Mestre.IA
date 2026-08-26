@@ -11,7 +11,7 @@ Ver ADR-0006 para a decisão de arquitetura por trás desta separação."""
 import random
 
 from app.domain.eventos import DadosRolagem, EventoRolagem, EventoStatus
-from app.domain.state import CombatState, Inimigo
+from app.domain.state import Aliado, CombatState, Inimigo
 from app.infra.data_manager import regras
 from app.services import rules_engine as motor
 
@@ -63,6 +63,7 @@ def _criar_inimigo(nome: str) -> Inimigo | None:
         bonus_ataque=bonus,
         dano_dado=dano_dado,
         nome_ataque=nome_ataque,
+        comportamento=dados.get("comportamento", ""),
     )
 
 
@@ -144,11 +145,17 @@ def turno_jogador(
     alvo_proposto: str | None,
     rng: random.Random | None = None,
     nivel: int = 1,
+    vantagem: bool | None = None,
+    investida: bool = False,
 ) -> list[str]:
     """Resolve o ataque do jogador contra um inimigo vivo, mutando
     `c_state.inimigos` in place (mesmo padrão de reatribuição de coluna JSON
     do resto do projeto — quem chama ainda precisa reatribuir `combat_state`
-    inteiro para o SQLAlchemy detectar a mudança, ver Lição 03)."""
+    inteiro para o SQLAlchemy detectar a mudança, ver Lição 03).
+
+    `investida` (Fase 1 da revisão de gameplay — o botão de risco tático):
+    -2 no bônus de acerto, +50% no dano — a troca clássica de precisão por
+    força, aplicada no servidor, nunca decidida pelo modelo."""
     vivos = [i for i in c_state.inimigos if i.hp > 0]
     if not vivos:
         return []
@@ -157,21 +164,25 @@ def turno_jogador(
     nome_arma, dados_arma = escolher_arma(inventario, arma_proposta)
     mod_atributo, attr_usado = _mod_para_arma(atributos_heroi, dados_arma.get("propriedades", []))
     prof = motor.bonus_proficiencia(nivel)
-    bonus_ataque = prof + mod_atributo
+    bonus_ataque = prof + mod_atributo + (-2 if investida else 0)
 
-    resultado = motor.resolver_ataque(bonus_ataque, alvo.ca, rng)
+    resultado = motor.resolver_ataque(bonus_ataque, alvo.ca, rng, vantagem=vantagem)
     linha = (
-        f"🎲 Você ataca {alvo.nome} com {nome_arma}: "
+        f"🎲 Você {'investe contra' if investida else 'ataca'} {alvo.nome} com {nome_arma}: "
         f"d20({resultado.rolagem})+{bonus_ataque}={resultado.total} vs CA {alvo.ca} → "
     )
+    partes_bonus = [
+        {"rotulo": motor.ATRIBUTO_LABEL[attr_usado], "valor": mod_atributo},
+        {"rotulo": "Proficiência", "valor": prof},
+    ]
+    if investida:
+        partes_bonus.append({"rotulo": "Investida", "valor": -2})
     dados = DadosRolagem(
         tipo="ataque", quem="heroi", alvo=alvo.nome, d20=resultado.rolagem, bonus=bonus_ataque,
         total=resultado.total, ca=alvo.ca, sucesso=resultado.acerto, critico=resultado.critico,
         falha_critica=resultado.falha_critica, atributo=attr_usado, arma=nome_arma,
-        partes_bonus=[
-            {"rotulo": motor.ATRIBUTO_LABEL[attr_usado], "valor": mod_atributo},
-            {"rotulo": "Proficiência", "valor": prof},
-        ],
+        partes_bonus=partes_bonus,
+        d20_extra=resultado.d20_extra, vantagem=resultado.vantagem,
     )
     if not resultado.acerto:
         return [EventoRolagem(linha + "ERROU.", dados)]
@@ -182,6 +193,8 @@ def turno_jogador(
     # embutido no texto de data/monsters.json (parse_ataque_monstro), por
     # isso turno_inimigos() não repete essa soma.
     dano = motor.calcular_dano(dados_arma["dano"], resultado.critico, rng) + mod_atributo
+    if investida:
+        dano = dano * 3 // 2
     alvo.hp = max(0, alvo.hp - dano)
     critico_txt = " CRÍTICO" if resultado.critico else ""
     linha += f"ACERTO{critico_txt}! {dano} de dano. {alvo.nome}: {alvo.hp}/{alvo.max_hp} PV."
@@ -192,15 +205,108 @@ def turno_jogador(
     return eventos
 
 
-def turno_inimigos(c_state: CombatState, ca_heroi: int, rng: random.Random | None = None) -> tuple[list[str], int]:
-    """Cada inimigo vivo ataca o herói, na ordem de `c_state.ordem_iniciativa`
+def turno_aliado(
+    c_state: CombatState, aliado: Aliado, alvo_proposto: str | None, rng: random.Random | None = None
+) -> list[str]:
+    """Fase 3 da revisão de gameplay (ADR-0027) — resolve o ataque de um
+    aliado recrutado contra um inimigo vivo. Mais simples que
+    `turno_jogador`: um `Aliado` já carrega `bonus_ataque`/`dano_dado`
+    prontos (mesma forma de `Inimigo`, ver domain/state.py), sem escolha de
+    arma nem lookup de atributo — ele ainda não tem inventário de combate
+    próprio. Quem chama garante que `aliado` está vivo (`ToolExecutor.
+    atacar_com_aliado`); esta função não revalida."""
+    vivos = [i for i in c_state.inimigos if i.hp > 0]
+    if not vivos:
+        return []
+    alvo = next((i for i in vivos if i.nome == alvo_proposto), vivos[0])
+    resultado = motor.resolver_ataque(aliado.bonus_ataque, alvo.ca, rng)
+    linha = (
+        f"🎲 {aliado.nome} ataca {alvo.nome} com {aliado.nome_ataque or 'um golpe'}: "
+        f"d20({resultado.rolagem})+{resultado.bonus}={resultado.total} vs CA {alvo.ca} → "
+    )
+    dados = DadosRolagem(
+        tipo="ataque", quem=aliado.nome, alvo=alvo.nome, d20=resultado.rolagem, bonus=resultado.bonus,
+        total=resultado.total, ca=alvo.ca, sucesso=resultado.acerto, critico=resultado.critico,
+        falha_critica=resultado.falha_critica, d20_extra=resultado.d20_extra, vantagem=resultado.vantagem,
+    )
+    if not resultado.acerto:
+        return [EventoRolagem(linha + "ERROU.", dados)]
+
+    dano = motor.calcular_dano(aliado.dano_dado, resultado.critico, rng)
+    alvo.hp = max(0, alvo.hp - dano)
+    critico_txt = " CRÍTICO" if resultado.critico else ""
+    linha += f"ACERTO{critico_txt}! {dano} de dano. {alvo.nome}: {alvo.hp}/{alvo.max_hp} PV."
+    dados.dano = dano
+    eventos: list[str] = [EventoRolagem(linha, dados)]
+    if alvo.hp == 0:
+        eventos.append(EventoRolagem(f"💀 {alvo.nome} cai morto.", EventoStatus(tipo="morte_inimigo", quem=alvo.nome)))
+    return eventos
+
+
+def _combinar_vantagem(a: bool | None, b: bool | None) -> bool | None:
+    """Regra real do 5e: vantagem e desvantagem de fontes diferentes não se
+    somam — se as duas se aplicam ao mesmo dado, elas se cancelam. Usado
+    para combinar o efeito de uma ação tática do herói (esquivar/investir,
+    Fase 1) com o comportamento de matilha de um inimigo específico."""
+    if a is None:
+        return b
+    if b is None:
+        return a
+    return a if a == b else None
+
+
+def _comportamento_inimigo(inimigo: Inimigo, outros_vivos: int) -> tuple[bool, bool | None]:
+    """Fase 1 da revisão de gameplay — leitura simples do texto livre de
+    `comportamento` (data/monsters.json): três padrões por palavra-chave,
+    não geração nem IA de verdade. Devolve (pula_o_ataque, vantagem) —
+    `pula` quando o inimigo foge/recua em vez de atacar nesta rodada."""
+    texto = inimigo.comportamento.lower()
+    if "sozinho" in texto and outros_vivos == 0:
+        return True, None
+    ferido = inimigo.max_hp > 0 and inimigo.hp / inimigo.max_hp < 0.3
+    if ferido and ("recua" in texto or "foge" in texto) and "nunca recua" not in texto:
+        return True, None
+    em_matilha = any(p in texto for p in ("alcateia", "alcatéia", "matilha", "grupo")) and outros_vivos > 0
+    return False, (True if em_matilha else None)
+
+
+def _escolher_alvo(c_state: CombatState, rng: random.Random | None) -> tuple[str, int | None]:
+    """Fase 2 da revisão de gameplay — o inimigo escolhe entre o herói e os
+    aliados vivos, peso aleatório entre os dois (regra de primeira passada,
+    ver ADR-0027 — ajustar depois com `evals/simulador.py` se um alvo
+    "certo" fizer diferença mensurável). Sem aliados vivos — ainda o caso
+    comum, só a Fase 3 dá um jeito de recrutar — o alvo é sempre o herói,
+    **sem consumir nenhum rng**: byte a byte o comportamento de antes desta
+    fase, o que é o que permite testar isto contra a suíte antiga sem
+    tocar em nenhum `RngFixo` existente."""
+    vivos = [i for i, a in enumerate(c_state.aliados) if a.hp > 0]
+    if not vivos:
+        return "heroi", None
+    dado = rng or random
+    candidatos: list[tuple[str, int | None]] = [("heroi", None)] + [("aliado", i) for i in vivos]
+    return dado.choice(candidatos)
+
+
+def turno_inimigos(
+    c_state: CombatState, ca_heroi: int, rng: random.Random | None = None, vantagem: bool | None = None
+) -> tuple[list[str], int]:
+    """Cada inimigo vivo ataca, na ordem de `c_state.ordem_iniciativa`
     (Etapa 7) — antes disso, todo mundo atacava de uma vez, na ordem de
-    spawn. Um herói contra N (decisão de escopo §9.3 do PLANO_MESTRE.md,
-    sem abstração de mesa multi-jogador); combates sem ordem calculada (ex:
-    `CombatState` montado à mão em teste, sem passar por `iniciar_combate`)
-    caem de volta pra ordem de `inimigos`, pra não quebrar chamadas antigas."""
+    spawn. Combates sem ordem calculada (ex: `CombatState` montado à mão em
+    teste, sem passar por `iniciar_combate`) caem de volta pra ordem de
+    `inimigos`, pra não quebrar chamadas antigas.
+
+    Fase 2 — o alvo de cada ataque não é mais sempre o herói: pode ser um
+    aliado vivo (`_escolher_alvo`), revisando a leitura original da decisão
+    de escopo §9.3 do PLANO_MESTRE.md (ver ADR-0027). `vantagem` (efeito de
+    uma ação tática do HERÓI — esquivar/investir, Fase 1) só se aplica
+    quando o alvo escolhido É o herói; contra um aliado, só o comportamento
+    de matilha do próprio inimigo (Fase 1) conta. Dano contra aliado é
+    aplicado direto em `c_state.aliados[i].hp`; o `int` devolvido continua
+    sendo só o dano que bateu no HERÓI — quem chama já soma isso em
+    `heroi.hp_atual`, contrato inalterado desde antes desta fase."""
     eventos: list[str] = []
-    dano_total = 0
+    dano_heroi = 0
     ordem = [idx for idx in c_state.ordem_iniciativa if idx >= 0] or list(range(len(c_state.inimigos)))
     for turno_idx, idx in enumerate(ordem):
         if idx >= len(c_state.inimigos):
@@ -209,26 +315,51 @@ def turno_inimigos(c_state: CombatState, ca_heroi: int, rng: random.Random | Non
         if inimigo.hp <= 0:
             continue
         c_state.turno_atual = turno_idx
-        resultado = motor.resolver_ataque(inimigo.bonus_ataque, ca_heroi, rng)
-        linha = (
-            f"🎲 {inimigo.nome} ataca com {inimigo.nome_ataque}: "
-            f"d20({resultado.rolagem})+{resultado.bonus}={resultado.total} vs CA {ca_heroi} → "
-        )
-        dados = DadosRolagem(
-            tipo="ataque", quem=inimigo.nome, alvo="heroi", d20=resultado.rolagem, bonus=resultado.bonus,
-            total=resultado.total, ca=ca_heroi, sucesso=resultado.acerto, critico=resultado.critico,
-            falha_critica=resultado.falha_critica,
-        )
-        if resultado.acerto:
-            dano = motor.calcular_dano(inimigo.dano_dado, resultado.critico, rng)
-            dano_total += dano
-            dados.dano = dano
-            texto = linha + f"ACERTO{' CRÍTICO' if resultado.critico else ''}! {dano} de dano."
-            eventos.append(EventoRolagem(texto, dados))
+        outros_vivos = sum(1 for j, i in enumerate(c_state.inimigos) if j != idx and i.hp > 0)
+        pula, vantagem_comportamento = _comportamento_inimigo(inimigo, outros_vivos)
+        if pula:
+            eventos.append(f"🏃 {inimigo.nome} recua em vez de atacar.")
+            continue
+
+        tipo_alvo, idx_aliado = _escolher_alvo(c_state, rng)
+        if tipo_alvo == "aliado":
+            aliado = c_state.aliados[idx_aliado]
+            nome_alvo, ca_alvo = aliado.nome, aliado.ca
+            vantagem_efetiva = vantagem_comportamento  # táticas do herói (Fase 1) só o protegem a ele
+            linha = (
+                f"🎲 {inimigo.nome} ataca {aliado.nome} com {inimigo.nome_ataque}: "
+            )
         else:
+            nome_alvo, ca_alvo = "heroi", ca_heroi
+            vantagem_efetiva = _combinar_vantagem(vantagem, vantagem_comportamento)
+            linha = f"🎲 {inimigo.nome} ataca com {inimigo.nome_ataque}: "
+
+        resultado = motor.resolver_ataque(inimigo.bonus_ataque, ca_alvo, rng, vantagem=vantagem_efetiva)
+        linha += f"d20({resultado.rolagem})+{resultado.bonus}={resultado.total} vs CA {ca_alvo} → "
+        dados = DadosRolagem(
+            tipo="ataque", quem=inimigo.nome, alvo=nome_alvo, d20=resultado.rolagem, bonus=resultado.bonus,
+            total=resultado.total, ca=ca_alvo, sucesso=resultado.acerto, critico=resultado.critico,
+            falha_critica=resultado.falha_critica,
+            d20_extra=resultado.d20_extra, vantagem=resultado.vantagem,
+        )
+        if not resultado.acerto:
             eventos.append(EventoRolagem(linha + "ERROU.", dados))
+            continue
+
+        dano = motor.calcular_dano(inimigo.dano_dado, resultado.critico, rng)
+        dados.dano = dano
+        texto = linha + f"ACERTO{' CRÍTICO' if resultado.critico else ''}! {dano} de dano."
+        eventos.append(EventoRolagem(texto, dados))
+        if tipo_alvo == "aliado":
+            aliado.hp = max(0, aliado.hp - dano)
+            if aliado.hp == 0:
+                eventos.append(
+                    EventoRolagem(f"💀 {aliado.nome} cai.", EventoStatus(tipo="morte_aliado", quem=aliado.nome))
+                )
+        else:
+            dano_heroi += dano
     c_state.turno_atual = 0  # a rodada de inimigos acabou; a próxima começa no herói de novo
-    return eventos, dano_total
+    return eventos, dano_heroi
 
 
 def turno_morte(c_state: CombatState, rng: random.Random | None = None) -> tuple[list[str], int]:

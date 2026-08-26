@@ -302,3 +302,46 @@ def test_chat_stream_de_ponta_a_ponta(monkeypatch):
     assert "Vocês seguem para a floresta." in dados_state["narrativa"]
     assert "🧭" in dados_state["narrativa"]  # evento da ferramenta mover, persistido igual ao /chat
     assert "ouro" in dados_state
+
+
+def test_cronica_de_sessao_inexistente_devolve_404():
+    resp = client.get("/personagens/isso-nao-existe/cronica")
+    assert resp.status_code == 404
+
+
+def test_cronica_sem_eventos_nao_quebra(monkeypatch):
+    # Fase 7 da revisão de gameplay (Etapa 12/13) — "Exportar Crônica".
+    monkeypatch.setattr(llm_client, "clients", {})
+    criado = client.post("/create_character", json=_payload_base(nome="TesteCronicaVazia"))
+    session_id = criado.json()["session_id"]
+
+    resp = client.get(f"/personagens/{session_id}/cronica")
+    assert resp.status_code == 200
+    dados = resp.json()
+    assert dados["nome"] == "TesteCronicaVazia"
+    assert "ainda não tem nada registrado" in dados["cronica"]
+
+
+def test_cronica_sem_llm_devolve_eventos_crus(monkeypatch):
+    from app.services import agent_loop
+    from tests.test_agent_loop import _LLMFalso, _MensagemFalsa, _ToolCallFalso
+
+    monkeypatch.setattr(llm_client, "clients", {})
+    criado = client.post("/create_character", json=_payload_base(nome="TesteCronicaEventos"))
+    session_id = criado.json()["session_id"]
+
+    fake = _LLMFalso(
+        [
+            _MensagemFalsa(tool_calls=[_ToolCallFalso("t1", "mover", '{"destino": "Floresta das Sombras"}')]),
+            _MensagemFalsa(content="Vocês seguem para a floresta, sob galhos retorcidos."),
+        ]
+    )
+    monkeypatch.setattr(agent_loop, "chamar_com_fallback", fake)
+    resp_chat = client.post("/chat", json={"session_id": session_id, "action": "Eu vou para a floresta"})
+    assert resp_chat.status_code == 200
+
+    # Sem client configurado, gerar_cronica cai no fallback (eventos crus
+    # colados) — o mesmo padrão de gerar_prologo_missao/gerar_epitafio.
+    resp = client.get(f"/personagens/{session_id}/cronica")
+    assert resp.status_code == 200
+    assert "floresta" in resp.json()["cronica"].lower()

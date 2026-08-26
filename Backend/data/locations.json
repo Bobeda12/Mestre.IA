@@ -2,36 +2,43 @@
   "Vila de Phandalin": {
     "descricao": "Uma vila mineradora poeirenta e rústica.",
     "pontos_interesse": ["Taverna Rocha Colina", "Loja Escudo de Leão", "Prefeitura"],
-    "npcs": ["Toblen (Taverneiro)", "Halia (Mercadora)"]
+    "npcs": ["Toblen (Taverneiro)", "Halia (Mercadora)"],
+    "seguro": true
   },
   "Masmorra Esquecida": {
     "descricao": "Ruínas de um antigo templo anão, cheiro de mofo e pedras úmidas.",
     "perigos": ["Armadilhas de Fosso", "Goblins", "Aranhas Gigantes"],
-    "tesouros": ["Ouro antigo", "Estátuas de Jade"]
+    "tesouros": ["Ouro antigo", "Estátuas de Jade"],
+    "seguro": false
   },
   "Floresta das Sombras": {
     "descricao": "Árvores retorcidas que bloqueiam a luz do sol.",
     "perigos": ["Lobos", "Corujas-Urso", "Bandidos"],
-    "clima": "Sempre neblina e frio."
+    "clima": "Sempre neblina e frio.",
+    "seguro": false
   },
   "Forte de Dunhollow": {
     "descricao": "Um forte de pedra escura, meio soterrado, tomado por goblins e kobolds desde que a guarnição real o abandonou.",
     "perigos": ["Goblins", "Kobolds", "Armadilhas de Cerco Abandonadas"],
-    "tesouros": ["Armamento militar enferrujado", "Selo do antigo comandante"]
+    "tesouros": ["Armamento militar enferrujado", "Selo do antigo comandante"],
+    "seguro": false
   },
   "Porto de Maré Negra": {
     "descricao": "Um porto de pescadores cercado por névoa constante, onde os barcos voltam com menos gente do que saíram.",
     "pontos_interesse": ["Taverna O Polvo Encalhado", "Cais dos Contrabandistas", "Farol Apagado"],
-    "npcs": ["Rensa (Mestra de Portos)", "Vell (Contrabandista)"]
+    "npcs": ["Rensa (Mestra de Portos)", "Vell (Contrabandista)"],
+    "seguro": true
   },
   "Pântano Podre": {
     "descricao": "Água parada, cheiro de coisa morta e luzes que piscam entre as árvores retorcidas — ninguém que mora perto entra depois do anoitecer.",
     "perigos": ["Vermes Gigantes", "Bandidos Emboscados", "Areia Movediça"],
-    "clima": "Úmido e abafado, com neblina baixa o dia inteiro."
+    "clima": "Úmido e abafado, com neblina baixa o dia inteiro.",
+    "seguro": false
   },
   "Criptas de Ashgrave": {
     "descricao": "Um cemitério antigo cujas tumbas foram abertas de dentro para fora — os mortos daqui não ficam deitados.",
     "perigos": ["Esqueletos", "Armadilhas Funerárias", "Ar Viciado"],
-    "tesouros": ["Relicários selados", "Moedas de eras esquecidas"]
+    "tesouros": ["Relicários selados", "Moedas de eras esquecidas"],
+    "seguro": false
   }
 }

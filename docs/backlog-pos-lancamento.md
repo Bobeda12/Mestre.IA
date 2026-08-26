@@ -1,3 +1,24 @@
+> **Nota de 25/08/2026 — revisão de gameplay.** As Etapas 12 e 13 abaixo **nunca foram
+> executadas** — o projeto seguiu direto da Etapa 11 para uma "Etapa 14" de polimento
+> visual (ver `docs/diario/0012-etapa-14.md`). Um novo documento do autor (`gameplay_v2.md`)
+> trouxe pedidos que caem quase todos neste mesmo território, mais algumas ideias sem
+> equivalente aqui (esqueleto de Atos, relógios de facção, encontros aleatórios, tags de
+> item, crônica exportável). Em vez de um documento paralelo, os itens C-1, C-2, C-3, C-7,
+> D-1, D-2, D-3, D-4 e D-6 abaixo foram **revisados e absorvidos** pelo plano de
+> `plans/c-users-breno-downloads-gameplay-v2-md-purrfect-mist.md`, organizado em 9 fases
+> por dependência técnica (não pela ordem C/D abaixo). Cada item revisado tem uma nota
+> "⛔ Superado" apontando pra fase que o substitui. C-5, C-6, C-8 e D-5 continuam válidos
+> como estão. A numeração de ADR também mudou: 0018-0021 (reservados abaixo) nunca foram
+> escritos — a revisão usa ADR-0026 em diante (ver `docs/adr/README.md`).
+>
+> **Atualização de 25/08/2026 (mesmo dia) — as 9 fases foram concluídas.** ADR-0026 a
+> 0028 escritos, `docs/diario/0013` a `0021` documentam cada fase. A maior parte foi
+> confirmada ao vivo contra a Groq (recrutar aliado, descansar, locais inventados,
+> epitáfio citando memória real, crônica exportável, cards de NPC, injeção de
+> inventário); duas pendências ficaram registradas para um eval dedicado —
+> `atacar_com_aliado` e `item_usado`/encontro aleatório de viagem não tiveram o
+> disparo pelo modelo confirmado ao vivo (rate limit no meio do teste), só por pytest.
+
 # Backlog pós-lançamento — o que os primeiros testes revelaram
 
 **Contexto:** o jogo está no ar (Etapa 9 concluída) e passou por testes rápidos do autor,
@@ -63,17 +84,18 @@ sessão (`game.py:81`). Não há orçamento diário por usuário. A chave da Gro
 sua. É exatamente a terceira armadilha do PLANO_MESTRE §7 ("a cota no dia do lançamento"),
 e ela vira real no minuto em que você mandar o link para dez amigos.
 
-**P-4 — A história que o jogador escreve é jogada fora.** `historia_texto` (até 4000
-caracteres, o campo mais pessoal da criação) entra no prompt do prólogo
-(`narrator.py:56`) e **nunca é gravada**: não existe coluna para ela em `Personagem`. Ou
-seja, o texto que responde "quem é esse personagem" existe por exatamente uma chamada ao
-modelo e depois some — o sistema de memória da Etapa 5 nunca o enxerga.
+**P-4 — ⛔ Já resolvido (25/08/2026).** `historia_texto` **já é gravado** em
+`Personagem.historia_texto` (`infra/db.py:66`) e já é injetado em `montar_contexto` como
+`[PASSADO]`. Esta seção ficava como problema aberto neste documento; a revisão de
+gameplay achou o código já corrigido. Mantido aqui só como registro de que o documento
+estava desatualizado nesse ponto.
 
-**P-5 — O herói começa num lugar que o mundo não conhece.** `local_inicial` vem como texto
-livre do modelo no prólogo e vai direto para `world_state.local`, sem passar pelo catálogo.
-`data/locations.json` tem três locais ("Vila de Phandalin", "Masmorra Esquecida", "Floresta
-das Sombras") e a ferramenta `mover` valida contra ele. O jogo começa, portanto, fora do
-mapa que ele mesmo valida.
+**P-5 — ⛔ Já resolvido (na Etapa 11, antes desta revisão).** `gerar_prologo_missao` já
+valida `local_inicial` contra o catálogo (`narrator.py`, checagem logo após a chamada ao
+modelo) — outro ponto em que este documento estava desatualizado, achado investigando o
+código antes de planejar a Fase 5. A Fase 5 (revisão de gameplay, ADR-0028) trata de um
+problema relacionado mas diferente: locais que o jogo *ainda não conhece* virarem
+conhecidos em tempo de jogo, não da validação do local inicial.
 
 **P-6 — O formato da narração nunca foi especificado.** O prompt de sistema
 (`narrator.montar_contexto`) diz o que narrar e proíbe JSON, mas não diz **como formatar**.
@@ -511,6 +533,9 @@ discordância.
 
 ### C-1 — Balancear com simulação, não com achismo
 
+> ⛔ **Superado pela Fase 0** do plano de revisão de gameplay (bestiário expandido para
+> bandas de nível, `evals/simulador.py` ainda pendente de rodar contra ele).
+
 `Backend/evals/simulador.py`: roda N=10.000 combates *sem LLM nenhum* — só `rules_engine` e
 `combat`, que já são puros e recebem `rng` injetável (foi para isso que a Etapa 3 separou o
 juiz do narrador). Para cada par (nível do herói × encontro), reporta:
@@ -528,6 +553,9 @@ frase com número atrás.
 
 ### C-2 — A economia de XP (resolve P-1)
 
+> ⛔ **Superado pela Fase 0.** Curva própria e bestiário por banda feitos; XP não-combate
+> via `concluir_objetivo` feito. Ver [ADR-0026](adr/0026-curva-de-xp-propria-e-escalonamento-de-perigo.md).
+
 Três mudanças, todas baratas:
 
 1. **Curva própria, encurtada.** A tabela do SRD pressupõe meses de campanha; seu jogo
@@ -543,6 +571,10 @@ Três mudanças, todas baratas:
    C-1 ter o que balancear.
 
 ### C-3 — Descanso (resolve P-2)
+
+> ⛔ **Superado pela Fase 6 (feita).** `descansar(tipo)` existe — curto cura parcial em
+> qualquer lugar, longo cura tudo mas só em local seguro (`data/locations.json`, campo
+> `seguro`) e uma vez a cada 8 turnos. Confirmado ao vivo contra a Groq.
 
 Ferramenta `descansar(tipo)`: **curto** gasta um dado de vida e recupera `1dX+CON`;
 **longo** recupera tudo e só pode acontecer em local seguro, uma vez por "dia" narrativo.
@@ -591,6 +623,12 @@ descanso e balanceamento acabaram de ser decididos). Se quiser antecipar, anteci
 endpoint — a página cresce sozinha conforme o motor ganha regra.
 
 ### C-4 — A retrospectiva da morte
+
+> ⛔ **Superado pela Fase 7 (feita) do plano de revisão de gameplay.** `gerar_epitafio`
+> existe, gerado uma vez na primeira morte confirmada e nunca regenerado. Confirmado ao
+> vivo: a retrospectiva citou de verdade o único evento de memória registrado na sessão
+> de teste, sem inventar nada fora dele. A Crônica exportável (item novo do
+> `gameplay_v2.md`, sem equivalente aqui) também está feita.
 
 O item mais bonito da sua lista, e o que melhor mostra o sistema que você construiu: é a
 memória da Etapa 5 sendo usada para algo que o jogador *sente*.
@@ -662,6 +700,14 @@ botões fixos no padrão — e declarar isso no ADR. Fingir cobertura completa a
 que não ter os botões.
 
 ### C-7 — Companheiros: o herói não anda sozinho
+
+> ⛔ **Superado pelas Fases 2-3 (as duas feitas).** A recomendação abaixo ("faça o Nível 1
+> e meça") foi revisitada — o usuário decidiu ir direto para companheiros mecânicos
+> (Nível 2), o que **exigiu revisar a decisão de escopo §9.3** citada logo abaixo. Ver
+> [ADR-0027](adr/0027-companheiros-mecanicos-revisao-do-9-3.md). `recrutar_aliado` e
+> `atacar_com_aliado` já existem e foram confirmados ao vivo contra a Groq; falta eval
+> dedicado confirmando que o modelo chama `atacar_com_aliado` de forma consistente (só
+> testei manualmente, sem golden case ainda).
 
 RPG é jogo de mesa, de grupo — e hoje o jogador está sozinho contra o mundo, o que deixa a
 partida solitária e sem ninguém para conversar. O pedido é certeiro. **Mas ele encosta na
@@ -742,6 +788,10 @@ não é opinião, dá para listar:
 
 ### D-1 — Vantagem e desvantagem
 
+> ⛔ **Superado pela Fase 0** — implementado em `rules_engine.resolver_ataque`/
+> `resolver_teste_atributo` (parâmetro `vantagem`), com os dois d20 já chegando no
+> `DadosRolagem`/`RollCard`. Falta só uma ferramenta de combate que o acione (Fase 1).
+
 Rolar dois d20 e ficar com o melhor (vantagem) ou o pior (desvantagem). Em código é um
 parâmetro em `resolver_ataque` e `resolver_teste_atributo` e umas dez linhas. Em consequência
 é a base de tudo o que vem depois — e conserta, de quebra, a promessa quebrada do Lobo.
@@ -751,6 +801,8 @@ sistema rola dois dados e mostra um, ele fica devendo exatamente a transparênci
 7 conquistou.
 
 ### D-2 — Ação estruturada: o juiz antes do narrador
+
+> ⛔ **Superado pela Fase 1** do plano de revisão de gameplay (ainda não implementado).
 
 **É a mudança de arquitetura desta etapa, e ela serve à tese do projeto.**
 
@@ -777,6 +829,12 @@ repetem; a frase livre cobre tudo o que você não previu, pelo caminho de hoje.
 
 ### D-3 — Vocabulário tático
 
+> ⛔ **Superado pela Fase 1**, com uma mudança: o item "Usar item" abaixo ("abre o
+> inventário e usa de verdade") foi **substituído** pela ideia de injeção de texto do
+> `gameplay_v2.md` (clicar no item injeta `[Nome do Item]` na caixa de texto, em vez de
+> usar diretamente) — feito na Fase 8 (confirmado ao vivo, com o clique acumulando mais
+> de um item na mesma frase). As duas conflitavam; a injeção foi a escolhida.
+
 Um conjunto pequeno e rígido, que é o que "regras rígidas" quer dizer — cada botão tem um
 efeito escrito, não uma intenção interpretada:
 
@@ -796,6 +854,9 @@ aritmética de dano.
 
 ### D-4 — Inimigos com comportamento
 
+> ⛔ **Superado pelas Fases 0-1.** `Inimigo.comportamento` já existe e já é copiado do
+> bestiário (Fase 0); a IA de inimigo que efetivamente o usa em `turno_inimigos` é a Fase 1.
+
 `Inimigo` (`domain/state.py`) ganha o campo `comportamento`, que hoje é lido do JSON e
 descartado. Duas consequências:
 
@@ -813,6 +874,9 @@ para ~15 no C-2, são dez a mais, geradas no mesmo estilo de uma vez. Guardar em
 dano, esmaecendo ao morrer.
 
 ### D-6 — Senso de perigo
+
+> ⛔ **Superado pela Fase 1** do plano de revisão de gameplay (testes de morte visíveis
+> ainda não implementados; o resto do item segue pendente).
 
 - **Testes de morte visíveis.** Mandar `sucessos_morte`/`falhas_morte` no `_resposta` e
   desenhar três caveiras e três escudos preenchendo. É a informação mais tensa que o sistema

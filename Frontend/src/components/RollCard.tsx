@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import PixelIcon from './PixelIcon';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip';
 
@@ -22,6 +23,11 @@ export interface DadosRolagem {
   atributo?: string | null;
   arma?: string | null;
   partes_bonus?: { rotulo: string; valor: number }[] | null;
+  // Fase 0 da revisão de gameplay (Etapa 12/13) — vantagem/desvantagem rola
+  // dois d20; `d20` já é o escolhido (maior/menor), `d20_extra` é o
+  // descartado, guardado só pra mostrar os dois no card.
+  d20_extra?: number | null;
+  vantagem?: boolean | null;
 }
 
 const NOME_ATRIBUTO: Record<string, string> = {
@@ -51,7 +57,19 @@ function formatSinal(valor: number): string {
 // prova que o mestre não está trapaceando atrás da narrativa. A Etapa 11
 // (B-8) leva isso além do número: mostra do que é o teste e de onde vem
 // cada parte do bônus, em vez de um "+4" que pede confiança.
+// Fase 8 (revisão de gameplay) — "fator cassino": quanto tempo o dado gira
+// antes de revelar o número. GameChat.tsx pausa o consumo do streaming pela
+// mesma duração quando um evento de rolagem chega, pra narração não
+// continuar antes do dado "parar de rolar" na tela.
+export const DURACAO_ANIMACAO_DADO_MS = 550;
+
 export default function RollCard({ dados }: { dados: DadosRolagem }) {
+  const [revelado, setRevelado] = useState(false);
+  useEffect(() => {
+    const t = setTimeout(() => setRevelado(true), DURACAO_ANIMACAO_DADO_MS);
+    return () => clearTimeout(t);
+  }, []);
+
   const cor = dados.critico
     ? 'border-yellow-600/60 text-yellow-300 bg-yellow-950/20'
     : dados.falha_critica
@@ -81,6 +99,20 @@ export default function RollCard({ dados }: { dados: DadosRolagem }) {
   const temBonus = dados.bonus != null && dados.bonus !== 0;
   const temBreakdown = temBonus && dados.partes_bonus && dados.partes_bonus.length > 0;
 
+  if (!revelado && dados.d20 != null) {
+    // "Rolando": o número existe (chegou pronto do backend, ver ADR-0006 —
+    // o resultado nunca é decidido no cliente), só a REVELAÇÃO é adiada,
+    // pra dar o "fator cassino" sem fingir suspense que o servidor não tem.
+    return (
+      <div className="flex flex-col items-center gap-1 my-2 animate-fade-in" role="status" aria-label="Rolando o dado">
+        <div className="flex items-center gap-2 px-3 py-1.5 border-2 border-gray-700 text-gray-400 bg-gray-900/40 font-rpg text-xs">
+          <PixelIcon name="dado" size={13} className="animate-spin" />
+          <span className="tracking-widest">rolando</span>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <TooltipProvider delayDuration={150}>
       <div className="flex flex-col items-center gap-1 my-2 animate-fade-in" role="status">
@@ -89,7 +121,20 @@ export default function RollCard({ dados }: { dados: DadosRolagem }) {
           <PixelIcon name="dado" size={13} />
           {dados.d20 != null && (
             <span>
-              d20({dados.d20})
+              {dados.vantagem != null && dados.d20_extra != null ? (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span className="underline decoration-dotted decoration-current/50 cursor-help">
+                      d20({dados.d20_extra}) d20({dados.d20})
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    {dados.vantagem ? 'Vantagem: fica com o maior dos dois dados.' : 'Desvantagem: fica com o menor dos dois dados.'}
+                  </TooltipContent>
+                </Tooltip>
+              ) : (
+                `d20(${dados.d20})`
+              )}
               {temBonus && (
                 temBreakdown ? (
                   <Tooltip>

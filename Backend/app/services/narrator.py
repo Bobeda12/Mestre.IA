@@ -8,8 +8,10 @@ from app.infra.data_manager import regras
 from app.infra.db import Personagem
 from app.infra.llm_client import ErroMestre
 from app.infra.settings import settings
+from app.services import rules_engine as motor
+from app.services.tools import RELOGIO_MAXIMO, RELOGIO_URGENCIA
 
-__all__ = ["ErroMestre", "chamar_mestre", "gerar_prologo_missao", "montar_contexto"]
+__all__ = ["ErroMestre", "chamar_mestre", "gerar_cronica", "gerar_epitafio", "gerar_prologo_missao", "montar_contexto"]
 
 
 def chamar_mestre(msgs: list[dict]) -> dict:
@@ -23,16 +25,46 @@ def chamar_mestre(msgs: list[dict]) -> dict:
             "O mestre está sem acesso à IA — falta configurar ao menos uma chave de API "
             "no servidor (GROQ_API_KEY ou GEMINI_API_KEY)."
         )
-    # Só o prólogo (gerar_prologo_missao) ainda usa este caminho em modo
-    # JSON solto — não tem estado de jogo para chamar ferramenta nenhuma, é
-    # uma chamada única. O turno de jogo (routers/game.py) usa
-    # services/agent_loop.py + tool calling nativo desde a Etapa 4.
+    # `gerar_prologo_missao` e `gerar_epitafio` (Fase 7) são os únicos
+    # caminhos que ainda usam JSON solto — nenhum dos dois tem estado de
+    # jogo pra chamar ferramenta, são chamadas únicas e isoladas. O turno
+    # de jogo (routers/game.py) usa services/agent_loop.py + tool calling
+    # nativo desde a Etapa 4.
     resp = llm_client.chamar_modelo_unico(settings.cadeia_llm[0], msgs, response_format={"type": "json_object"})
 
     try:
         return json.loads(resp.choices[0].message.content)
     except (json.JSONDecodeError, AttributeError) as e:
         raise ErroMestre("O mestre respondeu num formato que não consegui entender.") from e
+
+
+# Fase 4 da revisão de gameplay (Etapa 12/13) — esqueleto de campanha
+# genérico, usado quando o modelo não está disponível OU quando o que ele
+# devolveu não bate no formato esperado (mesmo espírito da checagem de
+# `local_inicial` logo abaixo: pedir com educação não garante o formato).
+ATOS_PADRAO = [
+    {"titulo": "O Chamado", "objetivo": "Descobrir o que está por trás do primeiro incidente."},
+    {"titulo": "A Jornada", "objetivo": "Seguir as pistas até a origem da ameaça."},
+    {"titulo": "O Confronto", "objetivo": "Enfrentar a raiz do problema, custe o que custar."},
+]
+
+
+def _validar_atos(bruto: object) -> list[dict]:
+    """`atos` só é aceito se vier no formato exato — uma lista de 3 a 5
+    dicts com `titulo` e `objetivo`, ambos string não-vazia. Qualquer
+    desvio (campo faltando, tipo errado, lista vazia ou gigante) cai pro
+    esqueleto padrão — mesma fronteira de confiança do `local_inicial`."""
+    if not isinstance(bruto, list) or not (3 <= len(bruto) <= 5):
+        return ATOS_PADRAO
+    atos = []
+    for item in bruto:
+        if not isinstance(item, dict):
+            return ATOS_PADRAO
+        titulo, objetivo = item.get("titulo"), item.get("objetivo")
+        if not isinstance(titulo, str) or not titulo.strip() or not isinstance(objetivo, str) or not objetivo.strip():
+            return ATOS_PADRAO
+        atos.append({"titulo": titulo, "objetivo": objetivo})
+    return atos
 
 
 def gerar_prologo_missao(char: CharacterCreationRequest) -> dict:
@@ -53,6 +85,7 @@ def gerar_prologo_missao(char: CharacterCreationRequest) -> dict:
             "nome_missao": "Jornada Inicial",
             "objetivo_missao": "Chegar à cidade.",
             "intro_narrativa": f"{char.nome} inicia sua jornada na estrada.",
+            "atos": ATOS_PADRAO,
         }
 
     tem_historia = char.historia_texto.strip()
@@ -78,13 +111,24 @@ def gerar_prologo_missao(char: CharacterCreationRequest) -> dict:
     "local_inicial" TEM que ser exatamente um destes nomes, sem variação —
     são os únicos locais que o resto do jogo reconhece: {", ".join(locais_validos)}.
 
+    Além da missão imediata, esboce a campanha inteira em 3 a 5 Atos — o
+    arco que guia a história por trás das cenas (o jogador nunca vê essa
+    lista, só o Ato atual, um de cada vez). Cada Ato é um passo maior que
+    "nome_missao"/"objetivo_missao" (ex: Ato 1 pode conter várias missões
+    miúdas dentro dele). Ligue os Atos ao objetivo e ao passado do herói.
+
     Responda APENAS JSON:
     {{
         "local_inicial": "Nome do Local (um da lista acima, exato)",
         "clima_inicial": "Clima atmosférico",
         "nome_missao": "Título da Missão Atual",
         "objetivo_missao": "O que ele deve fazer agora (curto)",
-        "intro_narrativa": "Texto narrativo de 3 parágrafos imersivos."
+        "intro_narrativa": "Texto narrativo de 3 parágrafos imersivos.",
+        "atos": [
+            {{"titulo": "Nome curto do Ato 1", "objetivo": "O que precisa acontecer para ele terminar"}},
+            {{"titulo": "Nome curto do Ato 2", "objetivo": "..."}},
+            {{"titulo": "Nome curto do Ato 3", "objetivo": "..."}}
+        ]
     }}
     """
     try:
@@ -97,6 +141,7 @@ def gerar_prologo_missao(char: CharacterCreationRequest) -> dict:
             "nome_missao": "Desconhecido",
             "objetivo_missao": "Sobreviver",
             "intro_narrativa": "Você acorda...",
+            "atos": ATOS_PADRAO,
         }
 
     # A instrução acima é a primeira linha (ADR-0002); esta checagem é a
@@ -106,7 +151,106 @@ def gerar_prologo_missao(char: CharacterCreationRequest) -> dict:
     # o próprio local onde o herói nasceu.
     if roteiro.get("local_inicial") not in locais_validos:
         roteiro["local_inicial"] = local_padrao
+    roteiro["atos"] = _validar_atos(roteiro.get("atos"))
     return roteiro
+
+
+def gerar_epitafio(heroi: Personagem, eventos_marcantes: list[str], resumo: ResumoRolante) -> dict:
+    """Fase 7 da revisão de gameplay (Etapa 12/13) — chamado uma vez por
+    morte (`routers/game.py`, quando `c_state.resultado == "morte"` se
+    confirma pela primeira vez), nunca regenerado depois. Mesmo padrão de
+    `gerar_prologo_missao`: chamada isolada, JSON solto, sem ferramenta —
+    é o fechamento da campanha, não um turno de jogo."""
+    if not llm_client.clients:
+        return {
+            "retrospectiva": f"{heroi.nome} caiu, e o mundo seguiu em frente sem contar sua história.",
+            "epitafio_curto": f"Aqui jaz {heroi.nome}.",
+        }
+
+    eventos_texto = "\n".join(f"- {e}" for e in eventos_marcantes) or "Nenhum evento marcante registrado."
+    fatos_texto = "\n".join(f"- {f}" for f in resumo.fatos_estabelecidos) or "Nenhum fato adicional registrado."
+    prompt = f"""
+    {regras.get_biblia()}
+
+    {heroi.nome} ({heroi.raca} {heroi.classe}) morreu. Escreva o fechamento da jornada dele
+    — a retrospectiva de como o mundo vai lembrá-lo, e um epitáfio curto para a lápide.
+    Passado: {heroi.background} | Objetivo: {heroi.objetivo}
+
+    Momentos mais marcantes da jornada, na ordem em que aconteceram:
+    {eventos_texto}
+
+    Fatos do mundo estabelecidos ao longo do jogo:
+    {fatos_texto}
+
+    Siga [A VOZ DO MESTRE] da bíblia acima — isto é o fechamento da campanha, trate como
+    [MOMENTO DE ALTO IMPACTO]: pode crescer além do teto de palavras normal. Escreva a
+    retrospectiva em segunda pessoa, como o resto do jogo. Baseie-se SÓ no que está
+    listado acima — não invente eventos, NPCs ou lugares que não apareceram; se faltar
+    material, seja mais breve em vez de inventar.
+
+    Responda APENAS JSON:
+    {{
+        "retrospectiva": "2 a 3 parágrafos: como o mundo ficou, como ele é lembrado.",
+        "epitafio_curto": "Uma linha curta, para a lápide."
+    }}
+    """
+    try:
+        resultado = chamar_mestre([{"role": "user", "content": prompt}])
+    except ErroMestre as e:
+        print("ERRO NO EPITÁFIO:", e.mensagem)
+        return {
+            "retrospectiva": f"{heroi.nome} caiu em batalha. A história de como será lembrado ainda não foi contada.",
+            "epitafio_curto": f"Aqui jaz {heroi.nome}.",
+        }
+
+    if not isinstance(resultado.get("retrospectiva"), str) or not resultado["retrospectiva"].strip():
+        resultado["retrospectiva"] = f"{heroi.nome} caiu, e o mundo seguiu em frente."
+    if not isinstance(resultado.get("epitafio_curto"), str) or not resultado["epitafio_curto"].strip():
+        resultado["epitafio_curto"] = f"Aqui jaz {heroi.nome}."
+    return resultado
+
+
+# Fase 7 da revisão de gameplay — teto de eventos que entram na Crônica.
+# `services/memory.eventos_cronologicos` não tem limite (é o registro
+# completo); aqui sim, porque o prompt não pode crescer sem fim numa
+# campanha longa. Pega os mais recentes — corte prático, documentado, não
+# escondido: uma campanha de 300 turnos não cabe inteira numa chamada só.
+LIMITE_EVENTOS_CRONICA = 60
+
+
+def gerar_cronica(heroi: Personagem, eventos: list[str]) -> str:
+    """Fase 7 — tece os eventos registrados (`services/memory.
+    eventos_cronologicos`) num conto de fantasia em prosa. Diferente de
+    `chamar_mestre`/`gerar_prologo_missao`/`gerar_epitafio`: a saída É o
+    texto final, não um campo JSON — não há estrutura pra extrair aqui."""
+    eventos = eventos[-LIMITE_EVENTOS_CRONICA:]
+    if not eventos:
+        return f"A jornada de {heroi.nome} ainda não tem nada registrado para contar."
+    if not llm_client.clients:
+        return "\n\n".join(eventos)
+
+    eventos_texto = "\n".join(f"- {e}" for e in eventos)
+    prompt = f"""
+    {regras.get_biblia()}
+
+    Transforme os eventos abaixo — o registro cru de uma campanha de RPG vivida por
+    {heroi.nome} ({heroi.raca} {heroi.classe}) — num conto de fantasia coeso, em prosa,
+    como um capítulo de livro. Não invente eventos que não estão na lista; costure o que
+    já aconteceu numa narrativa com começo e meio — a campanha pode não ter terminado, e
+    tudo bem que o conto pare em aberto.
+
+    Eventos, na ordem em que aconteceram:
+    {eventos_texto}
+
+    Responda só com o texto do conto — prosa corrida em parágrafos, sem JSON, sem
+    títulos de seção.
+    """
+    try:
+        resp = llm_client.chamar_modelo_unico(settings.cadeia_llm[0], [{"role": "user", "content": prompt}])
+        return resp.choices[0].message.content or "\n\n".join(eventos)
+    except ErroMestre as e:
+        print("ERRO NA CRÔNICA:", e.mensagem)
+        return "\n\n".join(eventos)
 
 
 def montar_contexto(
@@ -170,29 +314,115 @@ def montar_contexto(
             if heroi_critico or inimigo_critico or e_chefe
             else ""
         )
+        # Fase 3 — aliados em combate (não confundir com o roster fora de
+        # combate em [ALIADOS PRESENTES]; aqui é quem de fato entrou nesta
+        # luta, via iniciar_combate/recrutar_aliado) têm ação própria.
+        aviso_aliado = (
+            '\n    Se o jogador dirigir um aliado ("Bob ataca o goblin") ou a cena pedir que ele entre na '
+            'luta, chame também "atacar_com_aliado" — ela não substitui a ação do herói, as duas '
+            "ferramentas resolvem coisas diferentes na mesma rodada."
+            if c_state.aliados
+            else ""
+        )
         secao_combate = f"""[COMBATE ATIVO] Inimigos vivos: {json.dumps(vivos, ensure_ascii=False)}
-    O jogador está em combate. Chame a ferramenta "atacar" com o alvo (e a
-    arma, se o jogador escolheu uma) para resolver a ação dele. Narre só a
-    INTENÇÃO da ação, num parágrafo curto — nunca peça ao jogador para rolar
-    um dado ou informar um resultado, e não escreva números de ataque, dano
-    ou PV: o resultado real da ferramenta aparece automaticamente logo
-    depois da sua narrativa.{aviso_impacto}"""
+    O jogador está em combate. Chame a ferramenta que corresponde à
+    INTENÇÃO dele: "atacar" (alvo, e arma se ele escolheu uma), "investir"
+    (ataque arriscado: menos precisão, mais dano), "esquivar" (foca em não
+    ser atingido), "defender" (postura defensiva), "esconder_se" (tenta
+    sumir de vista) ou "fugir" (tenta sair do combate). Nunca resolva o
+    combate narrando um resultado sozinho — a ferramenta certa decide o
+    número, você só narra a INTENÇÃO da ação, num parágrafo curto. Nunca
+    peça ao jogador para rolar um dado ou informar um resultado, e não
+    escreva números de ataque, dano ou PV: o resultado real da ferramenta
+    aparece automaticamente logo depois da sua narrativa.{aviso_impacto}{aviso_aliado}"""
     else:
-        secao_combate = """Se a cena pedir um confronto, chame a ferramenta "iniciar_combate" com os
+        # Fase 0 da revisão de gameplay (Etapa 12/13) — escalonamento de
+        # perigo: o servidor decide QUAIS bandas de monstro são compatíveis
+        # com o nível do herói (motor.desafio_sugerido); o modelo continua
+        # só propondo nomes dentro delas (ADR-0006: dificuldade não é
+        # decisão do LLM). `iniciar_combate` também descarta nomes fora do
+        # bestiário, então isto é orientação, não a única barreira.
+        bandas = motor.desafio_sugerido(heroi.nivel or 1)
+        monstros_sugeridos = [n for banda in bandas for n in regras.get_monstros_por_banda(banda)]
+        secao_combate = f"""Se a cena pedir um confronto, chame a ferramenta "iniciar_combate" com os
     nomes dos monstros do bestiário que encaixam na cena (ex: ["Goblin"]).
-    O servidor confirma que os nomes existem antes de criar o combate."""
+    O servidor confirma que os nomes existem antes de criar o combate.
+    [DESAFIO SUGERIDO] Para o nível do herói, prefira: {json.dumps(monstros_sugeridos, ensure_ascii=False)}."""
+
+    historia_resumo = f" | História: {heroi.historia_texto[:150]}..." if heroi.historia_texto else ""
+
+    # Fase 3 da revisão de gameplay (Etapa 12/13, ADR-0027) — companheiros
+    # recrutados são parte da cena o tempo todo, não só em combate: o
+    # jogador conversa com eles fora de luta, e em combate o modelo precisa
+    # saber que "atacar_com_aliado" existe. Um morto (hp 0) some daqui.
+    aliados_vivos = [a for a in (heroi.aliados or []) if a["hp"] > 0]
+    secao_aliados = (
+        "\n    [ALIADOS PRESENTES] "
+        + ", ".join(f"{a['nome']}, o(a) {a['classe']} (HP {a['hp']}/{a['hp_max']})" for a in aliados_vivos)
+        if aliados_vivos
+        else ""
+    )
+
+    # Fase 4 da revisão de gameplay (Etapa 12/13) — só o Ato ATUAL entra no
+    # prompt, nunca o esqueleto inteiro (mesmo padrão de "não despejar a
+    # estrutura" do resto do projeto). `ato_atual` é um índice — clampado
+    # aqui porque um `QuestLog` salvo antes desta fase tem `atos=[]`, e
+    # `atualizar_missao(avancar_ato=True)` não impede o índice de estourar
+    # se chamado mais vezes do que há Atos.
+    secao_ato = ""
+    aviso_ato = ""
+    if q_state.atos:
+        idx = max(0, min(q_state.ato_atual, len(q_state.atos) - 1))
+        ato = q_state.atos[idx]
+        secao_ato = f"\n    [ATO ATUAL] {ato.titulo}: {ato.objetivo}"
+        if idx < len(q_state.atos) - 1:
+            aviso_ato = (
+                ' Quando o objetivo do ATO ATUAL for cumprido de verdade (não a missão miúda, o '
+                'Ato inteiro), chame "atualizar_missao" com avancar_ato=true — é o único jeito de a '
+                "campanha avançar pro próximo Ato."
+            )
+
+    # Fase 6 da revisão de gameplay (Etapa 12/13) — relógio de facção: o
+    # script (não o modelo) decide quando a urgência do Ato estourou —
+    # `descansar("longo")` é quem avança o contador. Fica "ligado" até o
+    # jogador avançar o Ato (`atualizar_missao(avancar_ato=True)` zera),
+    # de propósito: o evento global não é uma linha só, é uma pressão que
+    # continua até a história responder a ela.
+    secao_evento_global = (
+        "\n    [EVENTO GLOBAL] O tempo passou demais parado — o que o herói estava tentando evitar "
+        "no Ato atual avançou sem ele. Deixe as consequências disso aparecerem na cena agora, "
+        "mesmo que o jogador não tenha perguntado."
+        if w_state.relogios.get(RELOGIO_URGENCIA, 0) >= RELOGIO_MAXIMO
+        else ""
+    )
 
     return f"""
     {secao_regras}
     {secao_memoria}
-    [HEROI] {heroi.nome} ({heroi.classe}) | HP: {heroi.hp_atual}/{heroi.hp_max} | Ouro: {heroi.ouro}
-    [INVENTÁRIO] {heroi.inventario}
-    [MISSÃO ATUAL] {q_state.nome_missao}: {q_state.objetivo_missao}
+    [HEROI] {heroi.nome} ({heroi.raca} {heroi.classe}) | HP: {heroi.hp_atual}/{heroi.hp_max} | Ouro: {heroi.ouro}
+    [PASSADO] Background: {heroi.background} | Objetivo: {heroi.objetivo} | \
+Alinhamento: {heroi.alinhamento}{historia_resumo}
+    [INVENTÁRIO] {heroi.inventario}{secao_aliados}
+    [MISSÃO ATUAL] {q_state.nome_missao}: {q_state.objetivo_missao}{secao_ato}{secao_evento_global}
     [CENA] {w_state.local} | {w_state.clima}
     {secao_combate}
 
     Você tem ferramentas para agir no mundo (dano, item, ouro, movimento,
-    teste de atributo, consulta de regra). Use-as para qualquer mudança de
+    teste de atributo, consulta de regra, atualizar missão, concluir objetivo,
+    recrutar aliado, descansar). Se o jogador cumprir um objetivo importante sem combate
+    (enigma resolvido, NPC convencido, missão fechada por diplomacia), chame
+    "concluir_objetivo" — é a única forma de ele ganhar XP fora de combate.
+    Se um NPC se junta de verdade à jornada do herói (não uma ajuda de
+    passagem), chame "recrutar_aliado" — ele passa a acompanhar e lutar ao
+    lado do herói dali em diante.{aviso_ato} Se o jogador declarar que
+    descansa, chame "descansar" (nunca cure PV narrando sozinho). Se o
+    jogador usar um item/arma de forma criativa num teste de atributo (ex:
+    um machado pesado pra arrombar uma porta), passe "item_usado" pra
+    "rolar_teste" — o servidor decide se isso ajuda. Se "mover" devolver
+    "encontro" ("emboscada" ou "achado"), narre e aja de acordo na hora —
+    é a estrada reagindo, não uma sugestão sua. Se "descansar" devolver
+    "gancho_acampamento", puxe essa fala do companheiro antes de seguir.
+    Use-as para qualquer mudança de
     estado — nunca escreva HP, dano, ouro ou resultado de rolagem no texto,
     a ferramenta já mostra isso ao jogador. Se o jogador encontra ou recebe
     um item (saque, recompensa, presente), chame "dar_item" ANTES de narrar
@@ -209,5 +439,11 @@ def montar_contexto(
     responda em JSON: a resposta final é só o texto da narrativa — prosa
     corrida, sem markdown (sem asterisco, sem cerquilha de título, sem
     lista com marcador, sem bloco de código); ênfase pela escolha da
-    palavra, nunca pela tipografia.
+    palavra, nunca pela tipografia. Termine SEMPRE a narrativa com uma
+    linha própria no formato "[OPCOES]: opção 1|opção 2|opção 3" — três
+    ações curtas e concretas que fazem sentido AGORA, separadas por "|",
+    sem numeração própria (ex: "[OPCOES]: Atacar o goblin|Recuar para a
+    porta|Examinar o baú"). Essa linha nunca aparece pro jogador como texto
+    — o servidor a transforma em botões — então nunca a mencione nem a
+    explique na narrativa, só a escreva por último.
     """

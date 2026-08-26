@@ -61,7 +61,12 @@ def create_character(
     roteiro = gerar_prologo_missao(char)
 
     world_state = WorldState(local=roteiro["local_inicial"], clima=roteiro["clima_inicial"], turno=1)
-    quest_log = QuestLog(nome_missao=roteiro["nome_missao"], objetivo_missao=roteiro["objetivo_missao"])
+    # Fase 4 da revisão de gameplay — o esqueleto de Atos nasce junto com o
+    # prólogo (mesma chamada ao modelo, `gerar_prologo_missao` já valida o
+    # formato antes de devolver).
+    quest_log = QuestLog(
+        nome_missao=roteiro["nome_missao"], objetivo_missao=roteiro["objetivo_missao"], atos=roteiro["atos"]
+    )
 
     novo = Personagem(
         usuario_id=current_user.id,

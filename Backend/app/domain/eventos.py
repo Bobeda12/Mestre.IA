@@ -38,6 +38,12 @@ class DadosRolagem:
     atributo: str | None = None
     arma: str | None = None
     partes_bonus: list[dict] | None = None
+    # Fase 0 da revisão de gameplay (Etapa 12/13) — vantagem/desvantagem
+    # rola dois d20; `d20_extra` é o dado descartado e `vantagem` diz qual
+    # regra valeu, para o RollCard mostrar "d20(7) d20(18) → 18, vantagem"
+    # em vez de esconder a segunda rolagem.
+    d20_extra: int | None = None
+    vantagem: bool | None = None
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -51,9 +57,13 @@ class EventoStatus:
     solto com emoji dentro da narrativa. Dataclass separado de propósito —
     os campos de rolagem não fazem sentido aqui."""
 
-    tipo: Literal["cura", "morte_inimigo"]
+    # Fase 2 da revisão de gameplay — "morte_aliado" (um aliado caiu em
+    # combate) some pelo mesmo card de "morte_inimigo", só com o `tipo`
+    # correto guardado — o frontend hoje trata os dois iguais
+    # (StatusCard.tsx), mas o dado fica honesto para quando isso mudar.
+    tipo: Literal["cura", "morte_inimigo", "morte_aliado"]
     quem: str
-    valor: int | None = None  # cura: quanto de PV recuperou. morte_inimigo: sem valor.
+    valor: int | None = None  # cura: quanto de PV recuperou. morte_*: sem valor.
 
     def to_dict(self) -> dict:
         return asdict(self)
