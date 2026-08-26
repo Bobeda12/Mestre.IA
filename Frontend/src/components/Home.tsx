@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
@@ -29,6 +30,16 @@ export default function Home() {
   const { usuario, logado, carregando: carregandoAuth } = useAuth();
   const { chave: chaveGemini } = useChaveGemini();
 
+  // Tela cheia entre o clique em "jogar" e a rota de destino de fato montar
+  // — cobre tanto o delay artificial do NOVO JOGO (não tem request nenhum)
+  // quanto a espera real de `loadGame` no Continuar.
+  const [transicao, setTransicao] = useState<string | null>(null);
+
+  function iniciarNovoJogo() {
+    setTransicao('Preparando aventura...');
+    setTimeout(() => navigate(logado ? '/criar' : '/entrar'), 550);
+  }
+
   // Etapa 8, ADR-0014: a lista de heróis vem do servidor — `localStorage`
   // morreu como fonte de saves. Só roda a query depois de saber que está
   // logado (`enabled`), senão a primeira renderização dispara um 401 à toa.
@@ -46,8 +57,16 @@ export default function Home() {
       await api.post('/load_game', { session_id: sessionId });
     },
     onSuccess: (_data, sessionId) => navigate(`/jogar/${sessionId}`),
-    onError: () => alert('Erro: esse herói não existe mais, ou não é seu.'),
+    onError: () => {
+      setTransicao(null);
+      alert('Erro: esse herói não existe mais, ou não é seu.');
+    },
   });
+
+  function continuarComo(p: Personagem) {
+    setTransicao(`Abrindo ${p.nome}...`);
+    loadGame.mutate(p.session_id);
+  }
 
   const excluir = useMutation({
     mutationFn: async (sessionId: string) => {
@@ -67,6 +86,14 @@ export default function Home() {
 
   return (
     <div className="min-h-[100dvh] w-full bg-rpg-darker flex flex-col items-center relative overflow-x-hidden">
+
+      {transicao && (
+        <div className="fixed inset-0 z-50 w-full bg-rpg-darker flex flex-col items-center justify-center gap-4 animate-fade-in">
+          <PixelIcon name="espada" size={40} className="animate-pulse-slow" />
+          <Carregando tamanho={10} rotulo={transicao} />
+          <p className="text-rpg-gold font-rpg text-sm uppercase tracking-widest">{transicao}</p>
+        </div>
+      )}
 
       {/* Etapa 14 (revisão) — o fundo era um tile de masmorra repetido, e leu
           como defeito. Agora é um mapa de overworld deslizando devagar, que é
@@ -113,15 +140,15 @@ export default function Home() {
           {/* Press Start 2P é bem mais larga por letra que uma fonte comum:
               tamanho contido pra não estourar em tela estreita (Etapa 11). */}
           <h1 className="text-2xl md:text-5xl font-pixel-title text-white tracking-wider mb-4 leading-relaxed drop-shadow-[0_4px_0_rgba(0,0,0,0.8)]">
-            MESTRE<span className="text-red-600">.IA</span>
+            MESTRE<span className="text-rpg-gold">.IA</span>
           </h1>
           <p className="text-gray-300 font-hand text-xl">Aventure-se no desconhecido.</p>
         </div>
 
         <PixelButton
           variant="vermelho"
-          onClick={() => navigate(logado ? '/criar' : '/entrar')}
-          className="w-full max-w-sm py-5 text-xs md:text-sm flex items-center justify-center gap-3"
+          onClick={iniciarNovoJogo}
+          className="w-full max-w-sm py-5 text-xs md:text-sm flex items-center justify-center gap-3 btn-epic hover:scale-105 hover:-translate-y-0.5"
         >
           <PixelIcon name="espada" size={22} />
           NOVO JOGO
@@ -154,10 +181,10 @@ export default function Home() {
                 personagens.data.map((p, i) => (
                   <div
                     key={p.session_id}
-                    onClick={() => loadGame.mutate(p.session_id)}
+                    onClick={() => continuarComo(p)}
                     role="button"
                     tabIndex={0}
-                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); loadGame.mutate(p.session_id); } }}
+                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); continuarComo(p); } }}
                     aria-label={`Continuar como ${p.nome}, ${p.raca} ${p.classe}`}
                     style={{ animationDelay: `${i * 60}ms` }}
                     className="group flex items-center gap-3 p-2 bg-black/70 border-2 border-gray-700 hover:border-rpg-gold hover:-translate-y-0.5 hover:scale-[1.01] active:translate-y-0 active:scale-[0.99] cursor-pointer transition-all duration-150 relative focus-visible:outline-none focus-visible:border-rpg-gold animate-fade-in"
@@ -173,7 +200,7 @@ export default function Home() {
                       </p>
                     </div>
 
-                    <span className="text-gray-500 group-hover:text-rpg-gold transition-colors pr-1">
+                    <span className="text-gray-500 group-hover:text-rpg-gold transition-colors">
                       {loadGame.isPending ? <Carregando tamanho={5} rotulo="Abrindo" /> : <PixelIcon name="seta" size={18} />}
                     </span>
 
@@ -184,7 +211,7 @@ export default function Home() {
                           excluir.mutate(p.session_id);
                         }
                       }}
-                      className="absolute top-1 right-1 p-1 opacity-40 hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none transition-opacity"
+                      className="shrink-0 p-1 opacity-40 hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none transition-opacity"
                       title="Excluir herói"
                       aria-label={`Excluir ${p.nome}`}
                     >

@@ -95,7 +95,7 @@ compatíveis em estilo (16×16, contorno grosso) com o que já estava no repo.
 
 | Pacote | Autor | Licença | Fonte | Usado para |
 |---|---|---|---|---|
-| Tiny Dungeon | Kenney | [CC0](https://creativecommons.org/publicdomain/zero/1.0/) | [kenney.nl/assets/tiny-dungeon](https://kenney.nl/assets/tiny-dungeon) | espada, adaga, machado, maça, escudo, 4 poções, baú (já usado no B-1, mesmo arquivo-fonte) |
+| Tiny Dungeon | Kenney | [CC0](https://creativecommons.org/publicdomain/zero/1.0/) | [kenney.nl/assets/tiny-dungeon](https://kenney.nl/assets/tiny-dungeon) | adaga, machado, maça, escudo, 4 poções, baú (já usado no B-1, mesmo arquivo-fonte) |
 | Roguelike/RPG Pack | Kenney | [CC0](https://creativecommons.org/publicdomain/zero/1.0/) | [kenney.nl/assets/roguelike-rpg-pack](https://kenney.nl/assets/roguelike-rpg-pack) | pergaminho (missão), mochila (inventário), moeda (ouro), e os tiles de terreno do mapa de fundo (`backgrounds/mapa-mundo.png`) |
 | UI Pack - Pixel Adventure | Kenney | [CC0](https://creativecommons.org/publicdomain/zero/1.0/) | [kenney.nl/assets/ui-pack-pixel-adventure](https://kenney.nl/assets/ui-pack-pixel-adventure) | moldura 9-slice (`PanelFrame`) e botões (`PixelButton`) |
 
@@ -124,7 +124,7 @@ arte composta por algoritmo.
 
 **Desenhados à mão** (estrela/nível, fechar, menu, seta, som ligado/mudo,
 coroa, coração, menos, mais, dado, rosto, alerta, polegar cima/baixo, enviar,
-cura, caveira):
+cura, caveira, espada):
 nenhum pacote pesquisado (Tiny Dungeon, Roguelike/RPG Pack, UI Pack - Pixel
 Adventure, Game Icons, UI Pack RPG Expansion) tinha esses num estilo
 coerente com o resto — em vez de misturar um pacote genérico incompatível,
@@ -133,3 +133,9 @@ chapado, mesmo tratamento visual dos outros ícones) via script Python
 (Pillow), não gerados por IA. Os oito últimos entraram na revisão da Etapa 14,
 que tirou o `lucide-react` das telas de jogo (`GameChat`, `RollCard`,
 `StatusCard`) — hoje o pacote não é mais importado em lugar nenhum do `src/`.
+`espada` entrou nesta lista na rodada de polimento de UX pós-lançamento
+(26/08/2026): o recorte original do Tiny Dungeon ficava com contraste baixo
+e silhueta confusa em 16px — o redesenho reaproveita a mesma paleta exata já
+usada por estrela/fechar/coroa/seta (contorno `#0A0806`, off-white `#EBE8E0`,
+dourado `#C5A059`), então continua indistinguível em estilo dos ícones
+vizinhos que continuam vindo do Kenney.
