@@ -40,6 +40,15 @@ def _erro_status(codigo: int, body: dict | None = None) -> Exception:
     return openai.APIStatusError(f"erro {codigo}", response=resp, body=body)
 
 
+def _erro_servidor(codigo: int = 503) -> Exception:
+    # `InternalServerError` é o que o SDK levanta de verdade pra qualquer
+    # status >= 500 — usado nos testes que provam que 503 (alta demanda)
+    # agora é tratado como erro transitório, não como `APIStatusError` cru.
+    req = httpx.Request("POST", "https://example.com/x")
+    resp = httpx.Response(codigo, request=req)
+    return openai.InternalServerError(f"erro {codigo}", response=resp, body=None)
+
+
 class _FakeCompletions:
     def __init__(self, comportamento: dict[str, list]) -> None:
         self._comportamento = comportamento
@@ -95,6 +104,21 @@ def test_primeiro_modelo_esgota_retry_e_cai_para_o_proximo(monkeypatch):
 
     assert resultado is resultado_ok
     assert fake.chat.completions.chamadas == [modelo_1, modelo_1, modelo_2]
+
+
+def test_erro_503_e_tratado_como_transitorio_e_faz_retry(monkeypatch):
+    # Achado ao vivo: um 503 de alta demanda do Gemini quebrava o turno
+    # direto — este teste prova que agora ele entra no mesmo retry curto
+    # que rate limit/timeout já tinham, antes de precisar trocar de modelo.
+    modelo_1 = llm_client.CADEIA[0][1]
+    resultado_ok = object()
+    clients, fake = _fake_clients({modelo_1: [_erro_servidor(503), resultado_ok]})
+    monkeypatch.setattr(llm_client, "clients", clients)
+
+    resultado = chamar_com_fallback([{"role": "user", "content": "oi"}])
+
+    assert resultado is resultado_ok
+    assert fake.chat.completions.chamadas == [modelo_1, modelo_1]
 
 
 def test_todos_os_modelos_falhando_levanta_erro_mestre(monkeypatch):
@@ -242,6 +266,17 @@ class TestChamarComChaveUsuario:
 
         with pytest.raises(ErroMestre, match="limite de uso"):
             chamar_com_chave_usuario([{"role": "user", "content": "oi"}], api_key="chave-do-jogador")
+
+    def test_503_esgota_o_retry_embutido_e_vira_erro_mestre(self, monkeypatch):
+        # `chamar_com_chave_usuario` não tem `@retry` próprio, mas chama
+        # `_chamar_modelo` diretamente — que já é decorada com retry — então
+        # o 503 é tentado 2x (stop_after_attempt(2)) antes de virar ErroMestre.
+        fake = self._fake_openai(monkeypatch, {"gemini-3.5-flash": [_erro_servidor(503), _erro_servidor(503)]})
+
+        with pytest.raises(ErroMestre, match="sobrecarregado"):
+            chamar_com_chave_usuario([{"role": "user", "content": "oi"}], api_key="chave-do-jogador")
+
+        assert fake.chat.completions.chamadas == ["gemini-3.5-flash", "gemini-3.5-flash"]
 
     def test_modelo_customizado_e_repassado(self, monkeypatch):
         resultado_ok = object()

@@ -2,12 +2,14 @@ import { useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import { useAuth, useInvalidarAuth } from '../lib/auth';
+import { useChaveGemini } from '../lib/config';
 import { getLocalImage } from '../lib/utils';
 import PixelIcon from './PixelIcon';
 import PixelButton from './PixelButton';
 import MapaDeFundo from './MapaDeFundo';
 import Carregando from './Carregando';
 import BotaoConfig from './BotaoConfig';
+import BannerChaveGemini from './BannerChaveGemini';
 
 interface Personagem {
   session_id: string;
@@ -25,6 +27,7 @@ export default function Home() {
   const queryClient = useQueryClient();
   const invalidarAuth = useInvalidarAuth();
   const { usuario, logado, carregando: carregandoAuth } = useAuth();
+  const { chave: chaveGemini } = useChaveGemini();
 
   // Etapa 8, ADR-0014: a lista de heróis vem do servidor — `localStorage`
   // morreu como fonte de saves. Só roda a query depois de saber que está
@@ -80,6 +83,11 @@ export default function Home() {
         <div className="absolute top-4 right-4 z-30 flex items-center gap-3 text-sm font-rpg">
           {logado ? (
             <>
+              {chaveGemini && (
+                <span title="Chave própria ativa (VIP)">
+                  <PixelIcon name="estrela" size={12} alt="Chave própria ativa (VIP)" />
+                </span>
+              )}
               <span className="text-gray-400 hidden sm:inline">{usuario?.email}</span>
               <button onClick={() => sair.mutate()} className="text-gray-400 hover:text-rpg-gold">
                 Sair
@@ -123,6 +131,8 @@ export default function Home() {
             Entre com seu e-mail para criar e guardar seus heróis.
           </p>
         )}
+
+        {logado && <BannerChaveGemini />}
 
         {/* A lista de heróis só ocupa espaço quando existe. Antes o título
             "MEUS HERÓIS" aparecia sempre, inclusive vazio ao lado do menu. */}

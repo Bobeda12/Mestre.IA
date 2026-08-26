@@ -34,7 +34,16 @@ _BASE_URLS: dict[str, str] = {
     "gemini": "https://generativelanguage.googleapis.com/v1beta/openai/",
 }
 
-_ERROS_TRANSITORIOS = (openai.RateLimitError, openai.APITimeoutError, openai.APIConnectionError)
+_ERROS_TRANSITORIOS = (
+    openai.RateLimitError,
+    openai.APITimeoutError,
+    openai.APIConnectionError,
+    # `InternalServerError` cobre qualquer status >= 500 (500/502/503/504) —
+    # o SDK não distingue por código como faz para 4xx. Achado ao vivo: um
+    # 503 de alta demanda do Gemini caía direto no `APIStatusError` genérico
+    # e quebrava o turno sem nenhum retry.
+    openai.InternalServerError,
+)
 
 
 class ErroMestre(Exception):
@@ -167,7 +176,9 @@ def chamar_modelo_unico(
     try:
         return _chamar_modelo(cliente, provedor, modelo, msgs, tools, tool_choice, response_format)
     except _ERROS_TRANSITORIOS as e:
-        raise ErroMestre("A cota de uso da IA acabou por agora, ou o serviço demorou demais.") from e
+        raise ErroMestre(
+            "A cota de uso da IA acabou por agora, o serviço está sobrecarregado, ou demorou demais."
+        ) from e
     except openai.APIStatusError as e:
         raise ErroMestre(f"O serviço de IA recusou o pedido (código {e.status_code}).") from e
 
@@ -237,7 +248,7 @@ def validar_chave_usuario(api_key: str) -> None:
     try:
         cliente.models.list()
     except _ERROS_TRANSITORIOS as e:
-        raise ErroMestre("O Gemini demorou demais para responder — tente de novo.") from e
+        raise ErroMestre("O Gemini demorou demais para responder, ou está sobrecarregado — tente de novo.") from e
     except openai.APIStatusError as e:
         raise ErroMestre(_mensagem_erro_byok(e, modelo="gemini-3.5-flash")) from e
 
@@ -265,7 +276,9 @@ def chamar_com_chave_usuario(
     try:
         return _chamar_modelo(cliente, "gemini", modelo, msgs, tools, tool_choice, response_format)
     except _ERROS_TRANSITORIOS as e:
-        raise ErroMestre("Sua chave bateu no limite de uso, ou o Gemini demorou demais para responder.") from e
+        raise ErroMestre(
+            "Sua chave bateu no limite de uso, o Gemini está sobrecarregado, ou demorou demais para responder."
+        ) from e
     except openai.APIStatusError as e:
         raise ErroMestre(_mensagem_erro_byok(e, modelo)) from e
 
@@ -286,7 +299,9 @@ def chamar_stream_com_chave_usuario(
         stream = _chamar_modelo(cliente, "gemini", modelo, msgs, tools, tool_choice, stream=True)
         yield from stream
     except _ERROS_TRANSITORIOS as e:
-        raise ErroMestre("Sua chave bateu no limite de uso, ou a conexão caiu no meio da resposta.") from e
+        raise ErroMestre(
+            "Sua chave bateu no limite de uso, o Gemini está sobrecarregado, ou a conexão caiu no meio da resposta."
+        ) from e
     except openai.APIStatusError as e:
         raise ErroMestre(_mensagem_erro_byok(e, modelo)) from e
 
