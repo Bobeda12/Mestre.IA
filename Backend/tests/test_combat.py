@@ -68,13 +68,36 @@ class TestIniciarCombate:
         c_state, _, _ = combat.iniciar_combate(["Goblin"], ATRIBUTOS_HEROI, ca_heroi=15, rng=RngFixo([10, 1]))
         assert c_state.inimigos[0].comportamento == "Covarde. Ataca e foge (Ação Ardilosa)."
 
-    def test_nome_desconhecido_cai_para_monstro_de_nivel_1_sorteado(self):
-        c_state, _, _ = combat.iniciar_combate(
-            ["Dragão Ancião Inexistente"], ATRIBUTOS_HEROI, ca_heroi=15, rng=RngFixo([10, 1])
+    def test_nome_fora_do_bestiario_vira_pele_de_um_arquetipo_da_banda(self):
+        # Rodada de conserto (Parte 2, item J) — "chega de goblins": um nome
+        # que não bate no catálogo não é mais descartado. Vira o NOME
+        # exibido, com a ficha de um arquétipo sorteado da banda de nível
+        # do herói (nível 1 por padrão aqui) — `RngFixo.choice` sempre
+        # devolve o primeiro candidato, que é "Goblin" (data/monsters.json
+        # preserva a ordem de inserção).
+        c_state, eventos, _ = combat.iniciar_combate(
+            ["Batedor Rasgacouro"], ATRIBUTOS_HEROI, ca_heroi=15, rng=RngFixo([10, 1])
         )
         assert c_state.ativo is True
         assert len(c_state.inimigos) == 1
-        assert c_state.inimigos[0].nome != "Dragão Ancião Inexistente"
+        inimigo = c_state.inimigos[0]
+        assert inimigo.nome == "Batedor Rasgacouro"  # a pele: nome narrativo
+        assert inimigo.hp == 7 and inimigo.ca == 15 and inimigo.bonus_ataque == 4  # a ficha: Goblin de verdade
+        assert any("Batedor Rasgacouro" in e for e in eventos)
+
+    def test_bestiario_vazio_nao_quebra_o_combate(self, monkeypatch):
+        # O fallback original (monstro de Nível 1 sorteado quando nada
+        # sobra) só sobrevive pra quando NENHUMA banda tem candidato —
+        # cenário que só acontece com o catálogo vazio de propósito.
+        from app.infra.data_manager import regras
+
+        monkeypatch.setattr(regras, "get_monstros_por_banda", lambda banda: [])
+        monkeypatch.setattr(regras, "get_monstros_nivel_1", lambda: [])
+        c_state, eventos, _ = combat.iniciar_combate(
+            ["Qualquer Coisa"], ATRIBUTOS_HEROI, ca_heroi=15, rng=RngFixo([])
+        )
+        assert c_state.inimigos == []
+        assert "não iniciado" in eventos[0]
 
     def test_inimigo_mais_rapido_ataca_de_surpresa(self):
         # Iniciativa do herói: 1+1(dex)=2. Iniciativa do goblin: 20+2(dex)=22.

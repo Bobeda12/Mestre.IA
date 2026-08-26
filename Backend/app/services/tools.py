@@ -85,7 +85,7 @@ class ToolExecutor:
     # `evals/simulador.py` se +2 se mostrar fraco ou forte demais.
     BONUS_ITEM_COM_TAG = 2
 
-    def rolar_teste(self, atributo: str, cd: int, item_usado: str | None = None) -> dict:
+    def rolar_teste(self, atributo: str, cd: int, item_usado: str | None = None, motivo: str | None = None) -> dict:
         if atributo not in motor.ATRIBUTOS_VALIDOS:
             return {"erro": f"'{atributo}' não é um atributo válido: {sorted(motor.ATRIBUTOS_VALIDOS)}"}
         mod = motor.calcular_modificador(self.heroi.atributos.get(atributo, 10))
@@ -95,19 +95,26 @@ class ToolExecutor:
         if tags:
             mod_total += self.BONUS_ITEM_COM_TAG
             partes_bonus.append({"rotulo": f"{item_usado} ({tags[0]})", "valor": self.BONUS_ITEM_COM_TAG})
-        resultado = motor.resolver_teste_atributo(mod_total, cd, self.rng)
+        # Rodada de conserto (Parte 2, item H) — o servidor decide se algum
+        # traço do herói se aplica, lendo o catálogo de raças; o `motivo`
+        # só descreve a ação, nunca concede nada por conta própria.
+        d_raca = regras.get_race_details(self.heroi.raca) or {}
+        vantagem = motor.vantagem_por_traco(
+            d_raca.get("tracos", []), d_raca.get("visao") == "Escuro", motivo
+        ) or None
+        resultado = motor.resolver_teste_atributo(mod_total, cd, self.rng, vantagem=vantagem)
         dados = DadosRolagem(
             tipo="teste", quem="heroi", d20=resultado.rolagem, bonus=mod_total, total=resultado.total,
             cd=cd, sucesso=resultado.sucesso, atributo=atributo,
-            partes_bonus=partes_bonus,
+            partes_bonus=partes_bonus, motivo=motivo,
+            d20_extra=resultado.d20_extra, vantagem=resultado.vantagem,
         )
-        self.eventos.append(
-            EventoRolagem(
-                f"🎲 Teste de {atributo}: d20({resultado.rolagem})+{mod_total}={resultado.total} vs CD {cd} → "
-                f"{'SUCESSO' if resultado.sucesso else 'FALHA'}.",
-                dados,
-            )
+        vantagem_txt = " (vantagem de traço racial)" if resultado.vantagem else ""
+        linha = (
+            f"🎲 Teste de {atributo}: d20({resultado.rolagem})+{mod_total}={resultado.total} "
+            f"vs CD {cd}{vantagem_txt} → {'SUCESSO' if resultado.sucesso else 'FALHA'}."
         )
+        self.eventos.append(EventoRolagem(linha, dados))
         return {"sucesso": resultado.sucesso, "total": resultado.total}
 
     def atacar(self, alvo: str, arma: str | None = None) -> dict:
@@ -506,7 +513,7 @@ class ToolExecutor:
         if self.c_state.ativo:
             return {"erro": "já há um combate ativo"}
         novo, eventos, dano_surpresa = combat.iniciar_combate(
-            inimigos, self.heroi.atributos, self.heroi.defesa, self.rng
+            inimigos, self.heroi.atributos, self.heroi.defesa, self.rng, nivel_heroi=self._nivel()
         )
         self.c_state.ativo = novo.ativo
         self.c_state.inimigos = novo.inimigos
@@ -708,8 +715,18 @@ TOOLS_SCHEMA: list[dict] = [
                             "uma porta). Omita se nenhum item se aplica."
                         ),
                     },
+                    "motivo": {
+                        "type": "string",
+                        "description": (
+                            "Poucas palavras dizendo O QUE está sendo testado, do jeito mais concreto "
+                            "possível (ex: 'perceber a emboscada no escuro', 'resistir ao veneno da "
+                            "aranha', 'escalar o muro molhado'). Aparece pro jogador junto do resultado "
+                            "e também pode conceder vantagem se um traço do herói se aplicar — não invente "
+                            "nada, só descreva a ação."
+                        ),
+                    },
                 },
-                "required": ["atributo", "cd"],
+                "required": ["atributo", "cd", "motivo"],
             },
         },
     },
@@ -1024,7 +1041,13 @@ TOOLS_SCHEMA: list[dict] = [
                     "inimigos": {
                         "type": "array",
                         "items": {"type": "string"},
-                        "description": "Nomes de monstros do bestiário que encaixam na cena (ex: ['Goblin']).",
+                        "description": (
+                            "Nomes dos inimigos na cena. Pode usar o nome exato de um monstro do bestiário "
+                            "(ex: 'Goblin'), OU inventar um nome narrativo próprio pra dar identidade à "
+                            "cena (ex: 'Batedor Rasgacouro', 'Lobo Alfa do Bando de Vharn') — o servidor "
+                            "escolhe a ficha (HP, CA, dano) de um arquétipo real do nível certo por trás "
+                            "do nome inventado; a mecânica nunca muda, só o rótulo que o jogador vê."
+                        ),
                     },
                 },
                 "required": ["inimigos"],

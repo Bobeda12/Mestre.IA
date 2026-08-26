@@ -1,7 +1,8 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
 
+from app.infra.byok import ChaveUsuario
 from app.infra.db import FeedbackNarracao, Personagem, Usuario, get_db
 from app.services import memory, telemetria
 from app.services.auth import get_current_user
@@ -106,7 +107,10 @@ def registrar_feedback(
 
 @router.get("/{session_id}/cronica")
 def exportar_cronica(
-    session_id: str, current_user: Usuario = Depends(get_current_user), db: Session = Depends(get_db)
+    session_id: str,
+    current_user: Usuario = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    chave_usuario: str | None = Header(default=None, alias="X-Gemini-Key"),
 ) -> dict:
     """Fase 7 da revisão de gameplay (Etapa 12/13) — "Exportar Crônica": os
     eventos de memória de longo prazo (`EventoMemoria`), tecidos numa
@@ -120,5 +124,6 @@ def exportar_cronica(
     if personagem.usuario_id != current_user.id:
         raise HTTPException(status_code=403, detail="Este personagem não pertence a você.")
     eventos = memory.eventos_cronologicos(db, personagem.id)
-    texto = gerar_cronica(personagem, eventos)
+    chave = ChaveUsuario(chave_usuario)
+    texto = gerar_cronica(personagem, eventos, chamar_fn=chave.chamar_fn)
     return {"nome": personagem.nome, "cronica": texto}

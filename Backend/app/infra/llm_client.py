@@ -199,28 +199,75 @@ def chamar_com_fallback(msgs: list[dict], tools: list[dict] | None = None, tool_
     ) from ultimo_erro
 
 
+def _detalhe_erro_gemini(e: openai.APIStatusError) -> str:
+    """O corpo de erro do Gemini costuma trazer uma mensagem melhor que a
+    genérica do SDK (`e.message`) — por exemplo, qual modelo não foi
+    encontrado. Usada só para compor o texto que o jogador lê; nunca para
+    decidir o fluxo (isso continua sendo `e.status_code`)."""
+    corpo = e.body
+    if isinstance(corpo, dict):
+        erro = corpo.get("error")
+        if isinstance(erro, dict) and isinstance(erro.get("message"), str):
+            return erro["message"]
+    return e.message
+
+
+def _mensagem_erro_byok(e: openai.APIStatusError, modelo: str) -> str:
+    """Achado ao vivo (Etapa 15/rodada de conserto): a primeira chamada de
+    um turno pode autenticar e funcionar, e só a segunda falhar (ver
+    `agent_loop.py` — mensagem `content: null` que o Gemini rejeita) — um
+    400 quase nunca é "a chave errada". Distinguir por `status_code` em vez
+    de tratar todo `APIStatusError` como recusa de chave evita culpar a
+    chave por um bug do lado do servidor."""
+    if e.status_code in (401, 403):
+        return "Sua chave foi recusada pelo Gemini — confira se ela está correta."
+    if e.status_code == 404:
+        return f"Sua chave não tem acesso ao modelo '{modelo}' (ou o modelo não existe mais no Gemini)."
+    return f"O Gemini recusou a chamada (código {e.status_code}): {_detalhe_erro_gemini(e)}"
+
+
+def validar_chave_usuario(api_key: str) -> None:
+    """Rodada de conserto — chamada leve (`GET /models`, sem gerar texto
+    nenhum) para o jogador saber, no momento em que cola a chave no menu de
+    configurações, se ela é válida — em vez de descobrir no meio de uma
+    cena, como acontecia antes (`MenuConfiguracao.tsx` não validava nada).
+    Levanta `ErroMestre` pelo mesmo `_mensagem_erro_byok` das chamadas de
+    verdade, então a mensagem de erro é consistente nos dois lugares."""
+    cliente = openai.OpenAI(api_key=api_key, base_url=_BASE_URLS["gemini"], max_retries=0)
+    try:
+        cliente.models.list()
+    except _ERROS_TRANSITORIOS as e:
+        raise ErroMestre("O Gemini demorou demais para responder — tente de novo.") from e
+    except openai.APIStatusError as e:
+        raise ErroMestre(_mensagem_erro_byok(e, modelo="gemini-3.5-flash")) from e
+
+
 def chamar_com_chave_usuario(
     msgs: list[dict],
     api_key: str,
     tools: list[dict] | None = None,
     tool_choice: str = "auto",
     modelo: str = "gemini-3.5-flash",
+    response_format: dict | None = None,
 ) -> Any:
     """BYOK (Etapa 15) — mesma forma de `chamar_modelo_unico`, mas o cliente
     é efêmero (chave do jogador, nunca guardada em `clients`) e sem cadeia
     de fallback: é só o Gemini, com a chave que ele forneceu. Erros viram
     `ErroMestre` com mensagens específicas ("sua chave..."), pra o router
     distinguir de uma falha da chave do servidor e não cair num fallback
-    silencioso que gastaria a cota do servidor sem o jogador perceber."""
+    silencioso que gastaria a cota do servidor sem o jogador perceber.
+
+    `response_format` (rodada de conserto) — as chamadas de JSON solto do
+    prólogo/epitáfio (`services/narrator.py`) passaram a poder usar a
+    chave do jogador também; sem este parâmetro elas caíam sempre na conta
+    do servidor, mesmo com "Traga sua própria chave" ativado."""
     cliente = openai.OpenAI(api_key=api_key, base_url=_BASE_URLS["gemini"], max_retries=0)
     try:
-        return _chamar_modelo(cliente, "gemini", modelo, msgs, tools, tool_choice)
-    except openai.AuthenticationError as e:
-        raise ErroMestre("Sua chave foi recusada pelo Gemini — confira se ela está correta.") from e
+        return _chamar_modelo(cliente, "gemini", modelo, msgs, tools, tool_choice, response_format)
     except _ERROS_TRANSITORIOS as e:
         raise ErroMestre("Sua chave bateu no limite de uso, ou o Gemini demorou demais para responder.") from e
     except openai.APIStatusError as e:
-        raise ErroMestre(f"Sua chave foi recusada pelo Gemini (código {e.status_code}).") from e
+        raise ErroMestre(_mensagem_erro_byok(e, modelo)) from e
 
 
 def chamar_stream_com_chave_usuario(
@@ -238,12 +285,10 @@ def chamar_stream_com_chave_usuario(
     try:
         stream = _chamar_modelo(cliente, "gemini", modelo, msgs, tools, tool_choice, stream=True)
         yield from stream
-    except openai.AuthenticationError as e:
-        raise ErroMestre("Sua chave foi recusada pelo Gemini — confira se ela está correta.") from e
     except _ERROS_TRANSITORIOS as e:
         raise ErroMestre("Sua chave bateu no limite de uso, ou a conexão caiu no meio da resposta.") from e
     except openai.APIStatusError as e:
-        raise ErroMestre(f"Sua chave foi recusada pelo Gemini (código {e.status_code}).") from e
+        raise ErroMestre(_mensagem_erro_byok(e, modelo)) from e
 
 
 def chamar_stream_com_fallback(

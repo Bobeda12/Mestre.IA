@@ -16,6 +16,7 @@ from app.infra.llm_client import (
     chamar_com_fallback,
     chamar_stream_com_chave_usuario,
     chamar_stream_com_fallback,
+    validar_chave_usuario,
 )
 
 
@@ -31,6 +32,12 @@ def _erro_autenticacao() -> Exception:
     req = httpx.Request("POST", "https://example.com/x")
     resp = httpx.Response(401, request=req)
     return openai.AuthenticationError("chave inválida", response=resp, body=None)
+
+
+def _erro_status(codigo: int, body: dict | None = None) -> Exception:
+    req = httpx.Request("POST", "https://example.com/x")
+    resp = httpx.Response(codigo, request=req)
+    return openai.APIStatusError(f"erro {codigo}", response=resp, body=body)
 
 
 class _FakeCompletions:
@@ -247,6 +254,28 @@ class TestChamarComChaveUsuario:
         assert resultado is resultado_ok
         assert fake.chat.completions.chamadas == ["gemini-3.5-flash-lite"]
 
+    def test_400_nao_culpa_a_chave(self, monkeypatch):
+        # Achado ao vivo (rodada de conserto) — um 400 quase sempre é outra
+        # coisa (ex: `content: null` que `agent_loop.py` mandava numa
+        # mensagem de tool_call). A mensagem antiga dizia "sua chave foi
+        # recusada" para qualquer status; isso é o que passou a diferenciar.
+        self._fake_openai(
+            monkeypatch, {"gemini-3.5-flash": [_erro_status(400, {"error": {"message": "invalid content field"}})]}
+        )
+
+        with pytest.raises(ErroMestre) as exc_info:
+            chamar_com_chave_usuario([{"role": "user", "content": "oi"}], api_key="chave-do-jogador")
+
+        mensagem = str(exc_info.value)
+        assert "recusada" not in mensagem
+        assert "invalid content field" in mensagem
+
+    def test_404_aponta_para_o_modelo_sem_acesso(self, monkeypatch):
+        self._fake_openai(monkeypatch, {"gemini-3.5-flash": [_erro_status(404)]})
+
+        with pytest.raises(ErroMestre, match="não tem acesso ao modelo 'gemini-3.5-flash'"):
+            chamar_com_chave_usuario([{"role": "user", "content": "oi"}], api_key="chave-do-jogador")
+
 
 class TestChamarStreamComChaveUsuario:
     def _fake_openai(self, monkeypatch, comportamento: dict[str, list]) -> _FakeClient:
@@ -277,3 +306,39 @@ class TestChamarStreamComChaveUsuario:
 
         with pytest.raises(ErroMestre, match="recusada"):
             list(chamar_stream_com_chave_usuario([{"role": "user", "content": "oi"}], api_key="chave-invalida"))
+
+
+class _FakeModels:
+    def __init__(self, resultado: object) -> None:
+        self._resultado = resultado
+
+    def list(self):
+        if isinstance(self._resultado, Exception):
+            raise self._resultado
+        return self._resultado
+
+
+class _FakeClientComModels:
+    def __init__(self, resultado: object) -> None:
+        self.models = _FakeModels(resultado)
+
+
+class TestValidarChaveUsuario:
+    """Rodada de conserto — `MenuConfiguracao.tsx` valida a chave assim
+    que o jogador cola ela, em vez de só descobrir no meio de uma cena."""
+
+    def test_chave_valida_nao_levanta(self, monkeypatch):
+        monkeypatch.setattr(llm_client.openai, "OpenAI", lambda **kwargs: _FakeClientComModels(object()))
+        validar_chave_usuario("chave-boa")  # não levanta
+
+    def test_chave_invalida_vira_erro_mestre(self, monkeypatch):
+        monkeypatch.setattr(llm_client.openai, "OpenAI", lambda **kwargs: _FakeClientComModels(_erro_autenticacao()))
+
+        with pytest.raises(ErroMestre, match="recusada"):
+            validar_chave_usuario("chave-ruim")
+
+    def test_falha_transitoria_vira_erro_mestre_especifico(self, monkeypatch):
+        monkeypatch.setattr(llm_client.openai, "OpenAI", lambda **kwargs: _FakeClientComModels(_erro_rate_limit()))
+
+        with pytest.raises(ErroMestre, match="demorou"):
+            validar_chave_usuario("chave-de-teste")

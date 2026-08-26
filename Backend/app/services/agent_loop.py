@@ -65,7 +65,13 @@ def executar_turno(
         msgs.append(
             {
                 "role": "assistant",
-                "content": mensagem.content,
+                # `mensagem.content` vem `None` quando o modelo chama uma
+                # ferramenta sem escrever texto antes — o caso comum. A Groq
+                # aceita `content: null` numa mensagem com `tool_calls`; a
+                # camada de compatibilidade OpenAI do Gemini rejeita com 400
+                # INVALID_ARGUMENT (achado ao vivo, BYOK — Etapa 15). String
+                # vazia é neutra para os dois lados.
+                "content": mensagem.content or "",
                 "tool_calls": [
                     {
                         "id": tc.id,
@@ -148,7 +154,10 @@ def executar_turno_stream(
         msgs.append(
             {
                 "role": "assistant",
-                "content": conteudo or None,
+                # Mesmo motivo do `executar_turno` síncrono acima: string
+                # vazia, nunca `None` — o Gemini rejeita `content: null`
+                # numa mensagem com `tool_calls` (400 INVALID_ARGUMENT).
+                "content": conteudo,
                 "tool_calls": [
                     {
                         "id": slot["id"],
@@ -170,6 +179,10 @@ def executar_turno_stream(
                 {"role": "tool", "tool_call_id": slot["id"], "content": json.dumps(resultado, ensure_ascii=False)}
             )
 
+    # Etapa 10 (A-7) tirou o padrão `*(...)*` de todo frame de sistema
+    # exceto este — ele ainda chegava como "token" (texto de narração),
+    # sujando o que fica persistido. `erro` é o frame certo: o turno não
+    # se recuperou sozinho.
     yield EventoStream(
-        "token", "*(O mestre perdeu o fio da meada tentando decidir o que fazer — tente uma ação mais simples.)*"
+        "erro", "O mestre perdeu o fio da meada tentando decidir o que fazer — tente uma ação mais simples."
     )

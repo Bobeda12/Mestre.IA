@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { prefereMovimentoReduzido } from '../lib/acessibilidade';
 import PixelIcon from './PixelIcon';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip';
 
@@ -28,6 +29,11 @@ export interface DadosRolagem {
   // descartado, guardado só pra mostrar os dois no card.
   d20_extra?: number | null;
   vantagem?: boolean | null;
+  // Rodada de conserto (Parte 2, item I) — "Teste de Sabedoria" não dizia
+  // se era pra perceber a emboscada ou resistir a um medo; `motivo` é o
+  // que o modelo já descreve pra `rolar_teste` (Backend/app/services/
+  // tools.py), agora chegando ao card em vez de morrer na chamada.
+  motivo?: string | null;
 }
 
 const NOME_ATRIBUTO: Record<string, string> = {
@@ -61,11 +67,23 @@ function formatSinal(valor: number): string {
 // antes de revelar o número. GameChat.tsx pausa o consumo do streaming pela
 // mesma duração quando um evento de rolagem chega, pra narração não
 // continuar antes do dado "parar de rolar" na tela.
-export const DURACAO_ANIMACAO_DADO_MS = 550;
+// Rodada de conserto — subiu de 550ms: num ícone de 13px girando a 1
+// volta/segundo (o padrão do Tailwind), 550ms é menos de meia volta —
+// quase imperceptível mesmo quando a animação roda. 700ms com o giro mais
+// rápido (ver `[animation-duration:...]` abaixo) dá mais de uma volta
+// inteira dentro da janela.
+export const DURACAO_ANIMACAO_DADO_MS = 700;
 
 export default function RollCard({ dados }: { dados: DadosRolagem }) {
-  const [revelado, setRevelado] = useState(false);
+  // Rodada de conserto — achado ao vivo: `index.css` já desliga a animação
+  // via CSS quando o sistema pede menos movimento, mas o `setTimeout`
+  // continuava esperando os mesmos 700ms mesmo com o dado parado — o
+  // jogador via a narração travar sem nenhum giro pra justificar a
+  // espera. `useState(prefereMovimentoReduzido)` (inicializador lento, não
+  // um efeito) já nasce revelado nesse caso, sem esperar nada.
+  const [revelado, setRevelado] = useState(prefereMovimentoReduzido);
   useEffect(() => {
+    if (prefereMovimentoReduzido()) return;
     const t = setTimeout(() => setRevelado(true), DURACAO_ANIMACAO_DADO_MS);
     return () => clearTimeout(t);
   }, []);
@@ -106,7 +124,11 @@ export default function RollCard({ dados }: { dados: DadosRolagem }) {
     return (
       <div className="flex flex-col items-center gap-1 my-2 animate-fade-in" role="status" aria-label="Rolando o dado">
         <div className="flex items-center gap-2 px-3 py-1.5 border-2 border-gray-700 text-gray-400 bg-gray-900/40 font-rpg text-xs">
-          <PixelIcon name="dado" size={13} className="animate-spin" />
+          {/* Rodada de conserto — 13px→22px (o giro era quase invisível
+              nesse tamanho) e o giro em si mais rápido (~0.45s/volta em vez
+              de 1s), pra caber mais de uma volta inteira dentro dos 700ms
+              de espera acima. */}
+          <PixelIcon name="dado" size={22} className="animate-spin [animation-duration:0.45s]" />
           <span className="tracking-widest">rolando</span>
         </div>
       </div>
@@ -117,6 +139,14 @@ export default function RollCard({ dados }: { dados: DadosRolagem }) {
     <TooltipProvider delayDuration={150}>
       <div className="flex flex-col items-center gap-1 my-2 animate-fade-in" role="status">
         {titulo && <span className="text-[10px] uppercase tracking-widest text-gray-500">{titulo}</span>}
+        {/* Rodada de conserto (Parte 2, item I) — o motivo do teste, não só
+            o atributo. "Teste de Sabedoria" sozinho não diz se é pra
+            perceber uma emboscada ou resistir a medo. */}
+        {dados.tipo === 'teste' && dados.motivo && (
+          <span className="text-[10px] text-gray-500 italic max-w-[220px] text-center truncate" title={dados.motivo}>
+            {dados.motivo}
+          </span>
+        )}
         <div className={`flex items-center gap-2 px-3 py-1.5 border-2 font-rpg text-xs ${cor}`}>
           <PixelIcon name="dado" size={13} />
           {dados.d20 != null && (

@@ -90,6 +90,34 @@ class TestRolarTeste:
         resultado = _executor(heroi=heroi, rng=RngFixo([13])).rolar_teste("destreza", 15, item_usado="Mochila")
         assert resultado["total"] == 14
 
+    def test_motivo_vai_para_o_dado_estruturado(self):
+        # Rodada de conserto (Parte 2, item I) — o card de rolagem passa a
+        # saber POR QUE o teste está rolando, não só o quê.
+        executor = _executor(rng=RngFixo([14]))
+        executor.rolar_teste("destreza", 15, motivo="esquivar da armadilha")
+        [evento] = executor.eventos
+        assert evento.dados.motivo == "esquivar da armadilha"
+
+    def test_traco_racial_com_motivo_compativel_concede_vantagem(self):
+        # Rodada de conserto (Parte 2, item H) — Anão tem "Resistência a
+        # Veneno" (data/races.json); o motivo "casa" com o traço, então o
+        # SERVIDOR concede vantagem (rola 2d20, fica com o maior).
+        heroi = _heroi(raca="Anão")
+        executor = _executor(heroi=heroi, rng=RngFixo([6, 16]))
+        resultado = executor.rolar_teste("constituicao", 15, motivo="resistir ao veneno do escorpião")
+        [evento] = executor.eventos
+        assert evento.dados.vantagem is True
+        assert evento.dados.d20 == 16
+        assert evento.dados.d20_extra == 6
+        assert resultado["sucesso"] is True
+
+    def test_traco_racial_sem_raca_correspondente_nao_concede_vantagem(self):
+        heroi = _heroi(raca="Elfo")  # não tem Resistência a Veneno
+        executor = _executor(heroi=heroi, rng=RngFixo([6]))
+        executor.rolar_teste("constituicao", 15, motivo="resistir ao veneno do escorpião")
+        [evento] = executor.eventos
+        assert evento.dados.vantagem is None
+
     def test_arma_reaproveita_propriedades_como_tag(self):
         # Machado Grande tem propriedade "Pesada" em data/weapons.json —
         # Fase 6 trata propriedade de arma como tag também. mod força +2
@@ -585,6 +613,17 @@ class TestIniciarCombate:
         assert resultado["inimigos"] == ["Goblin"]
         assert c_state.ativo is True
         assert c_state.inimigos[0].hp == 7
+
+    def test_nome_inventado_vira_pele_de_um_arquetipo_do_nivel_do_heroi(self):
+        # Rodada de conserto (Parte 2, item J) — "chega de goblins": o
+        # modelo pode propor um nome narrativo; o servidor decide a ficha,
+        # sorteada da banda de nível do herói (nível 1 por padrão aqui).
+        c_state = CombatState()
+        executor = _executor(c_state=c_state, rng=RngFixo([10, 1]))
+        resultado = executor.iniciar_combate(["Batedor Rasgacouro"])
+        assert resultado["inimigos"] == ["Batedor Rasgacouro"]
+        assert c_state.inimigos[0].nome == "Batedor Rasgacouro"
+        assert c_state.inimigos[0].hp == 7  # ficha de Goblin (primeiro da banda Nível 1)
 
     def test_ordem_de_iniciativa_e_copiada_pro_c_state_do_executor(self):
         # Bug real (Etapa 7): `iniciar_combate` copiava só alguns campos de

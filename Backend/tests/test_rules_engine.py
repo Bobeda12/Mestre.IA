@@ -24,6 +24,7 @@ from app.services.rules_engine import (
     rolar_teste_morte,
     subir_nivel,
     validar_point_buy,
+    vantagem_por_traco,
 )
 from tests.helpers import RngFixo
 
@@ -123,6 +124,33 @@ class TestResolverAtaque:
 class TestRolarIniciativa:
     def test_soma_d20_ao_modificador_de_destreza(self):
         assert rolar_iniciativa(mod_destreza=3, rng=RngFixo([10])) == 13
+
+
+class TestVantagemPorTraco:
+    """Rodada de conserto (Parte 2, item H) — raça deixa de ser só +2 num
+    atributo: um traço com o motivo certo concede vantagem de verdade."""
+
+    def test_sem_motivo_nunca_concede_vantagem(self):
+        assert vantagem_por_traco(["Resistência a Veneno"], False, None) is False
+        assert vantagem_por_traco(["Resistência a Veneno"], False, "") is False
+
+    def test_traco_presente_e_motivo_compativel_concede_vantagem(self):
+        assert vantagem_por_traco(["Resistência a Veneno"], False, "resistir ao veneno da aranha") is True
+
+    def test_traco_ausente_nao_concede_mesmo_com_motivo_compativel(self):
+        assert vantagem_por_traco(["Sortudo"], False, "resistir ao veneno da aranha") is False
+
+    def test_motivo_incompativel_nao_concede_mesmo_com_traco(self):
+        assert vantagem_por_traco(["Resistência a Veneno"], False, "escalar o muro") is False
+
+    def test_visao_no_escuro_concede_vantagem_em_percepcao_no_escuro(self):
+        assert vantagem_por_traco([], True, "perceber a emboscada no escuro") is True
+
+    def test_visao_no_escuro_nao_ajuda_fora_do_escuro(self):
+        assert vantagem_por_traco([], True, "perceber a emboscada") is False
+
+    def test_sem_visao_no_escuro_nao_ganha_o_bonus_de_escuridao(self):
+        assert vantagem_por_traco([], False, "perceber algo no escuro") is False
 
 
 class TestResolverTesteAtributo:

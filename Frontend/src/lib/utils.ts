@@ -62,6 +62,13 @@ export function limparMarkdownLeve(texto: string) {
 const _PADRAO_OPCOES = /\[OP.{0,2}ES/i
 
 export function esconderTagOpcoes(texto: string) {
-  const m = _PADRAO_OPCOES.exec(texto)
-  return m ? texto.slice(0, m.index).trimEnd() : texto
+  // Rodada de conserto — antes disto, o corte valia pro texto INTEIRO: se
+  // "[OP" aparecesse em qualquer ponto (mesmo no meio de uma frase, por
+  // acidente), tudo o que vinha depois sumia da tela pra sempre, mesmo
+  // narração de verdade. A tag só é válida como ÚLTIMA linha (é assim que
+  // o prompt pede) — procurar só ali evita apagar narração por engano.
+  const inicioUltimaLinha = texto.lastIndexOf('\n') + 1
+  const ultimaLinha = texto.slice(inicioUltimaLinha)
+  const m = _PADRAO_OPCOES.exec(ultimaLinha)
+  return m ? texto.slice(0, inicioUltimaLinha + m.index).trimEnd() : texto
 }

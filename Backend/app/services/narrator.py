@@ -1,4 +1,6 @@
 import json
+from collections.abc import Callable
+from typing import Any
 
 from app.domain.character import CharacterCreationRequest
 from app.domain.memoria import ResumoRolante
@@ -14,23 +16,31 @@ from app.services.tools import RELOGIO_MAXIMO, RELOGIO_URGENCIA
 __all__ = ["ErroMestre", "chamar_mestre", "gerar_cronica", "gerar_epitafio", "gerar_prologo_missao", "montar_contexto"]
 
 
-def chamar_mestre(msgs: list[dict]) -> dict:
+def chamar_mestre(msgs: list[dict], chamar_fn: Callable[..., Any] | None = None) -> dict:
     """Chama o LLM e devolve o JSON já decodificado, ou levanta ErroMestre
     (nunca engole o erro em silêncio — ver ADR-0002, Etapa 1). A tradução de
     erro de API para `ErroMestre` mora em `chamar_modelo_unico`
     (app/infra/llm_client.py) — o mesmo caminho usado por qualquer outra
-    chamada única do projeto, não uma cópia local."""
-    if not llm_client.clients:
-        raise ErroMestre(
-            "O mestre está sem acesso à IA — falta configurar ao menos uma chave de API "
-            "no servidor (GROQ_API_KEY ou GEMINI_API_KEY)."
-        )
-    # `gerar_prologo_missao` e `gerar_epitafio` (Fase 7) são os únicos
-    # caminhos que ainda usam JSON solto — nenhum dos dois tem estado de
-    # jogo pra chamar ferramenta, são chamadas únicas e isoladas. O turno
-    # de jogo (routers/game.py) usa services/agent_loop.py + tool calling
-    # nativo desde a Etapa 4.
-    resp = llm_client.chamar_modelo_unico(settings.cadeia_llm[0], msgs, response_format={"type": "json_object"})
+    chamada única do projeto, não uma cópia local.
+
+    `chamar_fn` (rodada de conserto, BYOK) — quando o chamador tem a chave
+    do jogador (`ChaveUsuario.chamar_fn`), esta chamada de prólogo/epitáfio
+    usa ela em vez da cadeia do servidor. Sem isso, "trouxe minha chave"
+    cobria os turnos de jogo mas não a criação de personagem nem a morte."""
+    if chamar_fn is not None:
+        resp = chamar_fn(msgs, response_format={"type": "json_object"})
+    else:
+        if not llm_client.clients:
+            raise ErroMestre(
+                "O mestre está sem acesso à IA — falta configurar ao menos uma chave de API "
+                "no servidor (GROQ_API_KEY ou GEMINI_API_KEY)."
+            )
+        # `gerar_prologo_missao` e `gerar_epitafio` (Fase 7) são os únicos
+        # caminhos que ainda usam JSON solto — nenhum dos dois tem estado de
+        # jogo pra chamar ferramenta, são chamadas únicas e isoladas. O
+        # turno de jogo (routers/game.py) usa services/agent_loop.py + tool
+        # calling nativo desde a Etapa 4.
+        resp = llm_client.chamar_modelo_unico(settings.cadeia_llm[0], msgs, response_format={"type": "json_object"})
 
     try:
         return json.loads(resp.choices[0].message.content)
@@ -67,7 +77,7 @@ def _validar_atos(bruto: object) -> list[dict]:
     return atos
 
 
-def gerar_prologo_missao(char: CharacterCreationRequest) -> dict:
+def gerar_prologo_missao(char: CharacterCreationRequest, chamar_fn: Callable[..., Any] | None = None) -> dict:
     # Etapa 11 (B-7, resolve P-5) — o local sempre vem do catálogo real
     # (data/locations.json), nunca inventado. `mover` (services/tools.py)
     # já validava contra esse catálogo; até aqui só o prólogo escapava
@@ -78,9 +88,12 @@ def gerar_prologo_missao(char: CharacterCreationRequest) -> dict:
     locais_validos = regras.get_locations_list()
     local_padrao = "Vila de Phandalin" if "Vila de Phandalin" in locais_validos else locais_validos[0]
 
-    if not llm_client.clients:
+    # BYOK (rodada de conserto) — com a chave do jogador, `chamar_clients`
+    # do servidor pode estar vazio e mesmo assim o prólogo funciona.
+    if chamar_fn is None and not llm_client.clients:
         return {
             "local_inicial": local_padrao,
+            "local_inicial_descricao": None,
             "clima_inicial": "Nublado",
             "nome_missao": "Jornada Inicial",
             "objetivo_missao": "Chegar à cidade.",
@@ -108,8 +121,10 @@ def gerar_prologo_missao(char: CharacterCreationRequest) -> dict:
     Siga [A VOZ DO MESTRE] da bíblia acima, mas trate isto como um [MOMENTO DE ALTO
     IMPACTO]: é a abertura do jogo, pode crescer além do teto de palavras normal.
 
-    "local_inicial" TEM que ser exatamente um destes nomes, sem variação —
-    são os únicos locais que o resto do jogo reconhece: {", ".join(locais_validos)}.
+    "local_inicial" pode ser um destes nomes, exato, sem variação: {", ".join(locais_validos)}.
+    Ou, se nenhum encaixar bem na história do herói, PODE inventar um lugar novo — mas só nesse
+    caso preencha também "local_inicial_descricao" (2-3 frases: aparência, clima, o que o lugar
+    é) — sem essa descrição, um nome fora da lista é ignorado e o jogo cai no local padrão.
 
     Além da missão imediata, esboce a campanha inteira em 3 a 5 Atos — o
     arco que guia a história por trás das cenas (o jogador nunca vê essa
@@ -119,7 +134,8 @@ def gerar_prologo_missao(char: CharacterCreationRequest) -> dict:
 
     Responda APENAS JSON:
     {{
-        "local_inicial": "Nome do Local (um da lista acima, exato)",
+        "local_inicial": "Nome do Local (da lista, exato — ou um nome novo, se justificado)",
+        "local_inicial_descricao": "Só se 'local_inicial' for um nome NOVO (2-3 frases). Null se for da lista.",
         "clima_inicial": "Clima atmosférico",
         "nome_missao": "Título da Missão Atual",
         "objetivo_missao": "O que ele deve fazer agora (curto)",
@@ -132,11 +148,12 @@ def gerar_prologo_missao(char: CharacterCreationRequest) -> dict:
     }}
     """
     try:
-        roteiro = chamar_mestre([{"role": "user", "content": prompt}])
+        roteiro = chamar_mestre([{"role": "user", "content": prompt}], chamar_fn=chamar_fn)
     except ErroMestre as e:
         print("ERRO NO PRÓLOGO:", e.mensagem)
         return {
             "local_inicial": local_padrao,
+            "local_inicial_descricao": None,
             "clima_inicial": "Chuvoso",
             "nome_missao": "Desconhecido",
             "objetivo_missao": "Sobreviver",
@@ -147,21 +164,39 @@ def gerar_prologo_missao(char: CharacterCreationRequest) -> dict:
     # A instrução acima é a primeira linha (ADR-0002); esta checagem é a
     # que vale — pedir com educação não impede o modelo de inventar um
     # nome (já aconteceu ao vivo: "Ruínas de Gralhoth" e "Ruínas de
-    # Acheron", nenhum dos dois no catálogo). Sem isso, `mover` recusaria
-    # o próprio local onde o herói nasceu.
+    # Acheron", nenhum dos dois no catálogo).
+    #
+    # Rodada de conserto (Parte 2, item J) — antes disto, QUALQUER nome
+    # fora do catálogo virava `local_padrao` sem exceção, então toda
+    # campanha nova começava (quase sempre) em Phandalin. Agora, um nome
+    # novo com descrição de verdade é aceito: mesmo padrão "o modelo
+    # propõe, o servidor decide" da Fase 5 (`tools.mover`,
+    # `descricao_proposta`) — `routers/character.py` é quem de fato
+    # registra em `WorldState.locais_descobertos`, este módulo só decide
+    # o que sobrevive no `roteiro` devolvido. Vilas-chave do catálogo
+    # continuam disponíveis e continuam sendo a maioria dos casos válidos.
+    descricao_local_novo = roteiro.get("local_inicial_descricao")
     if roteiro.get("local_inicial") not in locais_validos:
-        roteiro["local_inicial"] = local_padrao
+        if isinstance(descricao_local_novo, str) and descricao_local_novo.strip():
+            roteiro["local_inicial_descricao"] = descricao_local_novo.strip()
+        else:
+            roteiro["local_inicial"] = local_padrao
+            roteiro["local_inicial_descricao"] = None
+    else:
+        roteiro["local_inicial_descricao"] = None
     roteiro["atos"] = _validar_atos(roteiro.get("atos"))
     return roteiro
 
 
-def gerar_epitafio(heroi: Personagem, eventos_marcantes: list[str], resumo: ResumoRolante) -> dict:
+def gerar_epitafio(
+    heroi: Personagem, eventos_marcantes: list[str], resumo: ResumoRolante, chamar_fn: Callable[..., Any] | None = None
+) -> dict:
     """Fase 7 da revisão de gameplay (Etapa 12/13) — chamado uma vez por
     morte (`routers/game.py`, quando `c_state.resultado == "morte"` se
     confirma pela primeira vez), nunca regenerado depois. Mesmo padrão de
     `gerar_prologo_missao`: chamada isolada, JSON solto, sem ferramenta —
     é o fechamento da campanha, não um turno de jogo."""
-    if not llm_client.clients:
+    if chamar_fn is None and not llm_client.clients:
         return {
             "retrospectiva": f"{heroi.nome} caiu, e o mundo seguiu em frente sem contar sua história.",
             "epitafio_curto": f"Aqui jaz {heroi.nome}.",
@@ -195,7 +230,7 @@ def gerar_epitafio(heroi: Personagem, eventos_marcantes: list[str], resumo: Resu
     }}
     """
     try:
-        resultado = chamar_mestre([{"role": "user", "content": prompt}])
+        resultado = chamar_mestre([{"role": "user", "content": prompt}], chamar_fn=chamar_fn)
     except ErroMestre as e:
         print("ERRO NO EPITÁFIO:", e.mensagem)
         return {
@@ -218,7 +253,7 @@ def gerar_epitafio(heroi: Personagem, eventos_marcantes: list[str], resumo: Resu
 LIMITE_EVENTOS_CRONICA = 60
 
 
-def gerar_cronica(heroi: Personagem, eventos: list[str]) -> str:
+def gerar_cronica(heroi: Personagem, eventos: list[str], chamar_fn: Callable[..., Any] | None = None) -> str:
     """Fase 7 — tece os eventos registrados (`services/memory.
     eventos_cronologicos`) num conto de fantasia em prosa. Diferente de
     `chamar_mestre`/`gerar_prologo_missao`/`gerar_epitafio`: a saída É o
@@ -226,7 +261,7 @@ def gerar_cronica(heroi: Personagem, eventos: list[str]) -> str:
     eventos = eventos[-LIMITE_EVENTOS_CRONICA:]
     if not eventos:
         return f"A jornada de {heroi.nome} ainda não tem nada registrado para contar."
-    if not llm_client.clients:
+    if chamar_fn is None and not llm_client.clients:
         return "\n\n".join(eventos)
 
     eventos_texto = "\n".join(f"- {e}" for e in eventos)
@@ -246,7 +281,12 @@ def gerar_cronica(heroi: Personagem, eventos: list[str]) -> str:
     títulos de seção.
     """
     try:
-        resp = llm_client.chamar_modelo_unico(settings.cadeia_llm[0], [{"role": "user", "content": prompt}])
+        msgs = [{"role": "user", "content": prompt}]
+        resp = (
+            chamar_fn(msgs)
+            if chamar_fn is not None
+            else llm_client.chamar_modelo_unico(settings.cadeia_llm[0], msgs)
+        )
         return resp.choices[0].message.content or "\n\n".join(eventos)
     except ErroMestre as e:
         print("ERRO NA CRÔNICA:", e.mensagem)
@@ -396,10 +436,28 @@ def montar_contexto(
         else ""
     )
 
+    # Rodada de conserto (Parte 2, item H) — antes disto, o narrador recebia
+    # só o RÓTULO da raça/classe (heroi.raca/heroi.classe no [HEROI] abaixo)
+    # e nunca os traços de verdade de data/races.json e data/classes.json —
+    # um Anão Bárbaro narrava igual a um Elfo Mago. O EFEITO mecânico (quando
+    # existe) é decidido pelo servidor, não por esta seção — ver
+    # `rules_engine.vantagem_por_traco`, acionado pelo `motivo` que a
+    # ferramenta `rolar_teste` já recebe; isto aqui é só o narrador sabendo
+    # quem o herói É, pra narrar consistente com isso.
+    d_raca = regras.get_race_details(heroi.raca)
+    d_classe = regras.get_class_details(heroi.classe)
+    tracos_txt = ", ".join(d_raca.get("tracos", [])) or "nenhum catalogado"
+    proficiencias_txt = ", ".join(d_classe.get("proficiencias", [])) or "nenhuma catalogada"
+    secao_tracos = (
+        f"\n    [TRAÇOS] {heroi.raca}: {tracos_txt} (visão: {d_raca.get('visao', 'Normal')}) | "
+        f"{heroi.classe}: proficiências em {proficiencias_txt}"
+    )
+
     return f"""
     {secao_regras}
     {secao_memoria}
-    [HEROI] {heroi.nome} ({heroi.raca} {heroi.classe}) | HP: {heroi.hp_atual}/{heroi.hp_max} | Ouro: {heroi.ouro}
+    [HEROI] {heroi.nome} ({heroi.raca} {heroi.classe}) | HP: {heroi.hp_atual}/{heroi.hp_max} | \
+Ouro: {heroi.ouro}{secao_tracos}
     [PASSADO] Background: {heroi.background} | Objetivo: {heroi.objetivo} | \
 Alinhamento: {heroi.alinhamento}{historia_resumo}
     [INVENTÁRIO] {heroi.inventario}{secao_aliados}
@@ -418,7 +476,10 @@ Alinhamento: {heroi.alinhamento}{historia_resumo}
     descansa, chame "descansar" (nunca cure PV narrando sozinho). Se o
     jogador usar um item/arma de forma criativa num teste de atributo (ex:
     um machado pesado pra arrombar uma porta), passe "item_usado" pra
-    "rolar_teste" — o servidor decide se isso ajuda. Se "mover" devolver
+    "rolar_teste" — o servidor decide se isso ajuda. Sempre passe "motivo"
+    também, descrevendo em poucas palavras o que está sendo testado — o
+    jogador vê isso no resultado, e pode conceder vantagem se um traço do
+    herói (ver [TRAÇOS] acima) se aplicar. Se "mover" devolver
     "encontro" ("emboscada" ou "achado"), narre e aja de acordo na hora —
     é a estrada reagindo, não uma sugestão sua. Se "descansar" devolver
     "gancho_acampamento", puxe essa fala do companheiro antes de seguir.

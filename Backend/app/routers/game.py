@@ -1,4 +1,3 @@
-import functools
 import json
 from collections.abc import Callable, Generator
 from typing import Any
@@ -11,7 +10,7 @@ from starlette.background import BackgroundTask
 from app.domain.character import LoadRequest, UserAction
 from app.domain.memoria import ResumoRolante
 from app.domain.state import CombatState, QuestLog, WorldState
-from app.infra import embeddings, llm_client
+from app.infra.byok import ChaveUsuario
 from app.infra.data_manager import regras
 from app.infra.db import Personagem, SessionLocal, Usuario, get_db
 from app.infra.llm_client import ErroMestre, chamar_com_fallback
@@ -21,41 +20,18 @@ from app.infra.tracing import medir, turno_span
 from app.services import combat, memory, rag_regras, rules_engine, telemetria
 from app.services.agent_loop import executar_turno, executar_turno_stream
 from app.services.auth import get_current_user, get_current_verified_user
-from app.services.guardrail import corrigir_narrativa, extrair_opcoes, limpar_formatacao, validar_narrativa
+from app.services.guardrail import (
+    corrigir_narrativa,
+    extrair_opcoes,
+    limpar_formatacao,
+    opcoes_padrao,
+    validar_narrativa,
+)
 from app.services.memory import contexto_recente
 from app.services.narrator import gerar_epitafio, montar_contexto
 from app.services.tools import ToolExecutor, sincronizar_aliados
 
 router = APIRouter(tags=["game"])
-
-# Etapa 15 (BYOK) — modelo usado pro resumo rolante quando ele é ligado à
-# chave do jogador (`chamar_com_chave_usuario`), no mesmo tier barato de
-# `settings.modelo_barato` ("gemini:gemini-3.5-flash-lite"), só que sem o
-# prefixo "provedor:" (que `chamar_com_chave_usuario` já fixa em "gemini").
-_MODELO_BARATO_BYOK = settings.modelo_barato.rsplit(":", 1)[-1]
-
-
-class _ChaveUsuario:
-    """BYOK (Etapa 15) — agrupa as variantes de `chamar_fn`/`embed_fn`
-    ligadas à chave que o jogador mandou no header `X-Gemini-Key` (nunca
-    persistida — só vive como closure de `functools.partial` durante este
-    request/BackgroundTask). Quando `chave` é `None`, todos os campos ficam
-    `None` e quem consome usa o próprio default (cadeia/chave do
-    servidor)."""
-
-    def __init__(self, chave: str | None) -> None:
-        self.presente = chave is not None
-        self.chamar_fn: Callable[..., Any] | None = None
-        self.chamar_fn_stream: Callable[..., Any] | None = None
-        self.chamar_fn_barato: Callable[..., Any] | None = None
-        self.embed_fn: Callable[[str], list[float]] | None = None
-        if chave is not None:
-            self.chamar_fn = functools.partial(llm_client.chamar_com_chave_usuario, api_key=chave)
-            self.chamar_fn_stream = functools.partial(llm_client.chamar_stream_com_chave_usuario, api_key=chave)
-            self.chamar_fn_barato = functools.partial(
-                llm_client.chamar_com_chave_usuario, api_key=chave, modelo=_MODELO_BARATO_BYOK
-            )
-            self.embed_fn = functools.partial(embeddings.embed_um, api_key=chave)
 
 
 def _buscar_personagem(db: Session, current_user: Usuario, session_id: str, mensagem_404: str) -> Personagem:
@@ -70,7 +46,7 @@ def _buscar_personagem(db: Session, current_user: Usuario, session_id: str, mens
     return heroi
 
 
-def _verificar_teto_diario(db: Session, current_user: Usuario, chave: _ChaveUsuario, modo_emergencia: bool) -> None:
+def _verificar_teto_diario(db: Session, current_user: Usuario, chave: ChaveUsuario, modo_emergencia: bool) -> None:
     """Etapa 10 (A-3) — teto de turnos por usuário/dia, checado antes de
     gastar uma chamada à Groq. `EventoTelemetria` (Postgres) é quem conta,
     não `slowapi` (em memória): a máquina do Fly desliga sozinha quando
@@ -98,7 +74,7 @@ def _verificar_teto_diario(db: Session, current_user: Usuario, chave: _ChaveUsua
         )
 
 
-def _tipo_telemetria_turno(chave: _ChaveUsuario, modo_emergencia: bool) -> str:
+def _tipo_telemetria_turno(chave: ChaveUsuario, modo_emergencia: bool) -> str:
     """Etapa 15 (BYOK) — discrimina o tipo de `EventoTelemetria` gravado por
     turno, pra `turnos_hoje` conseguir contar cada teto separadamente sem
     misturar turnos que não consomem cota nenhuma (`turno_byok`) com os que
@@ -190,7 +166,9 @@ def regras_xp_proximo_nivel(nivel: int) -> int | None:
     return rules_engine.XP_POR_NIVEL.get(nivel + 1)
 
 
-def _persistir_epitafio_se_confirmado(db: Session, heroi: Personagem, c_state: CombatState) -> None:
+def _persistir_epitafio_se_confirmado(
+    db: Session, heroi: Personagem, c_state: CombatState, chave: ChaveUsuario
+) -> None:
     """Fase 7 da revisão de gameplay — gerado uma vez, na primeira vez que
     `c_state.resultado` vira "morte" (chamado logo depois de
     `combat.turno_morte`, nos dois caminhos de `/chat`). `heroi.epitafio`
@@ -200,7 +178,7 @@ def _persistir_epitafio_se_confirmado(db: Session, heroi: Personagem, c_state: C
         return
     resumo = ResumoRolante.model_validate(heroi.resumo_rolante or {})
     marcantes = memory.eventos_marcantes(db, heroi.id)
-    heroi.epitafio = gerar_epitafio(heroi, marcantes, resumo)
+    heroi.epitafio = gerar_epitafio(heroi, marcantes, resumo, chamar_fn=chave.chamar_fn)
 
 
 @router.post("/load_game")
@@ -212,12 +190,26 @@ def load_game(
     w_state = WorldState.model_validate(heroi.world_state or {})
     q_state = QuestLog.model_validate(heroi.quest_log or {})
 
+    # Rodada de conserto (Parte 2, item G) — "Anteriormente…": três fatos do
+    # resumo rolante (que já existe, Etapa 5) para o jogador que volta a uma
+    # campanha em andamento lembrar onde parou, antes de ver o histórico de
+    # verdade (`historico_chat`, devolvido abaixo). `None` quando não há
+    # nada resumido ainda (campanha muito curta) — o frontend simplesmente
+    # não mostra a linha de recap.
+    resumo = ResumoRolante.model_validate(heroi.resumo_rolante or {})
+    recap = (resumo.mudancas_no_mundo + resumo.fatos_estabelecidos)[-3:]
+    anteriormente = " ".join(recap) if recap else None
+
     return _resposta(
         heroi, c_state, q_state,
         nome=heroi.nome, raca=heroi.raca, classe=heroi.classe, local=w_state.local, missao=heroi.quest_log,
         imagem=heroi.imagem, turno_mundo=w_state.turno, clima=w_state.clima,
         background=heroi.background, objetivo=heroi.objetivo, historia_texto=heroi.historia_texto,
-        historico_chat=heroi.historico_chat,
+        historico_chat=heroi.historico_chat, anteriormente=anteriormente,
+        # Rodada de conserto — antes disto, `opcoes` só vinha nos turnos de
+        # chat: recarregar uma partida deixava o jogador sem botões até
+        # jogar uma vez. `opcoes_padrao` não depende de narração nenhuma.
+        opcoes=opcoes_padrao(heroi, c_state),
     )
 
 
@@ -232,7 +224,7 @@ async def chat_endpoint(
     chave_usuario: str | None = Header(default=None, alias="X-Gemini-Key"),
     x_modo_emergencia: str | None = Header(default=None, alias="X-Modo-Emergencia"),
 ) -> dict:
-    chave = _ChaveUsuario(chave_usuario)
+    chave = ChaveUsuario(chave_usuario)
     modo_emergencia = bool(x_modo_emergencia)
     heroi = _buscar_personagem(db, current_user, user_input.session_id, "Sessão não encontrada.")
     _verificar_teto_diario(db, current_user, chave, modo_emergencia)
@@ -241,6 +233,13 @@ async def chat_endpoint(
     c_state = CombatState.model_validate(heroi.combat_state or {})
     q_state = QuestLog.model_validate(heroi.quest_log or {})
 
+    # Guardado antes de incrementar: `w_state` só é persistido perto do fim
+    # (`heroi.world_state = w_state.model_dump()`, depois de tudo dar
+    # certo) — um turno que falha nunca grava o incremento no banco, mas os
+    # retornos de erro abaixo mandavam `w_state.turno` (já incrementado)
+    # como `turno_mundo`, fazendo o HUD mostrar uma contagem que o banco
+    # nunca teve.
+    turno_mundo_persistido = w_state.turno
     w_state.turno += 1
     hist = contexto_recente(list(heroi.historico_chat), n=4)
 
@@ -252,7 +251,7 @@ async def chat_endpoint(
     if heroi.hp_atual <= 0:
         eventos_morte, hp_morte = combat.turno_morte(c_state)
         heroi.hp_atual = hp_morte
-        _persistir_epitafio_se_confirmado(db, heroi, c_state)
+        _persistir_epitafio_se_confirmado(db, heroi, c_state, chave)
         prompt_morte = (
             f"{regras.get_biblia()}\n[HEROI] {heroi.nome} está inconsciente, a 0 PV, lutando contra a morte. "
             "[MOMENTO DE ALTO IMPACTO] — a vida por um fio, o momento mais tenso do jogo. Deixe a "
@@ -313,9 +312,10 @@ async def chat_endpoint(
             # Etapa 15 (BYOK) — `erro_codigo` distingue uma falha da chave
             # do jogador (o front oferece o modo de emergência) de qualquer
             # outra falha do mestre (mensagem genérica, sem essa oferta).
+            db.rollback()
             return _resposta(
                 heroi, c_state, q_state, narrativa="", erro=True, erro_mensagem=e.mensagem,
-                erro_codigo="chave_usuario_falhou" if chave.presente else None, turno_mundo=w_state.turno,
+                erro_codigo="chave_usuario_falhou" if chave.presente else None, turno_mundo=turno_mundo_persistido,
             )
 
     violacoes = validar_narrativa(narrativa, heroi, c_state, w_state)
@@ -330,6 +330,11 @@ async def chat_endpoint(
     # jogador como texto; vira uma lista estruturada pro frontend renderizar
     # como botões (mantendo a caixa de texto livre como está).
     narrativa, opcoes = extrair_opcoes(narrativa)
+    # Rodada de conserto — se o modelo esqueceu a tag, os botões não somem:
+    # o servidor monta a partir do estado que já conhece (ver docstring de
+    # `opcoes_padrao`).
+    if not opcoes:
+        opcoes = opcoes_padrao(heroi, c_state)
 
     todos_eventos = eventos_morte + eventos_ferramentas
     if todos_eventos:
@@ -401,7 +406,7 @@ def chat_stream_endpoint(
     - `state`: sempre o último frame — o mesmo formato de `_resposta()`,
       pra o HUD atualizar HP/inventário/combate de uma vez.
     """
-    chave = _ChaveUsuario(chave_usuario)
+    chave = ChaveUsuario(chave_usuario)
     modo_emergencia = bool(x_modo_emergencia)
     heroi = _buscar_personagem(db, current_user, user_input.session_id, "Sessão não encontrada.")
     # Checado aqui, antes de `StreamingResponse` existir — depois que a
@@ -413,6 +418,9 @@ def chat_stream_endpoint(
     c_state = CombatState.model_validate(heroi.combat_state or {})
     q_state = QuestLog.model_validate(heroi.quest_log or {})
 
+    # Ver a mesma nota em `chat_endpoint` — o incremento só é persistido
+    # perto do fim; os frames de erro abaixo reportam o valor de antes.
+    turno_mundo_persistido = w_state.turno
     w_state.turno += 1
     hist = contexto_recente(list(heroi.historico_chat), n=4)
 
@@ -431,7 +439,7 @@ def chat_stream_endpoint(
         if heroi.hp_atual <= 0:
             eventos_morte, hp_morte = combat.turno_morte(c_state)
             heroi.hp_atual = hp_morte
-            _persistir_epitafio_se_confirmado(db, heroi, c_state)
+            _persistir_epitafio_se_confirmado(db, heroi, c_state, chave)
             prompt_morte = (
                 f"{regras.get_biblia()}\n[HEROI] {heroi.nome} está inconsciente, a 0 PV, lutando contra a morte. "
                 "[MOMENTO DE ALTO IMPACTO] — a vida por um fio, o momento mais tenso do jogo. Deixe a "
@@ -494,11 +502,12 @@ def chat_stream_endpoint(
                 # (Etapa 7). Este `state` final não repete ela dentro de
                 # `narrativa` — era o único lugar que ainda sujava o texto
                 # persistido com `*(...)*` (Etapa 10, A-7).
+                db.rollback()
                 yield _sse(
                     "state",
                     _resposta(
                         heroi, c_state, q_state, narrativa="", erro=True,
-                        erro_mensagem=erro_turno, turno_mundo=w_state.turno,
+                        erro_mensagem=erro_turno, turno_mundo=turno_mundo_persistido,
                     ),
                 )
                 return
@@ -514,20 +523,36 @@ def chat_stream_endpoint(
             # nunca vê a versão inconsistente), mas o cliente recebe um
             # frame à parte pra decidir como mostrar isso, em vez de um
             # replace mudo. Trade-off deliberado — ver ADR-0012.
-            corrigida = corrigir_narrativa(narrativa, violacoes, msgs)
+            #
+            # Rodada de conserto — antes disto, o frame `correcao` mandava
+            # `corrigida` CRUA (com a tag `[OPCOES]` ainda dentro, e sem
+            # `limpar_formatacao`): o guardrail reescreve a narrativa DEPOIS
+            # de tudo, então "corrigida" nunca tinha passado pela limpeza
+            # que roda mais abaixo. O jogador via a tag como texto na tela.
+            # Limpar e extrair aqui, antes do frame, resolve os dois de vez.
+            corrigida = limpar_formatacao(corrigir_narrativa(narrativa, violacoes, msgs))
+            corrigida, opcoes = extrair_opcoes(corrigida)
             yield _sse("correcao", {"narrativa": corrigida})
             narrativa = corrigida
-        # Etapa 10 (A-7) — mesma limpeza do `/chat` síncrono, antes de
-        # persistir. O jogador já viu o texto cru ao vivo nos frames
-        # `token` (limpar aqui não reescreve a tela, só o que fica salvo
-        # e vira contexto futuro) — a limpeza leve *durante* o streaming
-        # é responsabilidade do cliente (GameChat.tsx).
-        narrativa = limpar_formatacao(narrativa)
-        # Fase 1 da revisão de gameplay — mesma extração do `/chat` síncrono.
-        # A tag chega crua nos frames `token` ao vivo (o cliente já esconde
-        # a cauda "[OPCOES" enquanto ela chega — GameChat.tsx); aqui é onde
-        # o texto persistido/retomado nunca mais carrega a tag.
-        narrativa, opcoes = extrair_opcoes(narrativa)
+        else:
+            # Etapa 10 (A-7) — mesma limpeza do `/chat` síncrono, antes de
+            # persistir. O jogador já viu o texto cru ao vivo nos frames
+            # `token` (limpar aqui não reescreve a tela, só o que fica salvo
+            # e vira contexto futuro) — a limpeza leve *durante* o streaming
+            # é responsabilidade do cliente (GameChat.tsx).
+            narrativa = limpar_formatacao(narrativa)
+            # Fase 1 da revisão de gameplay — mesma extração do `/chat`
+            # síncrono. A tag chega crua nos frames `token` ao vivo (o
+            # cliente já esconde a cauda "[OPCOES" enquanto ela chega —
+            # GameChat.tsx); aqui é onde o texto persistido/retomado nunca
+            # mais carrega a tag.
+            narrativa, opcoes = extrair_opcoes(narrativa)
+
+        # Rodada de conserto — mesmo fallback do `/chat` síncrono: se o
+        # modelo esqueceu a tag (ou a correção acima não a preservou), os
+        # botões não somem.
+        if not opcoes:
+            opcoes = opcoes_padrao(heroi, c_state)
 
         todos_eventos = eventos_morte + eventos_ferramentas
         if todos_eventos:

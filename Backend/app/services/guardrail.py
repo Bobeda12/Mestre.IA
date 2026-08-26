@@ -12,6 +12,14 @@ from app.infra.data_manager import regras
 from app.infra.db import Personagem
 from app.infra.llm_client import ErroMestre, chamar_com_fallback
 
+__all__ = [
+    "corrigir_narrativa",
+    "extrair_opcoes",
+    "limpar_formatacao",
+    "opcoes_padrao",
+    "validar_narrativa",
+]
+
 # Etapa 10 (A-7) — o prompt já pede "sem markdown" (narrator.montar_contexto
 # e a bíblia), mas pedir ao modelo é a primeira linha, não a que vale: isto
 # é a segunda, determinística, aplicada antes de persistir. Importa
@@ -43,6 +51,27 @@ def extrair_opcoes(texto: str) -> tuple[str, list[str]]:
         return texto, []
     opcoes = [o.strip(" .") for o in m.group(1).split("|") if o.strip()]
     return texto[: m.start()].rstrip(), opcoes[:3]
+
+
+def opcoes_padrao(heroi: Personagem, c_state: CombatState) -> list[str]:
+    """Rodada de conserto — a tag `[OPCOES]` é a última linha de um system
+    prompt enorme (`narrator.montar_contexto`), e `corrigir_narrativa`
+    reescreve a narrativa sem nunca pedir para preservá-la: botões que só
+    aparecem quando o modelo lembra não são um recurso, são um sorteio.
+    Chamada quando `extrair_opcoes` não encontrou nada — o servidor monta
+    a partir do que ele mesmo já sabe (mesmo padrão "o modelo propõe, o
+    servidor decide" do ADR-0002, aplicado à UI), então os botões existem
+    sempre, sem depender de o modelo escrever a tag certa."""
+    if heroi.hp_atual <= 0:
+        # Teste de morte: sem ferramenta disponível, sem ação estruturada
+        # que faça sentido oferecer — só a caixa de texto livre.
+        return []
+    if c_state.ativo:
+        vivos = [i.nome for i in c_state.inimigos if i.hp > 0]
+        opcoes = [f"Atacar {vivos[0]}"] if vivos else []
+        opcoes += ["Esquivar", "Fugir"]
+        return opcoes[:3]
+    return ["Observar os arredores", "Seguir em frente", "Verificar o inventário"]
 
 
 def limpar_formatacao(texto: str) -> str:
@@ -96,7 +125,9 @@ def corrigir_narrativa(texto: str, violacoes: list[str], msgs: list[dict]) -> st
     pedido = (
         "Sua narrativa anterior tem um problema: " + "; ".join(violacoes) + ". "
         "Reescreva a narrativa corrigindo isso, mantendo o mesmo resultado mecânico "
-        "(não mude quem venceu, quanto de dano houve, etc.) — só a parte do texto que contradiz o estado."
+        "(não mude quem venceu, quanto de dano houve, etc.) — só a parte do texto que contradiz o estado. "
+        "Se a narrativa original terminava com uma linha '[OPCOES]: ...', mantenha essa linha também, "
+        "por último, sem mudar as opções."
     )
     msgs_correcao = [*msgs, {"role": "assistant", "content": texto}, {"role": "user", "content": pedido}]
     try:

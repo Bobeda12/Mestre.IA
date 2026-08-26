@@ -18,6 +18,14 @@
 > inventário); duas pendências ficaram registradas para um eval dedicado —
 > `atacar_com_aliado` e `item_usado`/encontro aleatório de viagem não tiveram o
 > disparo pelo modelo confirmado ao vivo (rate limit no meio do teste), só por pytest.
+>
+> **Atualização de 26/08/2026 — rodada de conserto.** O primeiro teste real das 9 fases
+> achou quatro bugs de costura (chave BYOK "falhando" por um bug real de compatibilidade
+> com o Gemini, HUD de combate prendendo a ficha, opções sumindo/tag vazando, dado sem
+> girar) e um veredito mais amplo ("parece beta"). Consertados, e C-8/D-6 (parcial) do
+> backlog abaixo entregues junto — ver `docs/diario/0022-rodada-de-conserto.md` e
+> ADR-0029. C-5 e C-6 continuam de fora, por decisão explícita: esta rodada foi
+> "desenvolver o que já temos", não sistema novo.
 
 # Backlog pós-lançamento — o que os primeiros testes revelaram
 
@@ -583,6 +591,13 @@ uma ladeira até a morte.
 
 ### C-8 — Aba de regras, gerada do motor
 
+> ⛔ **Superado pela rodada de conserto** (Parte 2, item K — `docs/diario/0022-rodada-de-
+> conserto.md`). `GET /regras` + aba "REGRAS" na ficha, lendo `rules_engine`/
+> `ToolExecutor`/`data/weapons.json` direto — nunca a bíblia do mestre. Cobre níveis/XP,
+> escala de CD, ações táticas e itens/aliados; **não** cobre ainda "o que ficou fora do
+> 5e" nem termos clicáveis a partir do jogo (as duas ideias abaixo) — ficam como próximo
+> passo se valer o custo.
+
 Uma aba que explica o sistema enxuto que o jogo usa: atributos e modificadores, CA, CD e a
 escala de dificuldade, dado de vida e HP, iniciativa, ataque e dano, testes de morte, XP e
 nível, descanso, e as ações táticas do D-3. Serve a três coisas ao mesmo tempo — onboarding
@@ -875,8 +890,14 @@ dano, esmaecendo ao morrer.
 
 ### D-6 — Senso de perigo
 
-> ⛔ **Superado pela Fase 1** do plano de revisão de gameplay (testes de morte visíveis
-> ainda não implementados; o resto do item segue pendente).
+> ⛔ **Testes de morte visíveis: entregues na Fase 1** do plano de revisão de gameplay
+> (nota anterior aqui estava desatualizada). **Telegrafar a intenção: versão mínima
+> entregue na rodada de conserto** (Parte 2, item I — `docs/diario/0022-rodada-de-
+> conserto.md`) como `title` no card de inimigo, mostrando o `comportamento` do bestiário
+> (ex: "Covarde. Ataca e foge"); é o ESTILO de luta, não a próxima ação exata — a versão
+> completa abaixo ("o Bugbear ergue a maça", ligada ao turno que está prestes a
+> acontecer) segue pendente. O resto do item (tela reagindo, ameaça legível, silêncio
+> antes do combate) continua em aberto.
 
 - **Testes de morte visíveis.** Mandar `sucessos_morte`/`falhas_morte` no `_resposta` e
   desenhar três caveiras e três escudos preenchendo. É a informação mais tensa que o sistema
@@ -900,11 +921,12 @@ que perdeu — sem falar "sei lá, a IA decidiu".
 
 | Ideia | Por que | h |
 |---|---|---|
-| **"Anteriormente…"** ao retomar um herói | `resumo_rolante` já existe; três linhas de recap antes do primeiro turno resolvem o "esqueci onde parei", que é o motivo real de abandono entre sessões | 3 |
+| ~~**"Anteriormente…"** ao retomar um herói~~ | ✅ entregue na rodada de conserto (Parte 2, item G) — `docs/diario/0022-rodada-de-conserto.md` | 3 |
 | **Conquistas** | o motor de retenção mais barato que existe depois do XP; e você já grava todos os eventos necessários | 4 |
 | **Página pública da tumba** (`/tumba/{slug}`) | o amigo compartilha a morte do herói e traz outro amigo. **Opt-in explícito** — a história contém texto que o jogador escreveu | 5 |
 | **Painel das suas sessões** | você já grava `EventoTelemetria` e não tem como olhar. Sem isso, o teste com amigos gera dados que ninguém lê | 5 |
-| **Tratamento visível de erro e lentidão** | quando a Groq demora ou devolve 429, o jogador precisa ver o mestre "pensando", não uma tela morta | 2 |
+| ~~**Tratamento visível de erro e lentidão**~~ | ✅ já coberto — investigado na rodada de conserto (Parte 2, item K): `loading` já liga antes da chamada de rede, indicador já visível numa chamada lenta. Sem mudança necessária | — |
+| **Proficiência de arma por classe conta no ataque** | `bonus_proficiencia` hoje entra em TODO ataque, proficiente ou não — um Mago com espada grande joga igual a um Guerreiro. Tentado na rodada de conserto (Parte 2, item H) e **adiado de propósito**: `classes.json#proficiencias` mistura categorias ("Armas Marciais") com armas específicas ("Rapiers", "Adagas") que não casam limpo com as chaves "Simples"/"Marciais" de `data/weapons.json` — forçar esse casamento arriscava matemática de combate errada sem cobertura de dado confiável. Precisa de um catálogo de proficiência por arma antes, não só o cruzamento dos dois JSONs como estão | 6 |
 
 ---
 

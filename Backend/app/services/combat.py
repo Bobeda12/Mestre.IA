@@ -50,13 +50,18 @@ def escolher_arma(inventario: list[str], proposta: str | None) -> tuple[str, dic
     return NOME_ARMA_DESARMADA, dict(_ARMA_DESARMADA)
 
 
-def _criar_inimigo(nome: str) -> Inimigo | None:
+def _criar_inimigo(nome: str, nome_exibicao: str | None = None) -> Inimigo | None:
+    """`nome_exibicao` (Parte 2, item J da rodada de conserto) — a PELE de
+    um arquétipo: `nome` continua sendo a ficha real (HP/CA/dano, sempre do
+    bestiário), só o nome mostrado ao jogador muda. `None` (o caso comum,
+    inclusive todo o resto deste arquivo) mostra o nome do arquétipo direto,
+    como sempre foi."""
     dados = regras.get_monster(nome)
     if not dados:
         return None
     nome_ataque, bonus, dano_dado = motor.parse_ataque_monstro(dados["ataque"])
     return Inimigo(
-        nome=nome,
+        nome=nome_exibicao or nome,
         hp=dados["hp"],
         max_hp=dados["hp"],
         ca=dados["ac"],
@@ -72,9 +77,18 @@ def iniciar_combate(
     atributos_heroi: dict,
     ca_heroi: int,
     rng: random.Random | None = None,
+    nivel_heroi: int = 1,
 ) -> tuple[CombatState, list[str], int]:
-    """Cria o combate a partir do bestiário real. Nomes propostos que não
-    existem em data/monsters.json são descartados; se nada sobrar, um
+    """Cria o combate a partir do bestiário real.
+
+    Nomes propostos que batem exato com o catálogo usam a ficha e o nome
+    dele, como sempre. Um nome que NÃO bate (Parte 2, item J — "chega de
+    goblins") não é mais descartado: vira a PELE de um arquétipo sorteado
+    da banda de nível do herói (`rules_engine.desafio_sugerido`) — a ficha
+    (HP/CA/dano/comportamento) é sempre a do arquétipo real, só o nome
+    exibido é o que o modelo propôs. Mesmo padrão "o modelo propõe, o
+    servidor decide" do ADR-0002, já usado em `mover(descricao_proposta)`
+    para locais. Se nada sobrar (bestiário vazio, banda sem candidato), um
     monstro de Nível 1 é sorteado — nunca mais o `{"nome": "Inimigo", "hp":
     10}` genérico de antes da Etapa 3.
 
@@ -82,14 +96,35 @@ def iniciar_combate(
     inimigo mais rápido que o herói na iniciativa ataca antes que ele possa
     reagir."""
     dado = rng or random
-    inimigos = [i for i in (_criar_inimigo(n) for n in nomes_propostos) if i is not None]
-    if not inimigos:
+    # (inimigo criado, nome do ARQUÉTIPO que decide a ficha) — guardado à
+    # parte porque `inimigo.nome` pode ser uma pele, e a rolagem de
+    # iniciativa abaixo precisa da destreza do arquétipo de verdade, não
+    # de um nome inventado que não existe em data/monsters.json.
+    pares: list[tuple[Inimigo, str]] = []
+    for nome_proposto in nomes_propostos:
+        if regras.get_monster(nome_proposto):
+            inimigo = _criar_inimigo(nome_proposto)
+            if inimigo:
+                pares.append((inimigo, nome_proposto))
+            continue
+        bandas = motor.desafio_sugerido(nivel_heroi)
+        candidatos = [c for banda in bandas for c in regras.get_monstros_por_banda(banda)]
+        if not candidatos:
+            continue
+        arquetipo = dado.choice(candidatos)
+        inimigo = _criar_inimigo(arquetipo, nome_exibicao=nome_proposto)
+        if inimigo:
+            pares.append((inimigo, arquetipo))
+
+    if not pares:
         candidatos = regras.get_monstros_nivel_1()
         if candidatos:
-            escolhido = _criar_inimigo(dado.choice(candidatos))
+            escolhido_nome = dado.choice(candidatos)
+            escolhido = _criar_inimigo(escolhido_nome)
             if escolhido:
-                inimigos = [escolhido]
+                pares = [(escolhido, escolhido_nome)]
 
+    inimigos = [i for i, _ in pares]
     c_state = CombatState(ativo=True, inimigos=inimigos)
     if not inimigos:
         return c_state, ["A cena não tinha um monstro reconhecível no bestiário — combate não iniciado."], 0
@@ -102,8 +137,8 @@ def iniciar_combate(
     # -1 representa o herói na ordem — ver domain/state.py:CombatState.
     ordem: list[tuple[int, int]] = [(-1, iniciativa_heroi)]  # (índice, iniciativa)
     dano_surpresa = 0
-    for idx, inimigo in enumerate(inimigos):
-        dados_monstro = regras.get_monster(inimigo.nome) or {}
+    for idx, (inimigo, arquetipo_nome) in enumerate(pares):
+        dados_monstro = regras.get_monster(arquetipo_nome) or {}
         mod_destreza_inimigo = motor.calcular_modificador(dados_monstro.get("destreza", 10))
         iniciativa_inimigo = motor.rolar_iniciativa(mod_destreza_inimigo, rng)
         ordem.append((idx, iniciativa_inimigo))

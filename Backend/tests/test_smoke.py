@@ -165,6 +165,84 @@ def test_historia_texto_persiste_e_volta_no_load_game(monkeypatch):
     assert dados["historia_texto"] == "Nasceu numa vila que o fogo levou."
 
 
+def test_local_inicial_novo_com_descricao_e_registrado_em_locais_descobertos(monkeypatch):
+    # Rodada de conserto (Parte 2, item J) — "chega de goblins", ponto de
+    # partida: quando o prólogo aceita um local fora do catálogo (com
+    # descrição), `create_character` precisa registrar ele em
+    # `WorldState.locais_descobertos` — senão o herói "nasceria" num lugar
+    # que o resto do motor nunca ouviu falar (`mover` recusaria).
+    from app.routers import character
+
+    monkeypatch.setattr(
+        character,
+        "gerar_prologo_missao",
+        lambda char, chamar_fn=None: {
+            "local_inicial": "Vilarejo de Corvoceu",
+            "local_inicial_descricao": "Um vilarejo de pescadores encravado num penhasco.",
+            "clima_inicial": "Nublado",
+            "nome_missao": "Missão",
+            "objetivo_missao": "Objetivo",
+            "intro_narrativa": "Texto.",
+            "atos": [
+                {"titulo": "A", "objetivo": "a"},
+                {"titulo": "B", "objetivo": "b"},
+                {"titulo": "C", "objetivo": "c"},
+            ],
+        },
+    )
+    resp = client.post("/create_character", json=_payload_base(nome="TesteLocalNovo"))
+    assert resp.status_code == 200
+    session_id = resp.json()["session_id"]
+
+    from app.infra.db import Personagem, SessionLocal
+
+    db = SessionLocal()
+    try:
+        heroi = db.query(Personagem).filter(Personagem.session_id == session_id).first()
+        assert heroi.world_state["local"] == "Vilarejo de Corvoceu"
+        descoberto = heroi.world_state["locais_descobertos"]["Vilarejo de Corvoceu"]
+        assert "penhasco" in descoberto["descricao"]
+    finally:
+        db.close()
+
+
+def test_load_game_sem_resumo_nao_traz_anteriormente(monkeypatch):
+    # Parte 2 (item G) da rodada de conserto — campanha nova, sem turnos
+    # resumidos ainda: nada para recapitular.
+    monkeypatch.setattr(llm_client, "clients", {})
+    resp = client.post("/create_character", json=_payload_base(nome="TesteSemAnteriormente"))
+    dados = client.post("/load_game", json={"session_id": resp.json()["session_id"]}).json()
+    assert dados["anteriormente"] is None
+
+
+def test_load_game_traz_anteriormente_a_partir_do_resumo_rolante(monkeypatch):
+    # Parte 2 (item G) — "Anteriormente…": três fatos do resumo rolante
+    # (Etapa 5) pro jogador que volta a uma campanha em andamento lembrar
+    # onde parou, sem esperar o histórico de chat inteiro rolar de volta.
+    monkeypatch.setattr(llm_client, "clients", {})
+    resp = client.post("/create_character", json=_payload_base(nome="TesteComAnteriormente"))
+    session_id = resp.json()["session_id"]
+
+    from app.infra.db import Personagem, SessionLocal
+
+    db = SessionLocal()
+    try:
+        heroi = db.query(Personagem).filter(Personagem.session_id == session_id).first()
+        heroi.resumo_rolante = {
+            "fatos_estabelecidos": ["O ferreiro é o irmão perdido do herói."],
+            "mudancas_no_mundo": ["A ponte do vilarejo desabou."],
+            "npcs_conhecidos": [],
+            "promessas_feitas": [],
+        }
+        db.commit()
+    finally:
+        db.close()
+
+    dados = client.post("/load_game", json={"session_id": session_id}).json()
+    assert "A ponte do vilarejo desabou." in dados["anteriormente"]
+    assert "O ferreiro é o irmão perdido do herói." in dados["anteriormente"]
+
+
 def test_historia_texto_vira_primeiro_evento_de_memoria(monkeypatch):
     monkeypatch.setattr(llm_client, "clients", {})
     payload = _payload_base(nome="TesteMemoriaHistoria", historia_texto="Um segredo que ninguém mais sabe.")
@@ -302,6 +380,88 @@ def test_chat_stream_de_ponta_a_ponta(monkeypatch):
     assert "Vocês seguem para a floresta." in dados_state["narrativa"]
     assert "🧭" in dados_state["narrativa"]  # evento da ferramenta mover, persistido igual ao /chat
     assert "ouro" in dados_state
+
+
+def test_chat_stream_com_chave_propria_de_ponta_a_ponta(monkeypatch):
+    """Item F.1 da rodada de conserto — os testes de BYOK existentes
+    (`test_telemetria_e_feedback.py`) só batiam em `/chat`, nunca no
+    `/chat/stream` que o jogo de verdade usa. É esse caminho (header →
+    `ChaveUsuario.chamar_fn_stream` → `chamar_stream_com_chave_usuario`)
+    que carregava o bug do `content: null` (ver `agent_loop.py`) — este
+    teste teria pegado uma regressão dele."""
+    from app.services import agent_loop
+    from tests.test_agent_loop import _ChunkFalso, _DeltaFalso, _DeltaToolCallFalso, _StreamLLMFalso
+
+    monkeypatch.setattr(llm_client, "clients", {})
+    criado = client.post("/create_character", json=_payload_base(nome="TesteStreamByok"))
+    assert criado.status_code == 200
+    session_id = criado.json()["session_id"]
+
+    tc = _DeltaToolCallFalso(0, id="t1", name="mover", arguments='{"destino": "Floresta das Sombras"}')
+    passo_1 = [_ChunkFalso(_DeltaFalso(tool_calls=[tc]))]
+    passo_2 = [_ChunkFalso(_DeltaFalso(content="Vocês seguem para a floresta."))]
+    fake = _StreamLLMFalso([passo_1, passo_2])
+    # `ChaveUsuario.chamar_fn_stream` é um `functools.partial` de
+    # `llm_client.chamar_stream_com_chave_usuario` — não de
+    # `chamar_stream_com_fallback` (esse é o caminho da chave do servidor,
+    # que este teste não deve exercitar).
+    monkeypatch.setattr(agent_loop, "chamar_stream_com_fallback", None)  # não deveria ser chamado
+    monkeypatch.setattr(llm_client, "chamar_stream_com_chave_usuario", lambda msgs, api_key, **k: fake(msgs, **k))
+
+    resp = client.post(
+        "/chat/stream",
+        json={"session_id": session_id, "action": "Eu vou para a floresta"},
+        headers={"X-Gemini-Key": "chave-de-teste"},
+    )
+    assert resp.status_code == 200
+
+    corpo = resp.text
+    frames = [f for f in corpo.strip().split("\n\n") if f]
+    assert frames[-1].startswith("event: state")
+    dados_state = json.loads(frames[-1].split("data: ", 1)[1])
+    assert "Vocês seguem para a floresta." in dados_state["narrativa"]
+    assert fake.chamadas == 2
+
+
+def test_chat_stream_frame_de_correcao_nao_vaza_tag_nem_markdown(monkeypatch):
+    """Item C da rodada de conserto — achado ao vivo: o frame `correcao`
+    mandava a narrativa corrigida CRUA (com `[OPCOES]` e markdown ainda
+    dentro), porque a limpeza/extração só rodava depois do frame já ter
+    saído. O jogador via a tag como texto na tela, sem nenhum botão."""
+    from app.routers import game
+    from app.services import agent_loop
+    from tests.test_agent_loop import _ChunkFalso, _DeltaFalso, _StreamLLMFalso
+
+    monkeypatch.setattr(llm_client, "clients", {})
+    criado = client.post("/create_character", json=_payload_base(nome="TesteCorrecaoStream"))
+    assert criado.status_code == 200
+    session_id = criado.json()["session_id"]
+
+    passo = [_ChunkFalso(_DeltaFalso(content="Você usa sua Espada Longa."))]
+    fake = _StreamLLMFalso([passo])
+    monkeypatch.setattr(agent_loop, "chamar_stream_com_fallback", fake)
+    # Força uma violação (não importa qual) — o que este teste prova é o
+    # que acontece DEPOIS da violação, não a heurística que a detecta.
+    monkeypatch.setattr(game, "validar_narrativa", lambda *a, **k: ["item fora do inventário"])
+    monkeypatch.setattr(
+        game,
+        "corrigir_narrativa",
+        lambda *a, **k: "**Corrigido.**\n[OPCOES]: Atacar|Recuar|Esperar",
+    )
+
+    resp = client.post("/chat/stream", json={"session_id": session_id, "action": "Eu ataco"})
+    assert resp.status_code == 200
+
+    frames = [f for f in resp.text.strip().split("\n\n") if f]
+    frame_correcao = next(f for f in frames if f.startswith("event: correcao"))
+    dados_correcao = json.loads(frame_correcao.split("data: ", 1)[1])
+    assert "[OPCOES" not in dados_correcao["narrativa"]
+    assert "**" not in dados_correcao["narrativa"]
+    assert dados_correcao["narrativa"] == "Corrigido."
+
+    dados_state = json.loads(frames[-1].split("data: ", 1)[1])
+    assert dados_state["opcoes"] == ["Atacar", "Recuar", "Esperar"]
+    assert "[OPCOES" not in dados_state["narrativa"]
 
 
 def test_cronica_de_sessao_inexistente_devolve_404():

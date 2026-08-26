@@ -72,6 +72,16 @@ describe('RollCard', () => {
     expect(screen.getByText('SUCESSO')).toBeInTheDocument();
   });
 
+  it('mostra o motivo do teste, não só o atributo (rodada de conserto)', () => {
+    renderRevelado(dados({ tipo: 'teste', atributo: 'sabedoria', motivo: 'perceber a emboscada no escuro' }));
+    expect(screen.getByText('perceber a emboscada no escuro')).toBeInTheDocument();
+  });
+
+  it('sem motivo, não mostra linha nenhuma de motivo', () => {
+    renderRevelado(dados({ tipo: 'teste', atributo: 'sabedoria', motivo: undefined }));
+    expect(screen.queryByTitle(/./)).not.toBeInTheDocument();
+  });
+
   it('rotula SUCESSO/FALHA para um teste sem sucesso', () => {
     renderRevelado(dados({ tipo: 'teste', ca: undefined, cd: 12, sucesso: false, dano: undefined }));
     expect(screen.getByText('FALHA')).toBeInTheDocument();
@@ -103,5 +113,39 @@ describe('RollCard', () => {
   it('omite o dano quando não houve (ataque errado)', () => {
     renderRevelado(dados({ sucesso: false, dano: 0 }));
     expect(screen.queryByText(/dano/)).not.toBeInTheDocument();
+  });
+});
+
+// Rodada de conserto — achado ao vivo: com "prefers-reduced-motion" ligado
+// no sistema, `index.css` já mata a animação do dado via CSS, mas o
+// `setTimeout` de RollCard continuava esperando os mesmos ~700ms mesmo sem
+// nenhum giro pra ver — a narração parecia travar à toa.
+describe('RollCard com movimento reduzido', () => {
+  const matchMediaOriginal = window.matchMedia;
+
+  beforeEach(() => {
+    window.matchMedia = ((query: string) => ({
+      matches: query === '(prefers-reduced-motion: reduce)',
+      media: query,
+      onchange: null,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      addListener: () => {},
+      removeListener: () => {},
+      dispatchEvent: () => false,
+    })) as typeof window.matchMedia;
+  });
+
+  afterEach(() => {
+    window.matchMedia = matchMediaOriginal;
+  });
+
+  it('revela o resultado na hora, sem esperar a animação', () => {
+    // Sem `act(() => vi.advanceTimersByTime(...))` nenhum — se isto
+    // dependesse do timer, o teste falharia porque o relógio fake nunca
+    // avança aqui.
+    render(<RollCard dados={dados()} />);
+    expect(screen.queryByText('rolando')).not.toBeInTheDocument();
+    expect(screen.getByText('ACERTO')).toBeInTheDocument();
   });
 });

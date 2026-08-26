@@ -10,9 +10,15 @@ from app.infra.llm_client import ErroMestre
 from app.services import guardrail
 
 
-def _heroi(inventario=None) -> Personagem:
+def _heroi(inventario=None, hp_atual: int = 10) -> Personagem:
     return Personagem(
-        nome="TesteGuardrail", hp_atual=10, hp_max=10, defesa=15, ouro=10, atributos={}, inventario=inventario or []
+        nome="TesteGuardrail",
+        hp_atual=hp_atual,
+        hp_max=10,
+        defesa=15,
+        ouro=10,
+        atributos={},
+        inventario=inventario or [],
     )
 
 
@@ -120,6 +126,40 @@ class TestExtrairOpcoes:
         limpo, opcoes = guardrail.extrair_opcoes(texto)
         assert limpo == "O goblin recua."
         assert opcoes == ["Perseguir", "Recuar", "Examinar o corpo"]
+
+
+class TestOpcoesPadrao:
+    """Rodada de conserto — quando o modelo esquece a tag `[OPCOES]`, o
+    servidor monta as opções sozinho, a partir do estado que já conhece."""
+
+    def test_a_zero_pv_nao_ha_opcoes(self):
+        heroi = _heroi(hp_atual=0)
+        assert guardrail.opcoes_padrao(heroi, CombatState()) == []
+
+    def test_fora_de_combate_devolve_verbos_genericos(self):
+        heroi = _heroi()
+        opcoes = guardrail.opcoes_padrao(heroi, CombatState(ativo=False))
+        assert len(opcoes) == 3
+
+    def test_em_combate_sugere_atacar_o_primeiro_inimigo_vivo(self):
+        heroi = _heroi()
+        c_state = CombatState(
+            ativo=True,
+            inimigos=[
+                Inimigo(nome="Goblin", hp=0, max_hp=7, ca=13),
+                Inimigo(nome="Lobo", hp=5, max_hp=8, ca=12),
+            ],
+        )
+        opcoes = guardrail.opcoes_padrao(heroi, c_state)
+        assert opcoes[0] == "Atacar Lobo"
+        assert "Esquivar" in opcoes
+        assert "Fugir" in opcoes
+
+    def test_em_combate_sem_ninguem_vivo_nao_sugere_atacar(self):
+        heroi = _heroi()
+        c_state = CombatState(ativo=True, inimigos=[Inimigo(nome="Goblin", hp=0, max_hp=7, ca=13)])
+        opcoes = guardrail.opcoes_padrao(heroi, c_state)
+        assert all(not o.startswith("Atacar") for o in opcoes)
 
 
 class _MensagemFalsa:

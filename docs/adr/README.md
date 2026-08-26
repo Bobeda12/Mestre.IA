@@ -31,6 +31,7 @@ Template: [`0000-template.md`](0000-template.md) · Sistema completo: [`../READM
 | [0026](0026-curva-de-xp-propria-e-escalonamento-de-perigo.md) | Curva de XP própria, XP fora de combate e escalonamento de perigo pelo servidor | Revisão de gameplay (Fase 0) | ✅ aceito | 25/08/2026 |
 | [0027](0027-companheiros-mecanicos-revisao-do-9-3.md) | Companheiros mecânicos: revisão parcial do §9.3 (single-player) | Revisão de gameplay (Fase 2) | ✅ aceito | 25/08/2026 |
 | [0028](0028-locais-inventados-revisao-da-validacao-fechada-de-mover.md) | Locais inventados: revisão da validação fechada de `mover` | Revisão de gameplay (Fase 5) | ✅ aceito | 25/08/2026 |
+| [0029](0029-pele-e-ficha-separadas.md) | Pele e ficha separadas: nome do monstro/local inicial deixam de estar presos à ficha | Rodada de conserto (Parte 2, item J) | ✅ aceito | 26/08/2026 |
 
 **Legenda:** 🕓 previsto · ✅ aceito · ⛔ substituído
 

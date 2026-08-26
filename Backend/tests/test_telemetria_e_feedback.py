@@ -406,3 +406,37 @@ def test_feedback_de_outro_usuario_devolve_403(client, monkeypatch):
 
     resp = cliente_b.post(f"/personagens/{session_id}/feedback", json={"turno_index": 0, "valor": -1})
     assert resp.status_code == 403
+
+
+# ---------------------------------------------------------------------------
+# POST /byok/validar (rodada de conserto)
+# ---------------------------------------------------------------------------
+
+
+def test_validar_chave_vazia_e_rejeitado(client):
+    _registrar(client, "byok-validar-vazia@teste.com")
+    resp = client.post("/byok/validar", json={"chave": "   "})
+    assert resp.status_code == 400
+
+
+def test_validar_chave_boa_devolve_200(client, monkeypatch):
+    from app.routers import byok
+
+    _registrar(client, "byok-validar-boa@teste.com")
+    monkeypatch.setattr(byok, "validar_chave_usuario", lambda chave: None)
+    resp = client.post("/byok/validar", json={"chave": "chave-de-teste"})
+    assert resp.status_code == 200
+    assert resp.json() == {"valida": True}
+
+
+def test_validar_chave_ruim_devolve_422_com_o_motivo(client, monkeypatch):
+    from app.routers import byok
+
+    def _falha(chave):
+        raise ErroMestre("Sua chave foi recusada pelo Gemini — confira se ela está correta.")
+
+    _registrar(client, "byok-validar-ruim@teste.com")
+    monkeypatch.setattr(byok, "validar_chave_usuario", _falha)
+    resp = client.post("/byok/validar", json={"chave": "chave-ruim"})
+    assert resp.status_code == 422
+    assert "recusada" in resp.json()["detail"]

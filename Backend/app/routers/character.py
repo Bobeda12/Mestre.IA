@@ -1,10 +1,11 @@
 import random
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException
 from sqlalchemy.orm import Session
 
 from app.domain.character import CharacterCreationRequest
-from app.domain.state import CombatState, QuestLog, WorldState
+from app.domain.state import CombatState, LocalDescoberto, QuestLog, WorldState
+from app.infra.byok import ChaveUsuario
 from app.infra.data_manager import regras
 from app.infra.db import Personagem, Usuario, get_db
 from app.services import memory, telemetria
@@ -20,7 +21,12 @@ def create_character(
     char: CharacterCreationRequest,
     current_user: Usuario = Depends(get_current_verified_user),
     db: Session = Depends(get_db),
+    # BYOK (rodada de conserto) — antes desta mudança, criar personagem
+    # sempre gastava a conta do servidor mesmo com "Traga sua própria
+    # chave" ativado; só os turnos de jogo respeitavam o header.
+    chave_usuario: str | None = Header(default=None, alias="X-Gemini-Key"),
 ) -> dict:
+    chave = ChaveUsuario(chave_usuario)
     d_classe = regras.get_class_details(char.classe)
     d_raca = regras.get_race_details(char.raca)
     if not d_classe:
@@ -58,9 +64,20 @@ def create_character(
     defesa = 10 + calcular_modificador(attr_final["destreza"])
 
     session_id = f"{char.nome.lower()}_{random.randint(1000, 9999)}"
-    roteiro = gerar_prologo_missao(char)
+    roteiro = gerar_prologo_missao(char, chamar_fn=chave.chamar_fn)
 
     world_state = WorldState(local=roteiro["local_inicial"], clima=roteiro["clima_inicial"], turno=1)
+    # Rodada de conserto (Parte 2, item J) — "chega de goblins", agora
+    # também pro ponto de partida: quando `gerar_prologo_missao` aceitou um
+    # local NOVO (fora de data/locations.json, com descrição de verdade), é
+    # aqui que ele entra pra valer em `locais_descobertos` — mesmo formato
+    # que `tools.mover(descricao_proposta)` já usa em pleno jogo. Sem isto,
+    # o herói "nasceria" num lugar que o resto do motor nunca ouviu falar.
+    descricao_local_novo = roteiro.get("local_inicial_descricao")
+    if descricao_local_novo:
+        world_state.locais_descobertos = {
+            roteiro["local_inicial"]: LocalDescoberto(descricao=descricao_local_novo, clima=roteiro["clima_inicial"])
+        }
     # Fase 4 da revisão de gameplay — o esqueleto de Atos nasce junto com o
     # prólogo (mesma chamada ao modelo, `gerar_prologo_missao` já valida o
     # formato antes de devolver).

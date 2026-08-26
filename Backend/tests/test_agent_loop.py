@@ -92,6 +92,30 @@ def test_uma_chamada_de_ferramenta_depois_narrativa_final(monkeypatch):
     assert fake.chamadas == 2
 
 
+def test_mensagem_de_tool_call_nunca_manda_content_none(monkeypatch):
+    # BYOK (Etapa 15) — achado ao vivo: quando o modelo chama uma ferramenta
+    # sem escrever texto antes (`mensagem.content is None`, o caso comum),
+    # `content: null` nessa mensagem de assistente é aceito pela Groq mas
+    # rejeitado com 400 pela camada de compatibilidade OpenAI do Gemini.
+    # `msgs` é mutado in-place por `executar_turno` — inspecionar depois da
+    # chamada é o jeito de verificar o que teria sido mandado na próxima.
+    fake = _LLMFalso(
+        [
+            _MensagemFalsa(content=None, tool_calls=[_ToolCallFalso("t1", "mover", '{"destino": "Floresta"}')]),
+            _MensagemFalsa(content="Vocês chegam à floresta."),
+        ]
+    )
+    monkeypatch.setattr(agent_loop, "chamar_com_fallback", fake)
+    executor = FakeExecutor({"mover": ({"local": "Floresta"}, True)})
+    msgs: list[dict] = []
+
+    agent_loop.executar_turno(msgs, executor)
+
+    mensagem_assistente = next(m for m in msgs if m["role"] == "assistant")
+    assert mensagem_assistente["content"] == ""
+    assert mensagem_assistente["content"] is not None
+
+
 def test_multiplas_chamadas_no_mesmo_passo(monkeypatch):
     fake = _LLMFalso(
         [
@@ -240,6 +264,25 @@ def test_stream_tool_call_gera_tool_event_antes_da_narrativa_final():
     assert fake.chamadas == 2
 
 
+def test_stream_mensagem_de_tool_call_nunca_manda_content_none():
+    # Mesmo achado do teste síncrono acima, no caminho de streaming: aqui
+    # `conteudo` começa como `""` (nenhum delta de texto chegou antes da
+    # tool_call), e o bug original era `conteudo or None` — que também
+    # rebaixava string vazia para `None`.
+    passo_1 = [_ChunkFalso(_DeltaFalso(tool_calls=[_DeltaToolCallFalso(0, id="t1", name="rolar_teste")])),
+               _ChunkFalso(_DeltaFalso(tool_calls=[_DeltaToolCallFalso(0, arguments='{"atributo": "destreza"}')]))]
+    passo_2 = [_ChunkFalso(_DeltaFalso(content="Você se esgueira."))]
+    fake = _StreamLLMFalso([passo_1, passo_2])
+    executor = FakeExecutorEstruturado({"rolar_teste": ({"sucesso": True}, True)})
+    msgs: list[dict] = []
+
+    list(agent_loop.executar_turno_stream(msgs, executor, chamar_fn=fake))
+
+    mensagem_assistente = next(m for m in msgs if m["role"] == "assistant")
+    assert mensagem_assistente["content"] == ""
+    assert mensagem_assistente["content"] is not None
+
+
 def test_stream_ferramenta_sem_evento_estruturado_nao_gera_tool_event():
     # FakeExecutor "comum" (do resto deste arquivo) só produz string solta,
     # sem EventoRolagem — não deve virar card.
@@ -265,7 +308,7 @@ def test_stream_erro_do_modelo_vira_evento_de_erro():
     assert eventos[0].dados == "todos os modelos falharam"
 
 
-def test_stream_limite_de_passos_estourado_gera_token_de_recuperacao():
+def test_stream_limite_de_passos_estourado_gera_evento_de_erro():
     sempre_chama_ferramenta = [
         [_ChunkFalso(_DeltaFalso(tool_calls=[_DeltaToolCallFalso(0, id=f"t{i}", name="mover", arguments="{}")]))]
         for i in range(5)
@@ -275,6 +318,8 @@ def test_stream_limite_de_passos_estourado_gera_token_de_recuperacao():
 
     eventos = list(agent_loop.executar_turno_stream([], executor, max_passos=3, chamar_fn=fake))
 
-    assert eventos[-1].tipo == "token"
+    # Etapa 10 (A-7) tira o padrão `*(...)*` de todo frame de sistema — este
+    # era o único lugar que ainda chegava como "token" em vez de "erro".
+    assert eventos[-1].tipo == "erro"
     assert "perdeu o fio" in eventos[-1].dados
     assert fake.chamadas == 3

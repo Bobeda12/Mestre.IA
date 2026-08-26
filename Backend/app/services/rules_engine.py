@@ -129,6 +129,38 @@ class ResultadoTeste:
     vantagem: bool | None = None
 
 
+# Rodada de conserto (Parte 2, item H) — raça e classe hoje só valem +2 num
+# atributo na criação e um retrato; depois disso o narrador só recebe o
+# rótulo. Esta é a primeira passada de "traço com efeito de verdade": uma
+# tabela pequena e explícita, não um parser de regra genérico — cada linha
+# é um traço do bestiário (`data/races.json`) e as palavras do `motivo` do
+# teste (rolar_teste, `services/tools.py`) que o ativam. O SERVIDOR decide
+# se a vantagem vale, lendo o traço do catálogo; o modelo não ganha poder
+# novo, só passa a ser ouvido. Ajustar/expandir com `evals/simulador.py`
+# se faltar ou sobrar traço, não chutar de novo — mesmo espírito de
+# `BONUS_ITEM_COM_TAG` (services/tools.py) e `CD_ACAO_TATICA`.
+_GATILHOS_VANTAGEM_POR_TRACO: dict[str, tuple[str, ...]] = {
+    "Resistência a Veneno": ("veneno", "envenenad", "tóxic"),
+    "Sentidos Aguçados": ("perceber", "percepção", "notar", "farejar", "escutar", "ouvir"),
+    "Ancestralidade Feérica": ("charme", "encantar", "enfeitiç", "dormir", "sono", "hipnos"),
+}
+
+
+def vantagem_por_traco(tracos: list[str], visao_no_escuro: bool, motivo: str | None) -> bool:
+    """`True` se algum traço do herói casa com o motivo do teste. `motivo`
+    vazio/`None` nunca ativa nada — sem descrição não há o que casar, e o
+    padrão seguro é não conceder vantagem à toa."""
+    if not motivo:
+        return False
+    motivo_lower = motivo.lower()
+    if visao_no_escuro and any(p in motivo_lower for p in ("escuro", "penumbra", "sombra", "noite")):
+        return True
+    return any(
+        traco in tracos and any(gatilho in motivo_lower for gatilho in gatilhos)
+        for traco, gatilhos in _GATILHOS_VANTAGEM_POR_TRACO.items()
+    )
+
+
 def resolver_teste_atributo(
     modificador: int, cd: int, rng: random.Random | None = None, vantagem: bool | None = None
 ) -> ResultadoTeste:

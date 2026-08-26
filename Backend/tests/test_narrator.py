@@ -26,6 +26,28 @@ def _contexto_base() -> tuple[CombatState, WorldState, QuestLog]:
 
 
 class TestMontarContexto:
+    def test_tracos_de_raca_e_classe_aparecem_no_prompt(self):
+        # Rodada de conserto (Parte 2, item H) — antes disto, o narrador só
+        # recebia o rótulo "Anão Guerreiro"; agora sabe quais traços e
+        # proficiências vêm do catálogo (data/races.json/classes.json).
+        heroi = Personagem(
+            nome="TesteNarrador", raca="Anão", classe="Guerreiro", hp_atual=8, hp_max=10, ouro=5, inventario=[]
+        )
+        c_state, w_state, q_state = _contexto_base()
+        prompt = montar_contexto(heroi, w_state, c_state, q_state)
+        assert "[TRAÇOS]" in prompt
+        assert "Resistência a Veneno" in prompt
+        assert "Todas as Armaduras" in prompt  # proficiência de Guerreiro
+
+    def test_raca_desconhecida_nao_quebra_o_prompt(self):
+        heroi = Personagem(
+            nome="TesteNarrador", raca="Isso não existe", classe="Guerreiro",
+            hp_atual=8, hp_max=10, ouro=5, inventario=[],
+        )
+        c_state, w_state, q_state = _contexto_base()
+        prompt = montar_contexto(heroi, w_state, c_state, q_state)
+        assert "nenhum catalogado" in prompt
+
     def test_sem_memoria_nenhuma_secao_extra_aparece(self):
         c_state, w_state, q_state = _contexto_base()
         prompt = montar_contexto(_heroi(), w_state, c_state, q_state)
@@ -181,6 +203,44 @@ class TestGerarPrologoMissaoLocalInicial:
         )
         roteiro = gerar_prologo_missao(_personagem_criacao())
         assert roteiro["local_inicial"] == "Vila de Phandalin"
+
+    def test_local_novo_com_descricao_e_aceito(self, monkeypatch):
+        # Rodada de conserto (Parte 2, item J) — "chega de goblins" também
+        # pro ponto de partida: um lugar fora do catálogo é aceito QUANDO
+        # vem com descrição de verdade (mesmo padrão de `mover`, Fase 5).
+        provedor_principal, _ = llm_client.CADEIA[0]
+        monkeypatch.setattr(
+            llm_client, "clients",
+            {provedor_principal: _ClienteFalso({
+                "local_inicial": "Vilarejo de Corvoceu",
+                "local_inicial_descricao": "Um vilarejo de pescadores encravado num penhasco.",
+                "clima_inicial": "Nublado",
+                "nome_missao": "Missão",
+                "objetivo_missao": "Objetivo",
+                "intro_narrativa": "Texto.",
+            })},
+        )
+        roteiro = gerar_prologo_missao(_personagem_criacao())
+        assert roteiro["local_inicial"] == "Vilarejo de Corvoceu"
+        assert "penhasco" in roteiro["local_inicial_descricao"]
+
+    def test_local_novo_sem_descricao_ainda_cai_no_padrao(self, monkeypatch):
+        # A rede de segurança original continua valendo: um nome fora do
+        # catálogo SEM descrição não vira lugar nenhum — cai no padrão.
+        provedor_principal, _ = llm_client.CADEIA[0]
+        monkeypatch.setattr(
+            llm_client, "clients",
+            {provedor_principal: _ClienteFalso({
+                "local_inicial": "Vilarejo de Corvoceu",
+                "clima_inicial": "Nublado",
+                "nome_missao": "Missão",
+                "objetivo_missao": "Objetivo",
+                "intro_narrativa": "Texto.",
+            })},
+        )
+        roteiro = gerar_prologo_missao(_personagem_criacao())
+        assert roteiro["local_inicial"] == "Vila de Phandalin"
+        assert roteiro["local_inicial_descricao"] is None
 
     def test_local_valido_do_modelo_e_mantido(self, monkeypatch):
         provedor_principal, _ = llm_client.CADEIA[0]

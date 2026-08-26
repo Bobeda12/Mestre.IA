@@ -44,6 +44,14 @@ class DadosRolagem:
     # em vez de esconder a segunda rolagem.
     d20_extra: int | None = None
     vantagem: bool | None = None
+    # Rodada de conserto (Parte 2, item I) — "Teste de Sabedoria" não dizia
+    # se era pra perceber uma emboscada ou resistir a medo; `motivo` é o
+    # argumento que o modelo já manda pra `rolar_teste` (ele decide a ação,
+    # o servidor decide o resultado — mesmo padrão de sempre), só que agora
+    # também chega ao card em vez de morrer na chamada. `None` em ataques
+    # (o alvo/arma já contam essa história) e em testes de eventos antigos
+    # sem o campo.
+    motivo: str | None = None
 
     def to_dict(self) -> dict:
         return asdict(self)
