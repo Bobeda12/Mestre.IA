@@ -76,6 +76,14 @@ body {
   color: #d4c5a9;
 }
 
+/* Rede de segurança contra estouro horizontal (ex.: `w-screen`, que é mais
+   largo que o viewport visível quando há scrollbar vertical) — não deveria
+   disparar nunca, mas evita reintroduzir o bug se o padrão w-screen voltar
+   em algum componente. */
+html {
+  overflow-x: hidden;
+}
+
 /* Efeito de Brilho Dourado para Textos Épicos */
 .text-glow {
   text-shadow: 0 0 10px rgba(197, 160, 89, 0.5);

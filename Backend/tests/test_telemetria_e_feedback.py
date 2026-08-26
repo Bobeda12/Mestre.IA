@@ -93,6 +93,28 @@ def test_arquivar_personagem_registra_evento(client, monkeypatch):
     assert len(depois) == antes + 1
 
 
+def test_excluir_personagem_remove_e_registra_evento(client, monkeypatch):
+    monkeypatch.setattr(llm_client, "clients", {})
+    _registrar(client, "telemetria-excluir@teste.com")
+    session_id = client.post("/create_character", json=_payload_base(nome="HeroiExcluir")).json()["session_id"]
+
+    antes = len(_eventos_do_tipo("personagem_excluido"))
+    resp = client.delete(f"/personagens/{session_id}")
+    assert resp.status_code == 200
+
+    depois = _eventos_do_tipo("personagem_excluido")
+    assert len(depois) == antes + 1
+
+    lista = client.get("/personagens").json()
+    assert all(p["session_id"] != session_id for p in lista)
+
+    db = SessionLocal()
+    try:
+        assert db.query(Personagem).filter(Personagem.session_id == session_id).first() is None
+    finally:
+        db.close()
+
+
 def test_chat_registra_evento_turno(client, monkeypatch):
     monkeypatch.setattr(llm_client, "clients", {})
     _registrar(client, "telemetria-turno@teste.com")

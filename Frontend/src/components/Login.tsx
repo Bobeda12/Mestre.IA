@@ -7,6 +7,7 @@ import { useInvalidarAuth } from '../lib/auth';
 import ConfirmeEmail from './ConfirmeEmail';
 import PixelIcon from './PixelIcon';
 import PixelButton from './PixelButton';
+import { PIXEL_BUTTON_CLASS, pixelButtonBorderStyle } from '../lib/pixelButtonEstilo';
 import Carregando from './Carregando';
 import MapaDeFundo from './MapaDeFundo';
 import BotaoConfig from './BotaoConfig';
@@ -200,21 +201,25 @@ export default function Login() {
           {modo === 'entrar' ? 'Não tem conta? Criar uma' : 'Já tem conta? Entrar'}
         </button>
 
-        {opcoes.data?.google_disponivel && (
+        {opcoes.isLoading ? (
           <>
             <Divisor>ou</Divisor>
-            {/* A marca do Google tem regra própria de apresentação (fundo
-                branco, texto escuro), então este é o único controle do app que
-                fica fora da paleta pixel de propósito. O que dá pra alinhar
-                sem descaracterizar é o canto reto e a borda grossa. */}
+            <div className="w-full h-[52px] flex items-center justify-center border-2 border-gray-700 bg-black/30 text-gray-500">
+              <Carregando tamanho={6} rotulo="Carregando opções de login" />
+            </div>
+          </>
+        ) : opcoes.data?.google_disponivel ? (
+          <>
+            <Divisor>ou</Divisor>
             <a
               href={`${API_URL}/auth/google/iniciar`}
-              className="w-full flex items-center justify-center gap-2 bg-white hover:bg-gray-200 text-gray-900 font-bold py-3 border-2 border-black transition-colors"
+              className={`${PIXEL_BUTTON_CLASS} w-full flex items-center justify-center gap-2 py-3 text-[10px] md:text-xs no-underline`}
+              style={pixelButtonBorderStyle('dourado')}
             >
               Entrar com Google
             </a>
           </>
-        )}
+        ) : null}
       </div>
     </div>
   );

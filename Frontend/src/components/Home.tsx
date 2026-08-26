@@ -49,11 +49,12 @@ export default function Home() {
     onError: () => alert('Erro: esse herói não existe mais, ou não é seu.'),
   });
 
-  const arquivar = useMutation({
+  const excluir = useMutation({
     mutationFn: async (sessionId: string) => {
-      await api.patch(`/personagens/${sessionId}/arquivar`);
+      await api.delete(`/personagens/${sessionId}`);
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['personagens'] }),
+    onError: () => alert('Erro: não foi possível excluir esse herói. Tenta de novo.'),
   });
 
   const sair = useMutation({
@@ -65,7 +66,7 @@ export default function Home() {
   });
 
   return (
-    <div className="min-h-[100dvh] w-screen bg-rpg-darker flex flex-col items-center relative overflow-x-hidden">
+    <div className="min-h-[100dvh] w-full bg-rpg-darker flex flex-col items-center relative overflow-x-hidden">
 
       {/* Etapa 14 (revisão) — o fundo era um tile de masmorra repetido, e leu
           como defeito. Agora é um mapa de overworld deslizando devagar, que é
@@ -150,7 +151,7 @@ export default function Home() {
                   Nenhum herói ainda. Crie sua lenda.
                 </p>
               ) : (
-                personagens.data.map((p) => (
+                personagens.data.map((p, i) => (
                   <div
                     key={p.session_id}
                     onClick={() => loadGame.mutate(p.session_id)}
@@ -158,7 +159,8 @@ export default function Home() {
                     tabIndex={0}
                     onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); loadGame.mutate(p.session_id); } }}
                     aria-label={`Continuar como ${p.nome}, ${p.raca} ${p.classe}`}
-                    className="group flex items-center gap-3 p-2 bg-black/70 border-2 border-gray-700 hover:border-rpg-gold cursor-pointer transition-colors relative focus-visible:outline-none focus-visible:border-rpg-gold"
+                    style={{ animationDelay: `${i * 60}ms` }}
+                    className="group flex items-center gap-3 p-2 bg-black/70 border-2 border-gray-700 hover:border-rpg-gold hover:-translate-y-0.5 hover:scale-[1.01] active:translate-y-0 active:scale-[0.99] cursor-pointer transition-all duration-150 relative focus-visible:outline-none focus-visible:border-rpg-gold animate-fade-in"
                   >
                     <div className="pixel-frame w-12 h-12 shrink-0 bg-black overflow-hidden">
                       <img src={getLocalImage('classes', p.classe)} alt="" className="w-full h-full" />
@@ -176,12 +178,17 @@ export default function Home() {
                     </span>
 
                     <button
-                      onClick={(e) => { e.stopPropagation(); arquivar.mutate(p.session_id); }}
-                      className="absolute top-1 right-1 p-1 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none transition-opacity"
-                      title="Arquivar herói"
-                      aria-label={`Arquivar ${p.nome}`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (window.confirm('Deseja mesmo excluir este herói?')) {
+                          excluir.mutate(p.session_id);
+                        }
+                      }}
+                      className="absolute top-1 right-1 p-1 opacity-40 hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none transition-opacity"
+                      title="Excluir herói"
+                      aria-label={`Excluir ${p.nome}`}
                     >
-                      <PixelIcon name="bau" size={14} />
+                      <PixelIcon name="fechar" size={14} />
                     </button>
                   </div>
                 ))

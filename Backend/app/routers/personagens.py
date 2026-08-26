@@ -3,7 +3,7 @@ from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
 
 from app.infra.byok import ChaveUsuario
-from app.infra.db import FeedbackNarracao, Personagem, Usuario, get_db
+from app.infra.db import EventoMemoria, EventoTelemetria, FeedbackNarracao, Personagem, Usuario, get_db
 from app.services import memory, telemetria
 from app.services.auth import get_current_user
 from app.services.narrator import gerar_cronica
@@ -76,6 +76,32 @@ def arquivar_personagem(
     db.commit()
     telemetria.registrar_evento(db, current_user.id, "personagem_arquivado", personagem_id=personagem.id)
     return {"status": "arquivado"}
+
+
+@router.delete("/{session_id}")
+def excluir_personagem(
+    session_id: str, current_user: Usuario = Depends(get_current_user), db: Session = Depends(get_db)
+) -> dict:
+    """Exclusão de verdade (não arquivamento) — pedido explícito do usuário:
+    um herói descartado não deveria continuar ocupando espaço no banco.
+    `Personagem` tem tabelas filhas (EventoMemoria, EventoTelemetria,
+    FeedbackNarracao) com FK sem ON DELETE CASCADE, então as linhas filhas
+    precisam ser apagadas primeiro, ou o DELETE do personagem viola a
+    constraint assim que a campanha tiver qualquer evento registrado."""
+    personagem = db.query(Personagem).filter(Personagem.session_id == session_id).first()
+    if personagem is None:
+        raise HTTPException(status_code=404, detail="Personagem não encontrado.")
+    if personagem.usuario_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Este personagem não pertence a você.")
+    personagem_id = personagem.id
+    db.query(EventoMemoria).filter(EventoMemoria.personagem_id == personagem_id).delete()
+    db.query(FeedbackNarracao).filter(FeedbackNarracao.personagem_id == personagem_id).delete()
+    db.query(EventoTelemetria).filter(EventoTelemetria.personagem_id == personagem_id).delete()
+    db.delete(personagem)
+    db.commit()
+    # Sem personagem_id: o personagem já não existe mais para referenciar.
+    telemetria.registrar_evento(db, current_user.id, "personagem_excluido")
+    return {"status": "excluido"}
 
 
 @router.post("/{session_id}/feedback", status_code=201)

@@ -5,6 +5,7 @@ import CharacterCreation from './components/CharacterCreation';
 import GameChat from './components/GameChat';
 import Login from './components/Login';
 import ConfirmeEmail from './components/ConfirmeEmail';
+import Carregando from './components/Carregando';
 import { useAuth } from './lib/auth';
 
 // Etapa 7, ADR-0013: TanStack Query substitui os `useEffect` + `axios`
@@ -21,7 +22,13 @@ const queryClient = new QueryClient({
 // jogador digitar tudo do wizard pra descobrir isso só no fim.
 function RotaProtegida({ children }: { children: React.ReactNode }) {
   const { usuario, logado, carregando } = useAuth();
-  if (carregando) return null;
+  if (carregando) {
+    return (
+      <div className="min-h-[100dvh] w-full bg-rpg-darker flex items-center justify-center">
+        <Carregando tamanho={10} rotulo="Carregando" />
+      </div>
+    );
+  }
   if (!logado) return <Navigate to="/entrar" replace />;
   // Etapa 10 (A-2) — bloqueia criar personagem/jogar até confirmar. Só
   // afeta quem TEM e-mail; convidado (`email === null`) e conta Google
