@@ -323,6 +323,7 @@ def turno_inimigos(
 
         tipo_alvo, idx_aliado = _escolher_alvo(c_state, rng)
         if tipo_alvo == "aliado":
+            assert idx_aliado is not None  # garantido por _escolher_alvo: só "aliado" com índice junto
             aliado = c_state.aliados[idx_aliado]
             nome_alvo, ca_alvo = aliado.nome, aliado.ca
             vantagem_efetiva = vantagem_comportamento  # táticas do herói (Fase 1) só o protegem a ele

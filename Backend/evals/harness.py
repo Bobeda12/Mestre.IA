@@ -14,10 +14,10 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
+from app.domain.state import QuestLog
 from app.infra import embeddings
 from app.infra.db import Personagem
 from app.infra.llm_client import chamar_com_fallback
-from app.domain.state import QuestLog
 from app.services import agent_loop
 from app.services.agent_loop import ChamadaFerramenta
 from app.services.guardrail import validar_narrativa

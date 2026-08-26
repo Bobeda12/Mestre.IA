@@ -538,7 +538,7 @@ class ToolExecutor:
         self.q_state.nome_missao = nome
         self.q_state.objetivo_missao = objetivo
         self.eventos.append(f"📜 Missão atualizada: {nome} - {objetivo}")
-        resultado = {"missao": nome, "objetivo": objetivo}
+        resultado: dict[str, object] = {"missao": nome, "objetivo": objetivo}
         # Fase 4 da revisão de gameplay — o modelo sinaliza que o Ato
         # inteiro (não só a missão miúda) terminou; o servidor decide se
         # há um próximo Ato pra avançar (nunca deixa o índice estourar —
