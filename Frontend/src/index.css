@@ -190,7 +190,10 @@ img[src^="/assets/backgrounds/"] {
 }
 .animate-balancar {
   animation: balancarEspada 0.6s ease-in-out infinite;
-  transform-origin: 70% 15%;
+  /* pivô perto do cabo/pomo (canto inferior esquerdo do ícone) — girar perto
+     da ponta da lâmina (erro da primeira versão) fazia o cabo chicotear
+     num arco enorme, parecendo quebrado em vez de um golpe. */
+  transform-origin: 15% 85%;
 }
 
 /* Entrada em escala (Etapa 7 — mesmo caso de animate-pulse-slow, usada

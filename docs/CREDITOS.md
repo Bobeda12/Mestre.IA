@@ -143,4 +143,8 @@ qualquer uma. A escolhida foi a lâmina **diagonal**, na paleta preto+dourado
 já usada por estrela/fechar/coroa/seta (contorno `#0A0806`, off-white
 `#EBE8E0`, dourado `#C5A059`) — diferente da orientação vertical dos vizinhos
 Kenney (adaga/machado/maça/escudo), mas consistente com a família de ícones
-desenhados à mão do projeto.
+desenhados à mão do projeto. Ainda na mesma rodada, o traço fino ficou fraco
+nos usos maiores (botão NOVO JOGO, tela de transição) — a lâmina engrossou
+(~3px) e a guarda virou uma cruz perpendicular de verdade, num canvas 20×20
+(os demais ícones à mão continuam 16×16; este é o único maior, por causa do
+tamanho de exibição bem acima da média dos outros).
