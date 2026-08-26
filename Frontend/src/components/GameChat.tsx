@@ -331,15 +331,23 @@ export default function GameChat() {
     // partida em andamento jogava fora a conversa inteira e mostrava só
     // "Conectado ao mundo": `historico_chat` já guardava tudo, gerado com
     // capricho pelo narrador, e nunca chegava à tela. `historico_chat[0]`
-    // é sempre o prólogo (a tela `Prologo` cuida dele na primeira visita,
-    // ver `primeiroTurno` abaixo) — daqui em diante é o log de verdade.
-    const JANELA_HISTORICO = 12;
-    const turnosJogados = (cargaJogo.historico_chat ?? []).slice(1);
-    if (turnosJogados.length === 0) {
+    // é o texto do prólogo — a tela `Prologo` mostra ele com efeito de
+    // digitação na primeira visita (ver `primeiroTurno` abaixo), mas depois
+    // de "Começar" esse texto nunca mais aparecia em lugar nenhum: nem essa
+    // primeira versão do fix trazia ele de volta pro log persistente, só os
+    // turnos jogados depois dele. Agora ele sempre entra como a primeira
+    // bolha — é a história que o jogador acabou de ler, não devia sumir do
+    // scrollback assim que a tela de abertura fecha.
+    const historico = cargaJogo.historico_chat ?? [];
+    if (historico.length === 0) {
       setMessages([{ kind: 'texto', id: proximoIdMsg(), role: 'assistant', content: `Conectado ao mundo. Local: ${cargaJogo.local}.` }]);
     } else {
+      const JANELA_HISTORICO = 12;
+      const turnosJogados = historico.slice(1);
       const recentes = turnosJogados.slice(-JANELA_HISTORICO);
-      const bolhas: Message[] = [];
+      const bolhas: Message[] = [
+        { kind: 'texto', id: proximoIdMsg(), role: 'assistant', content: historico[0].content },
+      ];
       // "Anteriormente…" só aparece quando a janela de fato cortou algo —
       // senão o histórico completo já está logo abaixo, e recapitular o
       // que o jogador está prestes a ler de novo seria redundante.
@@ -715,15 +723,23 @@ export default function GameChat() {
       >
           <div className="p-4 border-b border-gray-800 flex justify-between items-center bg-black/20">
               <h2 className="font-pixel-title text-sm text-rpg-gold flex items-center gap-2 truncate"><PixelIcon name="pergaminho" size={18}/> FICHA</h2>
-              {/* Rodada de conserto — o botão de configurações saiu daqui:
-                  a faixa de vitais (sempre visível, dentro ou fora de
-                  combate, com a ficha aberta ou fechada) agora tem o
-                  próprio, e ter os dois duplicava o mesmo gesto. */}
-              <button
-                  onClick={() => setShowSidebar(false)}
-                  aria-label="Fechar ficha do personagem"
-                  className="text-gray-500 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rpg-gold"
-              ><PixelIcon name="fechar" size={18}/></button>
+              {/* Rodada de conserto — restaurado aqui: o botão que eu tinha
+                  movido pra faixa de vitais só é renderizado quando a ficha
+                  está FECHADA (ver abaixo), então com a ficha aberta esta é
+                  a única entrada pra configurações de novo. */}
+              <div className="flex items-center gap-3">
+                  <button
+                      onClick={() => setConfigAberta(true)}
+                      aria-label="Abrir configurações"
+                      title="Configurações"
+                      className="text-gray-300 hover:text-rpg-gold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rpg-gold"
+                  ><PixelIcon name="config" size={18}/></button>
+                  <button
+                      onClick={() => setShowSidebar(false)}
+                      aria-label="Fechar ficha do personagem"
+                      className="text-gray-500 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rpg-gold"
+                  ><PixelIcon name="fechar" size={18}/></button>
+              </div>
           </div>
 
           {/* Retrato COMPACTO. O busto grande ocupava 343px de altura — mais
@@ -896,26 +912,33 @@ export default function GameChat() {
             visíveis mesmo com a ficha fechada — que é como jogo faz. De
             quebra devolveram ~150px de altura pra barra lateral. */}
         <div className="shrink-0 flex items-center gap-3 md:gap-4 px-3 py-2 border-b-2 border-gray-800 bg-black/60">
-            {/* Rodada de conserto — antes só existia quando a ficha estava
-                fechada; em combate o HUD de inimigos (antes `absolute`)
-                cobria este botão inteiro, deixando o jogador sem gesto
-                nenhum pra reabrir a ficha. Agora fica sempre presente
-                (alterna abrir/fechar) e o HUD de combate saiu do
-                posicionamento absoluto — não cobre mais nada aqui. */}
-            <button
-                onClick={() => setShowSidebar(!showSidebar)}
-                aria-label={showSidebar ? "Fechar ficha do personagem" : "Abrir ficha do personagem"}
-                className="shrink-0 p-1 border-2 border-gray-700 hover:border-rpg-gold text-gray-300 hover:text-rpg-gold transition-colors focus-visible:outline-none focus-visible:border-rpg-gold"
-            ><PixelIcon name="menu" size={16}/></button>
-            {/* Configurações também mora aqui, não só dentro da ficha — é o
-                único jeito de o jogador desfazer uma chave BYOK errada sem
-                depender de a ficha estar aberta e acessível. */}
-            <button
-                onClick={() => setConfigAberta(true)}
-                aria-label="Abrir configurações"
-                title="Configurações"
-                className="shrink-0 p-1 border-2 border-gray-700 hover:border-rpg-gold text-gray-300 hover:text-rpg-gold transition-colors focus-visible:outline-none focus-visible:border-rpg-gold"
-            ><PixelIcon name="config" size={16}/></button>
+            {/* Rodada de conserto — o HUD de combate (antes `absolute`)
+                cobria este botão inteiro em combate, deixando o jogador sem
+                gesto nenhum pra reabrir a ficha; corrigido tirando o HUD do
+                posicionamento absoluto. Uma tentativa anterior desta mesma
+                correção deixava o botão SEMPRE visível (mesmo com a ficha
+                aberta) — no mobile, com a gaveta aberta, a faixa de vitais
+                fica espremida numa fatia estreita ao lado dela E por baixo
+                do fundo escurecido (mesmo z-index da faixa, maior que o
+                dela): o botão ficava semi-invisível e o clique caía no
+                fundo, fechando a ficha em vez de abrir configurações. Só
+                aparece com a ficha FECHADA — quando ela está aberta, os
+                mesmos botões já existem no cabeçalho da própria ficha. */}
+            {!showSidebar && (
+                <button
+                    onClick={() => setShowSidebar(true)}
+                    aria-label="Abrir ficha do personagem"
+                    className="shrink-0 p-1 border-2 border-gray-700 hover:border-rpg-gold text-gray-300 hover:text-rpg-gold transition-colors focus-visible:outline-none focus-visible:border-rpg-gold"
+                ><PixelIcon name="menu" size={16}/></button>
+            )}
+            {!showSidebar && (
+                <button
+                    onClick={() => setConfigAberta(true)}
+                    aria-label="Abrir configurações"
+                    title="Configurações"
+                    className="shrink-0 p-1 border-2 border-gray-700 hover:border-rpg-gold text-gray-300 hover:text-rpg-gold transition-colors focus-visible:outline-none focus-visible:border-rpg-gold"
+                ><PixelIcon name="config" size={16}/></button>
+            )}
             {/* As tres medidas reagem ao mouse e dizem o que sao. Sem isso a
                 faixa era uma fileira de barras coloridas sem legenda: dava pra
                 jogar sem saber qual e vida e qual e experiencia. O mesmo

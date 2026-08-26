@@ -14,6 +14,22 @@ from app.infra.llm_client import ErroMestre, chamar_com_fallback, chamar_stream_
 from app.services.tools import TOOLS_SCHEMA
 
 
+def _extra_content(obj: Any) -> dict | None:
+    """Achado ao vivo (rodada de conserto) — modelos "thinking" do Gemini
+    (3.x) assinam cada chamada de ferramenta com um `thought_signature`,
+    carregado num campo fora do padrão OpenAI:
+    `tool_call.extra_content.google.thought_signature`. O SDK oficial
+    preserva esse campo (os modelos internos usam `extra="allow"`), mas
+    nada aqui replicava ele na mensagem de assistente reconstruída — sem
+    isso, a PRÓXIMA chamada do mesmo turno é rejeitada com 400 ("Function
+    call is missing a thought_signature"), mesmo a primeira tendo
+    funcionado. Mesma família de bug do `content: null` corrigido antes
+    nesta função — outro campo que o Gemini exige e a Groq não.
+    Ver https://github.com/openai/openai-python/issues/2758."""
+    extra = getattr(obj, "extra_content", None)
+    return extra if extra else None
+
+
 class ExecutorFerramentas(Protocol):
     """O loop só precisa disto de um executor — `tools.ToolExecutor` é a
     implementação real; testes usam um `FakeExecutor` mais simples que
@@ -77,6 +93,7 @@ def executar_turno(
                         "id": tc.id,
                         "type": "function",
                         "function": {"name": tc.function.name, "arguments": tc.function.arguments},
+                        **({"extra_content": extra} if (extra := _extra_content(tc)) else {}),
                     }
                     for tc in mensagem.tool_calls
                 ],
@@ -128,7 +145,7 @@ def executar_turno_stream(
 
     for _passo in range(max_passos):
         conteudo = ""
-        chamadas_parciais: dict[int, dict[str, str]] = {}
+        chamadas_parciais: dict[int, dict[str, Any]] = {}
 
         try:
             for chunk in chamar_fn(msgs, tools=TOOLS_SCHEMA, tool_choice="auto"):
@@ -137,13 +154,19 @@ def executar_turno_stream(
                     conteudo += delta.content
                     yield EventoStream("token", delta.content)
                 for tc in delta.tool_calls or []:
-                    slot = chamadas_parciais.setdefault(tc.index, {"id": "", "nome": "", "args": ""})
+                    slot = chamadas_parciais.setdefault(tc.index, {"id": "", "nome": "", "args": "", "extra": None})
                     if tc.id:
                         slot["id"] = tc.id
                     if tc.function and tc.function.name:
                         slot["nome"] += tc.function.name
                     if tc.function and tc.function.arguments:
                         slot["args"] += tc.function.arguments
+                    # `thought_signature` (ver `_extra_content`) costuma
+                    # chegar num delta próprio, sem `id`/`nome`/`args` junto
+                    # — captura sempre que aparecer, não só no primeiro delta.
+                    extra = _extra_content(tc)
+                    if extra:
+                        slot["extra"] = extra
         except ErroMestre as e:
             yield EventoStream("erro", e.mensagem)
             return
@@ -163,6 +186,7 @@ def executar_turno_stream(
                         "id": slot["id"],
                         "type": "function",
                         "function": {"name": slot["nome"], "arguments": slot["args"]},
+                        **({"extra_content": slot["extra"]} if slot["extra"] else {}),
                     }
                     for slot in chamadas_parciais.values()
                 ],

@@ -15,9 +15,15 @@ class _FuncaoFalsa:
 
 
 class _ToolCallFalso:
-    def __init__(self, id: str, name: str, arguments: str) -> None:
+    def __init__(self, id: str, name: str, arguments: str, extra_content: dict | None = None) -> None:
         self.id = id
         self.function = _FuncaoFalsa(name, arguments)
+        # Achado ao vivo — Gemini "thinking" (3.x) assina cada tool_call
+        # com `extra_content.google.thought_signature`; o dublê só simula
+        # o campo quando o teste passa `extra_content` explicitamente,
+        # como o SDK de verdade (getattr sem o campo devolve None).
+        if extra_content is not None:
+            self.extra_content = extra_content
 
 
 class _MensagemFalsa:
@@ -116,6 +122,54 @@ def test_mensagem_de_tool_call_nunca_manda_content_none(monkeypatch):
     assert mensagem_assistente["content"] is not None
 
 
+def test_thought_signature_do_gemini_e_ecoada_na_proxima_chamada(monkeypatch):
+    # Achado ao vivo (rodada de conserto) — Gemini "thinking" (3.x) assina
+    # cada chamada de ferramenta com `extra_content.google.thought_
+    # signature`; sem replicar esse campo na mensagem de assistente
+    # reconstruída, a PRÓXIMA chamada do mesmo turno é rejeitada com 400
+    # ("Function call is missing a thought_signature"), mesmo a primeira
+    # tendo funcionado — https://github.com/openai/openai-python/issues/2758.
+    assinatura = {"google": {"thought_signature": "abc123"}}
+    fake = _LLMFalso(
+        [
+            _MensagemFalsa(
+                content=None,
+                tool_calls=[_ToolCallFalso("t1", "mover", '{"destino": "Floresta"}', extra_content=assinatura)],
+            ),
+            _MensagemFalsa(content="Vocês chegam à floresta."),
+        ]
+    )
+    monkeypatch.setattr(agent_loop, "chamar_com_fallback", fake)
+    executor = FakeExecutor({"mover": ({"local": "Floresta"}, True)})
+    msgs: list[dict] = []
+
+    agent_loop.executar_turno(msgs, executor)
+
+    mensagem_assistente = next(m for m in msgs if m["role"] == "assistant")
+    [tool_call] = mensagem_assistente["tool_calls"]
+    assert tool_call["extra_content"] == assinatura
+
+
+def test_sem_thought_signature_nenhum_campo_extra_e_adicionado(monkeypatch):
+    # A Groq (e o Gemini sem "thinking") nunca manda esse campo — não pode
+    # aparecer um `extra_content: None`/vazio poluindo a mensagem à toa.
+    fake = _LLMFalso(
+        [
+            _MensagemFalsa(content=None, tool_calls=[_ToolCallFalso("t1", "mover", '{"destino": "Floresta"}')]),
+            _MensagemFalsa(content="Vocês chegam à floresta."),
+        ]
+    )
+    monkeypatch.setattr(agent_loop, "chamar_com_fallback", fake)
+    executor = FakeExecutor({"mover": ({"local": "Floresta"}, True)})
+    msgs: list[dict] = []
+
+    agent_loop.executar_turno(msgs, executor)
+
+    mensagem_assistente = next(m for m in msgs if m["role"] == "assistant")
+    [tool_call] = mensagem_assistente["tool_calls"]
+    assert "extra_content" not in tool_call
+
+
 def test_multiplas_chamadas_no_mesmo_passo(monkeypatch):
     fake = _LLMFalso(
         [
@@ -186,11 +240,18 @@ class _DeltaFuncaoFalsa:
 
 class _DeltaToolCallFalso:
     def __init__(
-        self, index: int, id: str | None = None, name: str | None = None, arguments: str | None = None
+        self,
+        index: int,
+        id: str | None = None,
+        name: str | None = None,
+        arguments: str | None = None,
+        extra_content: dict | None = None,
     ) -> None:
         self.index = index
         self.id = id
         self.function = _DeltaFuncaoFalsa(name, arguments)
+        if extra_content is not None:
+            self.extra_content = extra_content
 
 
 class _DeltaFalso:
@@ -281,6 +342,43 @@ def test_stream_mensagem_de_tool_call_nunca_manda_content_none():
     mensagem_assistente = next(m for m in msgs if m["role"] == "assistant")
     assert mensagem_assistente["content"] == ""
     assert mensagem_assistente["content"] is not None
+
+
+def test_stream_thought_signature_e_ecoada_na_proxima_chamada():
+    # Mesmo achado do teste síncrono, no caminho de streaming — a
+    # assinatura costuma chegar num delta próprio (sem `id`/`nome`/`args`
+    # junto), então precisa ser capturada em QUALQUER delta daquele índice.
+    assinatura = {"google": {"thought_signature": "abc123"}}
+    passo_1 = [
+        _ChunkFalso(_DeltaFalso(tool_calls=[_DeltaToolCallFalso(0, id="t1", name="rolar_teste")])),
+        _ChunkFalso(_DeltaFalso(tool_calls=[_DeltaToolCallFalso(0, arguments='{"atributo": "destreza"}')])),
+        _ChunkFalso(_DeltaFalso(tool_calls=[_DeltaToolCallFalso(0, extra_content=assinatura)])),
+    ]
+    passo_2 = [_ChunkFalso(_DeltaFalso(content="Você se esgueira."))]
+    fake = _StreamLLMFalso([passo_1, passo_2])
+    executor = FakeExecutorEstruturado({"rolar_teste": ({"sucesso": True}, True)})
+    msgs: list[dict] = []
+
+    list(agent_loop.executar_turno_stream(msgs, executor, chamar_fn=fake))
+
+    mensagem_assistente = next(m for m in msgs if m["role"] == "assistant")
+    [tool_call] = mensagem_assistente["tool_calls"]
+    assert tool_call["extra_content"] == assinatura
+
+
+def test_stream_sem_thought_signature_nenhum_campo_extra_e_adicionado():
+    passo_1 = [_ChunkFalso(_DeltaFalso(tool_calls=[_DeltaToolCallFalso(0, id="t1", name="rolar_teste")])),
+               _ChunkFalso(_DeltaFalso(tool_calls=[_DeltaToolCallFalso(0, arguments='{"atributo": "destreza"}')]))]
+    passo_2 = [_ChunkFalso(_DeltaFalso(content="Você se esgueira."))]
+    fake = _StreamLLMFalso([passo_1, passo_2])
+    executor = FakeExecutorEstruturado({"rolar_teste": ({"sucesso": True}, True)})
+    msgs: list[dict] = []
+
+    list(agent_loop.executar_turno_stream(msgs, executor, chamar_fn=fake))
+
+    mensagem_assistente = next(m for m in msgs if m["role"] == "assistant")
+    [tool_call] = mensagem_assistente["tool_calls"]
+    assert "extra_content" not in tool_call
 
 
 def test_stream_ferramenta_sem_evento_estruturado_nao_gera_tool_event():
