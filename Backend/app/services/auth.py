@@ -270,28 +270,35 @@ def get_current_verified_user(current_user: Usuario = Depends(get_current_user))
 
 
 # ---------------------------------------------------------------------------
-# Confirmação de e-mail (Etapa 10, A-2) — token HMAC igual ao cookie de
-# sessão, mesma chave de assinatura, mas com `proposito` no payload: sem
-# isso, nada impediria um token de confirmação (que não tem `emitido_em`
-# no formato que `_ler_cookie_sessao` espera) de ser mal lido como outra
-# coisa se os formatos um dia colidirem por acaso.
+# Registro sem estado (stateless registration) — nada é gravado no banco até
+# `/auth/confirmar` validar o token. O convite inteiro (e-mail + hash da
+# senha, e no caso de convidado reivindicando conta, também o `usuario_id`)
+# viaja dentro do próprio token assinado do link — mesmo esquema HMAC do
+# cookie de sessão, com `proposito` no payload pra um tipo de token nunca ser
+# mal lido como outro.
 # ---------------------------------------------------------------------------
 
-_PROPOSITO_TOKEN_CONFIRMACAO = "confirmar_email"
+_PROPOSITO_TOKEN_REGISTRO_PENDENTE = "registro_pendente"
+_PROPOSITO_TOKEN_REIVINDICACAO_PENDENTE = "reivindicacao_pendente"
 
 
-def criar_token_confirmacao(usuario_id: int) -> str:
+def criar_token_registro_pendente(email: str, senha_hash: str) -> str:
     return _assinar(
-        {"proposito": _PROPOSITO_TOKEN_CONFIRMACAO, "usuario_id": usuario_id, "emitido_em": _agora().isoformat()}
+        {
+            "proposito": _PROPOSITO_TOKEN_REGISTRO_PENDENTE,
+            "email": email,
+            "senha_hash": senha_hash,
+            "emitido_em": _agora().isoformat(),
+        }
     )
 
 
-def validar_token_confirmacao(token: str) -> int | None:
+def validar_token_registro_pendente(token: str) -> tuple[str, str] | None:
     dados = _verificar(token)
-    if dados is None or dados.get("proposito") != _PROPOSITO_TOKEN_CONFIRMACAO:
+    if dados is None or dados.get("proposito") != _PROPOSITO_TOKEN_REGISTRO_PENDENTE:
         return None
-    usuario_id, emitido_em_str = dados.get("usuario_id"), dados.get("emitido_em")
-    if not isinstance(usuario_id, int) or not isinstance(emitido_em_str, str):
+    email, senha_hash, emitido_em_str = dados.get("email"), dados.get("senha_hash"), dados.get("emitido_em")
+    if not isinstance(email, str) or not isinstance(senha_hash, str) or not isinstance(emitido_em_str, str):
         return None
     try:
         emitido_em = datetime.fromisoformat(emitido_em_str)
@@ -299,4 +306,38 @@ def validar_token_confirmacao(token: str) -> int | None:
         return None
     if _agora() - emitido_em > _TTL_TOKEN_CONFIRMACAO:
         return None
-    return usuario_id
+    return email, senha_hash
+
+
+def criar_token_reivindicacao_pendente(usuario_id: int, email: str, senha_hash: str) -> str:
+    return _assinar(
+        {
+            "proposito": _PROPOSITO_TOKEN_REIVINDICACAO_PENDENTE,
+            "usuario_id": usuario_id,
+            "email": email,
+            "senha_hash": senha_hash,
+            "emitido_em": _agora().isoformat(),
+        }
+    )
+
+
+def validar_token_reivindicacao_pendente(token: str) -> tuple[int, str, str] | None:
+    dados = _verificar(token)
+    if dados is None or dados.get("proposito") != _PROPOSITO_TOKEN_REIVINDICACAO_PENDENTE:
+        return None
+    usuario_id = dados.get("usuario_id")
+    email, senha_hash, emitido_em_str = dados.get("email"), dados.get("senha_hash"), dados.get("emitido_em")
+    if (
+        not isinstance(usuario_id, int)
+        or not isinstance(email, str)
+        or not isinstance(senha_hash, str)
+        or not isinstance(emitido_em_str, str)
+    ):
+        return None
+    try:
+        emitido_em = datetime.fromisoformat(emitido_em_str)
+    except ValueError:
+        return None
+    if _agora() - emitido_em > _TTL_TOKEN_CONFIRMACAO:
+        return None
+    return usuario_id, email, senha_hash

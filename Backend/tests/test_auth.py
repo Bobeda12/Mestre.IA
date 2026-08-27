@@ -40,22 +40,32 @@ def dois_clientes(_usuario_autenticado):
 
 def _registrar(client: TestClient, email: str, senha: str = "senha-forte-123") -> None:
     """A maioria dos testes que chamam isto não é sobre o fluxo de
-    confirmação (Etapa 10, A-2) — registrar já deixa a conta verificada,
-    direto no banco, pra não precisar simular clicar num link de e-mail em
-    todo teste de IDOR/feedback/etc. `TestConfirmacaoEmail` abaixo testa o
-    caso não-verificado de propósito, sem passar por este helper."""
+    registro/confirmação em si — só precisam de um usuário já logado e
+    verificado, sem repetir "clicar no link de e-mail" em todo teste de
+    IDOR/feedback/etc. Registro sem estado (revisão da Etapa 10, A-2):
+    `POST /auth/registrar` não grava mais nada no banco nem loga ninguém —
+    quem quer testar esse fluxo por si (criação pendente, confirmação,
+    corrida de e-mail duplicado) usa `tests/test_confirmacao_email.py`, que
+    passa pela rota de verdade. Aqui o atalho é criar o `Usuario` direto e
+    plantar o cookie de sessão no `TestClient`, sem depender de e-mail."""
     from app.infra.db import SessionLocal, Usuario
+    from app.services.auth import hash_senha
 
-    resp = client.post("/auth/registrar", json={"email": email, "senha": senha})
-    assert resp.status_code == 201, resp.text
     db = SessionLocal()
     try:
-        usuario = db.query(Usuario).filter(Usuario.email == email).first()
-        assert usuario is not None
-        usuario.email_verificado = True
+        usuario = Usuario(email=email, senha_hash=hash_senha(senha), email_verificado=True)
+        db.add(usuario)
         db.commit()
     finally:
         db.close()
+    # Loga de verdade por `/auth/login` (a senha já foi validada acima, não
+    # é o que este helper testa) — o cookie vem de uma resposta HTTP de
+    # verdade, então o `TestClient` guarda o domínio certo sozinho. Plantar
+    # o cookie manualmente no jar (`client.cookies.set(...)`) parecia mais
+    # direto, mas o domínio ficava divergente do que `/auth/sair` apaga
+    # depois, e a sessão nunca era encerrada de fato.
+    resp = client.post("/auth/login", json={"email": email, "senha": senha})
+    assert resp.status_code == 200, resp.text
 
 
 # ---------------------------------------------------------------------------
@@ -140,9 +150,18 @@ def test_convidado_tem_rate_limit_por_ip(client):
 
 
 def test_reivindicar_mantem_o_mesmo_usuario_e_os_herois(client, monkeypatch):
+    from app import routers
     from app.infra import llm_client
 
     monkeypatch.setattr(llm_client, "clients", {})
+    # Registro sem estado (revisão da Etapa 10, A-2): /auth/reivindicar não
+    # grava nada até o link ser confirmado — captura o e-mail em vez de
+    # mandar de verdade, igual a `tests/test_confirmacao_email.py`.
+    capturados: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        routers.auth, "enviar_email_confirmacao", lambda destinatario, link: capturados.append((destinatario, link))
+    )
+
     client.post("/auth/convidado")
     criado = client.post("/create_character", json=_payload_base(nome="HeroiConvidado"))
     assert criado.status_code == 200
@@ -151,6 +170,12 @@ def test_reivindicar_mantem_o_mesmo_usuario_e_os_herois(client, monkeypatch):
     resp = client.post("/auth/reivindicar", json={"email": "convidado@teste.com", "senha": "senha-forte-123"})
     assert resp.status_code == 200
     assert resp.json()["email"] == "convidado@teste.com"
+
+    # Antes de confirmar, o usuário continua sendo o convidado sem e-mail.
+    assert client.get("/auth/eu").json()["email"] is None
+
+    token = capturados[0][1].split("token=", 1)[1]
+    client.get(f"/auth/confirmar?token={token}", follow_redirects=False)
 
     # O herói criado como convidado continua acessível pelo mesmo usuário.
     assert client.post("/load_game", json={"session_id": session_id}).status_code == 200

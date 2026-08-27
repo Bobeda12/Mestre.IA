@@ -1,8 +1,9 @@
-"""Etapa 10 (A-2) — confirmação de e-mail bloqueante: registrar/reivindicar
-dispara o e-mail (via Resend, ou só logado sem RESEND_API_KEY — ver
-`app/infra/email.py`), e `get_current_verified_user` bloqueia jogar até o
-link ser clicado. Convidado (sem e-mail) e conta Google (já verificada no
-OAuth) não passam por nada disto."""
+"""Etapa 10 (A-2), revisão registro-sem-estado — nada é gravado no banco em
+`/auth/registrar` nem em `/auth/reivindicar`: o e-mail e o hash da senha (e,
+no caso de convidado, o `usuario_id`) viajam dentro do próprio token do link,
+e só `/auth/confirmar` grava/atualiza o `Usuario`, já verificado, e loga
+quem clicou (mesmo padrão do `google_callback`). Convidado (sem e-mail) e
+conta Google (já verificada no OAuth) não passam por nada disto."""
 
 import pytest
 from fastapi.testclient import TestClient
@@ -38,10 +39,15 @@ def _token_de(link: str) -> str:
     return link.split("token=", 1)[1]
 
 
-class TestRegistrarDisparaConfirmacao:
-    def test_registrar_deixa_email_nao_verificado(self, client, link_capturado):
+class TestRegistrarNaoGravaNada:
+    def test_registrar_nao_cria_usuario_nem_loga(self, client, link_capturado):
         client.post("/auth/registrar", json={"email": "novo@teste.com", "senha": "senha-forte-123"})
-        assert client.get("/auth/eu").json() == {"email": "novo@teste.com", "email_verificado": False}
+        assert client.get("/auth/eu").status_code == 401
+        db = SessionLocal()
+        try:
+            assert db.query(Usuario).filter(Usuario.email == "novo@teste.com").first() is None
+        finally:
+            db.close()
 
     def test_registrar_dispara_o_email(self, client, link_capturado):
         client.post("/auth/registrar", json={"email": "novo2@teste.com", "senha": "senha-forte-123"})
@@ -50,18 +56,24 @@ class TestRegistrarDisparaConfirmacao:
         assert destinatario == "novo2@teste.com"
         assert "token=" in link
 
-    def test_reivindicar_tambem_dispara_o_email(self, client, link_capturado):
+    def test_reivindicar_tambem_nao_grava_nada(self, client, link_capturado):
         client.post("/auth/convidado")
-        client.post("/auth/reivindicar", json={"email": "convidado-vira-conta@teste.com", "senha": "senha-forte-123"})
+        resp = client.post(
+            "/auth/reivindicar", json={"email": "convidado-vira-conta@teste.com", "senha": "senha-forte-123"}
+        )
+        assert resp.status_code == 200
         assert len(link_capturado) == 1
-        assert client.get("/auth/eu").json()["email_verificado"] is False
+        # O convidado continua exatamente convidado — sem e-mail — até
+        # confirmar pelo link.
+        assert client.get("/auth/eu").json()["email"] is None
 
 
 class TestBloqueioAntesDeConfirmar:
     def test_nao_pode_criar_personagem_sem_confirmar(self, client, link_capturado):
         client.post("/auth/registrar", json={"email": "bloqueado@teste.com", "senha": "senha-forte-123"})
+        # Ninguém logou ainda — não existe conta nem sessão até confirmar.
         resp = client.post("/create_character", json=_payload_base(nome="HeroiBloqueado"))
-        assert resp.status_code == 403
+        assert resp.status_code == 401
 
     def test_convidado_nao_e_bloqueado(self, client, monkeypatch):
         monkeypatch.setattr(llm_client, "clients", {})
@@ -69,16 +81,9 @@ class TestBloqueioAntesDeConfirmar:
         resp = client.post("/create_character", json=_payload_base(nome="HeroiConvidadoLivre"))
         assert resp.status_code == 200
 
-    def test_load_game_continua_acessivel_sem_confirmar(self, client, link_capturado):
-        # Rota de leitura — o plano é explícito: bloquear leitura deixaria o
-        # jogador sem conseguir nem ver a própria tela pedindo confirmação.
-        client.post("/auth/registrar", json={"email": "leitura@teste.com", "senha": "senha-forte-123"})
-        resp = client.post("/load_game", json={"session_id": "isso-nao-existe"})
-        assert resp.status_code == 404  # não é 403 — passou da checagem de verificação
 
-
-class TestConfirmar:
-    def test_token_valido_verifica_e_redireciona(self, client, link_capturado):
+class TestConfirmarRegistro:
+    def test_token_valido_cria_verifica_e_loga(self, client, link_capturado):
         client.post("/auth/registrar", json={"email": "confirma@teste.com", "senha": "senha-forte-123"})
         _destinatario, link = link_capturado[0]
         token = _token_de(link)
@@ -87,7 +92,11 @@ class TestConfirmar:
         assert resp.status_code in (302, 307)
         assert "confirmado=1" in resp.headers["location"]
 
-        assert client.get("/auth/eu").json()["email_verificado"] is True
+        # O cookie de sessão veio na própria resposta de confirmação — o
+        # TestClient já guarda e reenvia sozinho.
+        eu = client.get("/auth/eu")
+        assert eu.status_code == 200
+        assert eu.json() == {"email": "confirma@teste.com", "email_verificado": True}
 
     def test_confirmar_libera_criar_personagem(self, client, link_capturado, monkeypatch):
         monkeypatch.setattr(llm_client, "clients", {})
@@ -98,7 +107,7 @@ class TestConfirmar:
         resp = client.post("/create_character", json=_payload_base(nome="HeroiLiberado"))
         assert resp.status_code == 200
 
-    def test_token_invalido_redireciona_sem_verificar(self, client):
+    def test_token_invalido_redireciona_sem_criar_nada(self, client):
         resp = client.get("/auth/confirmar?token=isto-nao-e-um-token-valido", follow_redirects=False)
         assert resp.status_code in (302, 307)
         assert "confirmado=0" in resp.headers["location"]
@@ -113,30 +122,39 @@ class TestConfirmar:
         resp = client.get(f"/auth/confirmar?token={cookie_sessao}", follow_redirects=False)
         assert "confirmado=0" in resp.headers["location"]
 
+    def test_confirmar_duas_vezes_o_mesmo_link_falha_na_segunda(self, client, link_capturado):
+        # Corrida: dois cliques no mesmo link (ex.: reenvio + link antigo). A
+        # primeira confirmação cria a conta; a segunda encontra o e-mail já
+        # existente e recusa em vez de dar erro de integridade no banco.
+        client.post("/auth/registrar", json={"email": "duascliques@teste.com", "senha": "senha-forte-123"})
+        token = _token_de(link_capturado[0][1])
+        client.get(f"/auth/confirmar?token={token}", follow_redirects=False)
 
-class TestReenviar:
-    def test_reenvia_para_quem_nao_confirmou(self, client, link_capturado):
-        client.post("/auth/registrar", json={"email": "reenviar@teste.com", "senha": "senha-forte-123"})
-        assert len(link_capturado) == 1
-        resp = client.post("/auth/confirmar/reenviar")
-        assert resp.status_code == 200
-        assert len(link_capturado) == 2
+        outro_client = TestClient(app)
+        resp = outro_client.get(f"/auth/confirmar?token={token}", follow_redirects=False)
+        assert "confirmado=0" in resp.headers["location"]
 
-    def test_reenviar_sem_login_devolve_401(self, client):
-        resp = client.post("/auth/confirmar/reenviar")
-        assert resp.status_code == 401
 
-    def test_reenviar_para_convidado_e_rejeitado(self, client):
+class TestConfirmarReivindicacao:
+    def test_token_valido_atualiza_o_usuario_certo_e_loga(self, client, link_capturado):
         client.post("/auth/convidado")
-        resp = client.post("/auth/confirmar/reenviar")
-        assert resp.status_code == 400
+        eu_convidado = client.get("/auth/eu")
+        client.post("/auth/reivindicar", json={"email": "vira-conta@teste.com", "senha": "senha-forte-123"})
+        token = _token_de(link_capturado[0][1])
 
-    def test_reenviar_tem_rate_limit(self, client, link_capturado):
-        client.post("/auth/registrar", json={"email": "reenviar-limite@teste.com", "senha": "senha-forte-123"})
-        for _ in range(3):
-            client.post("/auth/confirmar/reenviar")
-        resp = client.post("/auth/confirmar/reenviar")
-        assert resp.status_code == 429
+        resp = client.get(f"/auth/confirmar?token={token}", follow_redirects=False)
+        assert "confirmado=1" in resp.headers["location"]
+
+        eu = client.get("/auth/eu")
+        assert eu.json() == {"email": "vira-conta@teste.com", "email_verificado": True}
+        assert eu.json() != eu_convidado.json()
+
+    def test_reenviar_e_so_chamar_reivindicar_de_novo(self, client, link_capturado):
+        client.post("/auth/convidado")
+        client.post("/auth/reivindicar", json={"email": "reenvio-convidado@teste.com", "senha": "senha-forte-123"})
+        assert len(link_capturado) == 1
+        client.post("/auth/reivindicar", json={"email": "reenvio-convidado@teste.com", "senha": "senha-forte-123"})
+        assert len(link_capturado) == 2
 
 
 class TestGoogleJaEntraVerificado:

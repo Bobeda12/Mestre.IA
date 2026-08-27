@@ -7,6 +7,7 @@ import { useInvalidarAuth } from '../lib/auth';
 import ConfirmeEmail from './ConfirmeEmail';
 import PixelIcon from './PixelIcon';
 import PixelButton from './PixelButton';
+import PanelFrame from './PanelFrame';
 import { PIXEL_BUTTON_CLASS, pixelButtonBorderStyle } from '../lib/pixelButtonEstilo';
 import Carregando from './Carregando';
 import MapaDeFundo from './MapaDeFundo';
@@ -30,6 +31,10 @@ export default function Login() {
   // Etapa 10 (A-2) — depois de criar conta, mostra a tela de confirmação
   // na hora, em vez de navegar pro jogo pra só então travar em /criar.
   const [emailRecemRegistrado, setEmailRecemRegistrado] = useState<string | null>(null);
+  // Revisão registro-sem-estado — "reenviar" na tela de confirmação é só
+  // repetir o próprio POST /auth/registrar com os mesmos dados (nada foi
+  // gravado no banco ainda, então não esbarra na checagem de duplicidade).
+  const [reenviouConfirmacao, setReenviouConfirmacao] = useState(false);
   const navigate = useNavigate();
   const invalidarAuth = useInvalidarAuth();
   // Etapa 10 (A-2) — quem clicou o link de confirmação chega aqui via
@@ -56,11 +61,18 @@ export default function Login() {
       await api.post(rota, { email, senha });
     },
     onSuccess: () => {
-      invalidarAuth();
-      if (modo === 'criar') {
-        setEmailRecemRegistrado(email);
-      } else {
+      if (modo === 'entrar') {
+        invalidarAuth();
         navigate('/', { replace: true });
+        return;
+      }
+      // Registrar não grava nada no banco nem seta sessão (só acontece
+      // quando o link do e-mail é clicado) — não há o que invalidar aqui.
+      // Se já estava na tela de confirmação, este sucesso é um reenvio.
+      if (emailRecemRegistrado) {
+        setReenviouConfirmacao(true);
+      } else {
+        setEmailRecemRegistrado(email);
       }
     },
   });
@@ -76,6 +88,7 @@ export default function Login() {
     },
   });
 
+  const statusServidor = entrar.error && isAxiosError(entrar.error) ? entrar.error.response?.status : undefined;
   const detalheServidor =
     entrar.error && isAxiosError<{ detail?: string }>(entrar.error) ? entrar.error.response?.data?.detail : undefined;
   const mensagemErro =
@@ -83,9 +96,20 @@ export default function Login() {
     (modo === 'entrar'
       ? 'E-mail ou senha incorretos.'
       : 'Não deu para criar a conta. Confira o e-mail e a senha (mínimo 8 caracteres).');
+  const emailJaExiste = modo === 'criar' && statusServidor === 409;
 
   if (emailRecemRegistrado) {
-    return <ConfirmeEmail email={emailRecemRegistrado} />;
+    return (
+      <div className="min-h-[100dvh] w-screen bg-rpg-darker flex items-center justify-center">
+        <ConfirmeEmail
+          email={emailRecemRegistrado}
+          aoReenviar={() => entrar.mutate()}
+          reenviando={entrar.isPending}
+          reenviado={reenviouConfirmacao}
+          erroAoReenviar={entrar.isError}
+        />
+      </div>
+    );
   }
 
   return (
@@ -104,10 +128,15 @@ export default function Login() {
         </h1>
 
         {confirmado === '1' && (
-          <p className="text-emerald-400 text-sm mb-4 font-rpg">E-mail confirmado! Pode entrar.</p>
+          <PanelFrame borderWidth={6} className="bg-emerald-950/80 mb-4 p-3 flex items-center justify-center gap-2">
+            <PixelIcon name="estrela" size={18} className="shrink-0" />
+            <p className="text-emerald-300 text-sm font-rpg">E-mail confirmado! Você já está logado.</p>
+          </PanelFrame>
         )}
         {confirmado === '0' && (
-          <p className="text-red-400 text-sm mb-4 font-rpg">Esse link de confirmação expirou ou já foi usado.</p>
+          <PanelFrame borderWidth={6} className="bg-red-950/80 mb-4 p-3">
+            <p className="text-red-400 text-sm font-rpg">Esse link de confirmação expirou ou já foi usado.</p>
+          </PanelFrame>
         )}
 
         <PixelButton
@@ -186,17 +215,39 @@ export default function Login() {
           >
             {entrar.isPending ? <Carregando /> : modo === 'entrar' ? 'ENTRAR' : 'CRIAR CONTA'}
           </PixelButton>
-          {entrar.isError && <p className="text-red-400 text-sm font-rpg text-center">{mensagemErro}</p>}
+          {entrar.isError && (
+            <p className="text-red-400 text-sm font-rpg text-center">
+              {mensagemErro}
+              {emailJaExiste && (
+                <>
+                  {' '}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      entrar.reset();
+                      setSenha('');
+                      setConfirmarSenha('');
+                      setModo('entrar');
+                    }}
+                    className="text-rpg-gold hover:text-white underline decoration-gray-700 hover:decoration-rpg-gold"
+                  >
+                    Entrar com essa conta
+                  </button>
+                </>
+              )}
+            </p>
+          )}
         </form>
 
         <button
+          disabled={entrar.isPending}
           onClick={() => {
             entrar.reset();
             setSenha('');
             setConfirmarSenha('');
             setModo(modo === 'entrar' ? 'criar' : 'entrar');
           }}
-          className="mt-5 text-gray-400 hover:text-rpg-gold text-sm font-rpg underline decoration-gray-700 hover:decoration-rpg-gold"
+          className="mt-5 text-gray-400 hover:text-rpg-gold text-sm font-rpg underline decoration-gray-700 hover:decoration-rpg-gold disabled:opacity-50 disabled:pointer-events-none"
         >
           {modo === 'entrar' ? 'Não tem conta? Criar uma' : 'Já tem conta? Entrar'}
         </button>

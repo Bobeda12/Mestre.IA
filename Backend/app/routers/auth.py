@@ -13,14 +13,16 @@ from app.services.auth import (
     construir_url_autorizacao_google,
     criar_cookie_oauth_state,
     criar_cookie_sessao,
-    criar_token_confirmacao,
+    criar_token_registro_pendente,
+    criar_token_reivindicacao_pendente,
     get_current_user,
     google_disponivel,
     hash_senha,
     obter_ou_criar_usuario_google,
     trocar_code_por_userinfo,
     validar_cookie_oauth_state,
-    validar_token_confirmacao,
+    validar_token_registro_pendente,
+    validar_token_reivindicacao_pendente,
     verificar_senha,
 )
 
@@ -40,12 +42,6 @@ def _setar_cookie_sessao(response: Response, usuario_id: int) -> None:
     )
 
 
-def _disparar_confirmacao(usuario_id: int, email: str) -> None:
-    token = criar_token_confirmacao(usuario_id)
-    link = f"{settings.confirmacao_email_url}?token={token}"
-    enviar_email_confirmacao(email, link)
-
-
 @router.get("/opcoes")
 def opcoes() -> dict:
     """O front usa isto pra decidir se mostra o botão "Entrar com Google" —
@@ -54,22 +50,20 @@ def opcoes() -> dict:
     return {"google_disponivel": google_disponivel()}
 
 
-@router.post("/registrar", status_code=201)
+@router.post("/registrar", status_code=200)
 @limiter.limit("10/minute")
-def registrar(request: Request, req: RegistrarRequest, response: Response, db: Session = Depends(get_db)) -> dict:
+def registrar(request: Request, req: RegistrarRequest, db: Session = Depends(get_db)) -> dict:
+    """Registro sem estado: nada é gravado no banco aqui. O e-mail e o hash
+    da senha viajam dentro do próprio token do link de confirmação — só
+    `/auth/confirmar` cria o `Usuario`, quando (e se) o link for clicado.
+    Reenviar o e-mail é só chamar esta rota de novo com os mesmos dados: como
+    nada foi persistido, não esbarra na checagem de duplicidade acima."""
     if db.query(Usuario).filter(Usuario.email == req.email).first() is not None:
         raise HTTPException(status_code=409, detail="Já existe uma conta com este e-mail.")
-    usuario = Usuario(email=req.email, senha_hash=hash_senha(req.senha))
-    db.add(usuario)
-    db.commit()
-    db.refresh(usuario)
-    _setar_cookie_sessao(response, usuario.id)
-    # `req.email`, não `usuario.email`: o atributo do ORM continua tipado
-    # `str | None` (a coluna é nullable para convidado) mesmo já tendo
-    # acabado de receber um valor não-None no construtor — mypy não
-    # enxerga essa garantia através do SQLAlchemy.
-    _disparar_confirmacao(usuario.id, req.email)
-    return {"email": usuario.email}
+    token = criar_token_registro_pendente(req.email, hash_senha(req.senha))
+    link = f"{settings.confirmacao_email_url}?token={token}"
+    enviar_email_confirmacao(req.email, link)
+    return {"email": req.email}
 
 
 @router.post("/convidado", status_code=201)
@@ -89,25 +83,26 @@ def convidado(request: Request, response: Response, db: Session = Depends(get_db
 
 
 @router.post("/reivindicar", status_code=200)
+@limiter.limit("10/minute")
 def reivindicar(
+    request: Request,
     req: ReivindicarRequest,
-    response: Response,
     current_user: Usuario = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
     """Etapa 10 (A-1) — o convidado vira uma conta de verdade, no mesmo
     `usuario_id`: os heróis dele não mudam de dono, só o `Usuario` ganha
-    e-mail e senha. É uma linha de UPDATE, não um usuário novo."""
+    e-mail e senha. Registro sem estado (igual `/registrar`): nada muda no
+    banco aqui, o `usuario_id` + e-mail + hash da senha viajam no token do
+    link, e só `/auth/confirmar` faz o UPDATE."""
     if current_user.email is not None:
         raise HTTPException(status_code=400, detail="Esta conta já tem um e-mail.")
     if db.query(Usuario).filter(Usuario.email == req.email).first() is not None:
         raise HTTPException(status_code=409, detail="Já existe uma conta com este e-mail.")
-    current_user.email = req.email
-    current_user.senha_hash = hash_senha(req.senha)
-    db.commit()
-    _setar_cookie_sessao(response, current_user.id)
-    _disparar_confirmacao(current_user.id, current_user.email)
-    return {"email": current_user.email}
+    token = criar_token_reivindicacao_pendente(current_user.id, req.email, hash_senha(req.senha))
+    link = f"{settings.confirmacao_email_url}?token={token}"
+    enviar_email_confirmacao(req.email, link)
+    return {"email": req.email}
 
 
 @router.post("/login")
@@ -137,31 +132,56 @@ def eu(current_user: Usuario = Depends(get_current_user)) -> dict:
     return {"email": current_user.email, "email_verificado": current_user.email_verificado}
 
 
+def _redirect_confirmado(sucesso: bool) -> RedirectResponse:
+    valor = "1" if sucesso else "0"
+    return RedirectResponse(url=f"{settings.frontend_url}/entrar?confirmado={valor}")
+
+
 @router.get("/confirmar")
 def confirmar(token: str, db: Session = Depends(get_db)) -> RedirectResponse:
-    """Etapa 10 (A-2) — link clicado direto do e-mail, fora do SPA: por
-    isso devolve um redirect pro front, não JSON. `?confirmado=1/0` deixa
-    o front decidir o que mostrar, sem precisar de uma rota própria só
-    para essa tela."""
-    usuario_id = validar_token_confirmacao(token)
-    if usuario_id is None:
-        return RedirectResponse(url=f"{settings.frontend_url}/entrar?confirmado=0")
-    usuario = db.get(Usuario, usuario_id)
-    if usuario is not None:
+    """Etapa 10 (A-2) — link clicado direto do e-mail, fora do SPA: por isso
+    devolve um redirect pro front, não JSON. `?confirmado=1/0` deixa o front
+    decidir o que mostrar, sem precisar de uma rota própria só para essa
+    tela. Registro sem estado: é aqui, e só aqui, que o `Usuario` é
+    gravado/atualizado — antes disso não existe conta nenhuma no banco. Seta
+    o cookie de sessão na resposta (igual `google_callback` já faz) porque
+    ninguém tem sessão até este ponto: nem quem registrou, nem quem clicou
+    no link, podem ser abas ou dispositivos diferentes."""
+    registro = validar_token_registro_pendente(token)
+    if registro is not None:
+        email, senha_hash = registro
+        if db.query(Usuario).filter(Usuario.email == email).first() is not None:
+            # Corrida: o e-mail foi usado por outra conta entre o clique no
+            # "criar conta" e o clique no link (ex.: dois links do mesmo
+            # reenvio confirmados em sequência).
+            return _redirect_confirmado(sucesso=False)
+        usuario = Usuario(email=email, senha_hash=senha_hash, email_verificado=True)
+        db.add(usuario)
+        db.commit()
+        db.refresh(usuario)
+        resposta = _redirect_confirmado(sucesso=True)
+        _setar_cookie_sessao(resposta, usuario.id)
+        return resposta
+
+    reivindicacao = validar_token_reivindicacao_pendente(token)
+    if reivindicacao is not None:
+        usuario_id, email, senha_hash = reivindicacao
+        usuario = db.get(Usuario, usuario_id)
+        if (
+            usuario is None
+            or usuario.email is not None
+            or db.query(Usuario).filter(Usuario.email == email).first() is not None
+        ):
+            return _redirect_confirmado(sucesso=False)
+        usuario.email = email
+        usuario.senha_hash = senha_hash
         usuario.email_verificado = True
         db.commit()
-    return RedirectResponse(url=f"{settings.frontend_url}/entrar?confirmado=1")
+        resposta = _redirect_confirmado(sucesso=True)
+        _setar_cookie_sessao(resposta, usuario.id)
+        return resposta
 
-
-@router.post("/confirmar/reenviar")
-@limiter.limit("3/hour")
-def reenviar_confirmacao(request: Request, current_user: Usuario = Depends(get_current_user)) -> dict:
-    if current_user.email is None:
-        raise HTTPException(status_code=400, detail="Esta conta não tem e-mail para confirmar.")
-    if current_user.email_verificado:
-        return {"status": "já confirmado"}
-    _disparar_confirmacao(current_user.id, current_user.email)
-    return {"status": "reenviado"}
+    return _redirect_confirmado(sucesso=False)
 
 
 @router.get("/google/iniciar")

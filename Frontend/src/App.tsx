@@ -4,7 +4,6 @@ import Home from './components/Home';
 import CharacterCreation from './components/CharacterCreation';
 import GameChat from './components/GameChat';
 import Login from './components/Login';
-import ConfirmeEmail from './components/ConfirmeEmail';
 import Carregando from './components/Carregando';
 import { useAuth } from './lib/auth';
 
@@ -30,11 +29,16 @@ function RotaProtegida({ children }: { children: React.ReactNode }) {
     );
   }
   if (!logado) return <Navigate to="/entrar" replace />;
-  // Etapa 10 (A-2) — bloqueia criar personagem/jogar até confirmar. Só
-  // afeta quem TEM e-mail; convidado (`email === null`) e conta Google
-  // (já verificada no OAuth) passam direto.
+  // Etapa 10 (A-2), revisão registro-sem-estado — na teoria isto nunca
+  // deveria disparar mais: desde que `/auth/registrar`/`/auth/reivindicar`
+  // pararam de gravar nada no banco, a única forma de existir sessão é ter
+  // passado por `/auth/confirmar`, que já cria/atualiza o usuário com
+  // `email_verificado=True`. Fica como rede de segurança (mesmo espírito de
+  // `get_current_verified_user` no backend) — se algum estado inconsistente
+  // aparecer mesmo assim, manda pra tela de login em vez de travar aqui,
+  // onde não tem como oferecer um "reenviar" de verdade (não tem a senha).
   if (usuario?.email !== null && usuario?.email_verificado === false) {
-    return <ConfirmeEmail email={usuario.email} />;
+    return <Navigate to="/entrar" replace />;
   }
   return <>{children}</>;
 }

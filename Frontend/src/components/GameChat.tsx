@@ -6,7 +6,7 @@ import { api, API_URL } from '../lib/api';
 import { prefereMovimentoReduzido } from '../lib/acessibilidade';
 import { ErroSse, postSse } from '../lib/sse';
 import { esconderTagOpcoes, getLocalImage, limparMarkdownLeve } from '../lib/utils';
-import { useAuth, useInvalidarAuth } from '../lib/auth';
+import { useAuth } from '../lib/auth';
 import { useTrilha, calcularTema } from '../lib/trilha';
 import RollCard, { DURACAO_ANIMACAO_DADO_MS, type DadosRolagem } from './RollCard';
 import StatusCard, { type EventoStatus } from './StatusCard';
@@ -20,6 +20,7 @@ import Carregando from './Carregando';
 import RetratoPixelado from './RetratoPixelado';
 import MenuConfiguracao from './MenuConfiguracao';
 import PainelRegras from './PainelRegras';
+import ConfirmeEmail from './ConfirmeEmail';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip';
 
 // Etapa 14 (revisão) — a ficha virou menu de abas estilo JRPG. Antes tudo
@@ -212,7 +213,6 @@ export default function GameChat() {
   // permite detectar "combate que acabou" sem um campo de vitória dedicado
   // no backend — combatActive true → false, sem game over, é a transição.
   const { usuario } = useAuth();
-  const invalidarAuth = useInvalidarAuth();
   const ehConvidado = usuario !== null && usuario.email === null;
   const combateFoiAtivoRef = useRef(false);
   const [primeiroCombateResolvido, setPrimeiroCombateResolvido] = useState(false);
@@ -224,6 +224,12 @@ export default function GameChat() {
   const [reivindicarSenha, setReivindicarSenha] = useState('');
   const [reivindicarErro, setReivindicarErro] = useState<string | null>(null);
   const [reivindicarEnviando, setReivindicarEnviando] = useState(false);
+  // Revisão registro-sem-estado — POST /auth/reivindicar não grava mais nada
+  // no banco na hora (só quando o link do e-mail é confirmado), então o
+  // modal não pode fechar como se a conta já existisse: mostra a mesma tela
+  // "confirme seu e-mail" do registro comum antes de dar por encerrado.
+  const [reivindicarPendente, setReivindicarPendente] = useState<string | null>(null);
+  const [reivindicarReenviado, setReivindicarReenviado] = useState(false);
 
   // BYOK (Etapa 15) — dois avisos distintos, cada um do seu lado do fluxo:
   // `modalTetoAberto` aparece quando a COTA COMPARTILHADA do servidor
@@ -263,21 +269,33 @@ export default function GameChat() {
     sessionStorage.setItem('mestre_ia_convite_reivindicar_dispensado', '1');
   };
 
-  const reivindicar = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const reivindicar = async (e?: React.FormEvent) => {
+    e?.preventDefault();
     setReivindicarEnviando(true);
     setReivindicarErro(null);
     try {
       await api.post('/auth/reivindicar', { email: reivindicarEmail, senha: reivindicarSenha });
-      invalidarAuth();
-      setModalReivindicarAberto(false);
-      dispensarConvite();
+      // Nada foi gravado no banco ainda — só quando o link do e-mail for
+      // confirmado. Se já estava mostrando a tela de confirmação, este
+      // sucesso é um reenvio; senão é o primeiro envio.
+      if (reivindicarPendente) {
+        setReivindicarReenviado(true);
+      } else {
+        setReivindicarPendente(reivindicarEmail);
+      }
     } catch (err) {
       const detalhe = isAxiosError<{ detail?: string }>(err) ? err.response?.data?.detail : undefined;
       setReivindicarErro(detalhe ?? 'Não deu para criar a conta. Confira o e-mail e a senha.');
     } finally {
       setReivindicarEnviando(false);
     }
+  };
+
+  const fecharModalReivindicar = () => {
+    setModalReivindicarAberto(false);
+    setReivindicarPendente(null);
+    setReivindicarReenviado(false);
+    dispensarConvite();
   };
 
   // Etapa 7, ADR-0013: TanStack Query no lugar do `useEffect` +
@@ -1015,7 +1033,30 @@ export default function GameChat() {
             </div>
         )}
 
-        {modalReivindicarAberto && (
+        {modalReivindicarAberto && reivindicarPendente && (
+            <div className="absolute inset-0 z-[90] bg-black/80 flex items-center justify-center p-4">
+                <PanelFrame borderWidth={10} className="w-full max-w-sm">
+                    <div className="bg-gray-900 pt-6">
+                        <ConfirmeEmail
+                            email={reivindicarPendente}
+                            aoReenviar={() => reivindicar()}
+                            reenviando={reivindicarEnviando}
+                            reenviado={reivindicarReenviado}
+                            erroAoReenviar={reivindicarErro !== null}
+                        />
+                        <button
+                            type="button"
+                            onClick={fecharModalReivindicar}
+                            className="w-full border-t-2 border-gray-700 text-gray-400 hover:text-white py-3 text-sm"
+                        >
+                            Continuar jogando
+                        </button>
+                    </div>
+                </PanelFrame>
+            </div>
+        )}
+
+        {modalReivindicarAberto && !reivindicarPendente && (
             <div className="absolute inset-0 z-[90] bg-black/80 flex items-center justify-center p-4">
                 <PanelFrame borderWidth={10} className="w-full max-w-sm">
                 <form onSubmit={reivindicar} className="bg-gray-900 p-6">

@@ -23,18 +23,25 @@ def client(_usuario_autenticado):
 
 
 def _registrar(client: TestClient, email: str, senha: str = "senha-forte-123") -> None:
-    # Igual ao helper de test_auth.py: verifica direto no banco, porque
-    # nada aqui é sobre o fluxo de confirmação (Etapa 10, A-2).
-    resp = client.post("/auth/registrar", json={"email": email, "senha": senha})
-    assert resp.status_code == 201, resp.text
+    # Igual ao helper de test_auth.py: registro sem estado (revisão da Etapa
+    # 10, A-2) — `/auth/registrar` não grava nada nem loga ninguém, então o
+    # atalho aqui é criar o `Usuario` direto e plantar o cookie de sessão,
+    # já que nada neste arquivo é sobre o fluxo de confirmação em si.
+    from app.services.auth import hash_senha
+
     db = SessionLocal()
     try:
-        usuario = db.query(Usuario).filter(Usuario.email == email).first()
-        assert usuario is not None
-        usuario.email_verificado = True
+        usuario = Usuario(email=email, senha_hash=hash_senha(senha), email_verificado=True)
+        db.add(usuario)
         db.commit()
     finally:
         db.close()
+    # Loga de verdade por `/auth/login` — o cookie vem de uma resposta HTTP
+    # real, então o `TestClient` guarda o domínio certo sozinho (plantar o
+    # cookie manualmente no jar dava domínio divergente do que `/auth/sair`
+    # apaga depois).
+    resp = client.post("/auth/login", json={"email": email, "senha": senha})
+    assert resp.status_code == 200, resp.text
 
 
 def _eventos_do_tipo(tipo: str) -> list[EventoTelemetria]:
