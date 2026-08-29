@@ -68,7 +68,23 @@ export default function Login() {
       }
       // Registrar não grava nada no banco nem seta sessão (só acontece
       // quando o link do e-mail é clicado) — não há o que invalidar aqui.
-      // Se já estava na tela de confirmação, este sucesso é um reenvio.
+      // Este branch só é alcançado pelo formulário de criação de conta (o
+      // reenvio, inclusive vindo de um login que falhou, usa
+      // `reenviarConfirmacao` abaixo).
+      setEmailRecemRegistrado(email);
+    },
+  });
+
+  // Revisão "motivo de erro no login" — reenviar precisa sempre bater em
+  // `/auth/registrar`, nunca em `/auth/login`. Reusar `entrar.mutate()`
+  // aqui quebraria se o usuário chegasse em `ConfirmeEmail` vindo do modo
+  // 'entrar' (a rota dela depende de `modo`, e nesse ponto `modo` ainda
+  // seria 'entrar'). Como `/auth/registrar` agora espelha o pendente em
+  // `RegistroPendente` (backend), chamar de novo com o mesmo e-mail é
+  // exatamente o reenvio, sem esbarrar em duplicidade.
+  const reenviarConfirmacao = useMutation({
+    mutationFn: async () => { await api.post('/auth/registrar', { email, senha }); },
+    onSuccess: () => {
       if (emailRecemRegistrado) {
         setReenviouConfirmacao(true);
       } else {
@@ -91,22 +107,35 @@ export default function Login() {
   const statusServidor = entrar.error && isAxiosError(entrar.error) ? entrar.error.response?.status : undefined;
   const detalheServidor =
     entrar.error && isAxiosError<{ detail?: string }>(entrar.error) ? entrar.error.response?.data?.detail : undefined;
+  // Revisão "motivo de erro no login" — `/auth/login` agora devolve um
+  // `motivo` (senha_incorreta | pendente_confirmacao | conta_nao_encontrada
+  // | conta_google) ao lado do `detail`, para oferecer a ação certa em vez
+  // de um texto único e genérico (troca deliberada da proteção
+  // anti-enumeração original, ver `Backend/app/routers/auth.py:ErroLogin`).
+  const motivoServidor =
+    entrar.error && isAxiosError<{ detail?: string; motivo?: string }>(entrar.error)
+      ? entrar.error.response?.data?.motivo
+      : undefined;
   const mensagemErro =
     detalheServidor ??
     (modo === 'entrar'
-      ? 'E-mail ou senha incorretos.'
+      ? 'E-mail ou senha incorretos, ou você ainda não confirmou o link enviado para o seu e-mail.'
       : 'Não deu para criar a conta. Confira o e-mail e a senha (mínimo 8 caracteres).');
   const emailJaExiste = modo === 'criar' && statusServidor === 409;
+  const statusReenvio =
+    reenviarConfirmacao.error && isAxiosError(reenviarConfirmacao.error)
+      ? reenviarConfirmacao.error.response?.status
+      : undefined;
 
   if (emailRecemRegistrado) {
     return (
       <div className="min-h-[100dvh] w-screen bg-rpg-darker flex items-center justify-center">
         <ConfirmeEmail
           email={emailRecemRegistrado}
-          aoReenviar={() => entrar.mutate()}
-          reenviando={entrar.isPending}
+          aoReenviar={() => reenviarConfirmacao.mutate()}
+          reenviando={reenviarConfirmacao.isPending}
           reenviado={reenviouConfirmacao}
-          erroAoReenviar={entrar.isError}
+          erroAoReenviar={reenviarConfirmacao.isError}
         />
       </div>
     );
@@ -225,6 +254,7 @@ export default function Login() {
                     type="button"
                     onClick={() => {
                       entrar.reset();
+                      reenviarConfirmacao.reset();
                       setSenha('');
                       setConfirmarSenha('');
                       setModo('entrar');
@@ -237,12 +267,63 @@ export default function Login() {
               )}
             </p>
           )}
+
+          {entrar.isError && modo === 'entrar' && motivoServidor === 'pendente_confirmacao' && (
+            <div className="text-center">
+              <button
+                type="button"
+                onClick={() => reenviarConfirmacao.mutate()}
+                disabled={reenviarConfirmacao.isPending}
+                className="text-rpg-gold hover:text-white text-xs font-rpg underline decoration-gray-700 hover:decoration-rpg-gold disabled:opacity-50 inline-flex items-center gap-2"
+              >
+                {reenviarConfirmacao.isPending && <Carregando tamanho={6} rotulo="Reenviando" />}
+                Reenviar e-mail de confirmação
+              </button>
+              {reenviarConfirmacao.isError && (
+                <p className="text-red-400 text-xs font-rpg mt-1">
+                  {statusReenvio === 409
+                    ? 'Essa conta já existe e está confirmada — confira a senha.'
+                    : 'Não deu para reenviar agora. Tenta de novo em instantes.'}
+                </p>
+              )}
+            </div>
+          )}
+
+          {entrar.isError && modo === 'entrar' && motivoServidor === 'conta_nao_encontrada' && (
+            <p className="text-center">
+              <button
+                type="button"
+                onClick={() => {
+                  entrar.reset();
+                  reenviarConfirmacao.reset();
+                  setSenha('');
+                  setConfirmarSenha('');
+                  setModo('criar');
+                }}
+                className="text-rpg-gold hover:text-white text-xs font-rpg underline decoration-gray-700 hover:decoration-rpg-gold"
+              >
+                Criar uma conta
+              </button>
+            </p>
+          )}
+
+          {entrar.isError && modo === 'entrar' && motivoServidor === 'conta_google' && opcoes.data?.google_disponivel && (
+            <p className="text-center">
+              <a
+                href={`${API_URL}/auth/google/iniciar`}
+                className="text-rpg-gold hover:text-white text-xs font-rpg underline decoration-gray-700 hover:decoration-rpg-gold"
+              >
+                Entrar com Google
+              </a>
+            </p>
+          )}
         </form>
 
         <button
           disabled={entrar.isPending}
           onClick={() => {
             entrar.reset();
+            reenviarConfirmacao.reset();
             setSenha('');
             setConfirmarSenha('');
             setModo(modo === 'entrar' ? 'criar' : 'entrar');

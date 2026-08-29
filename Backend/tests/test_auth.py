@@ -106,11 +106,60 @@ def test_login_com_senha_errada_e_rejeitado(client):
     client.post("/auth/sair")
     resp = client.post("/auth/login", json={"email": "senhacerta@teste.com", "senha": "senha-errada"})
     assert resp.status_code == 401
+    assert resp.json()["motivo"] == "senha_incorreta"
 
 
 def test_login_de_email_inexistente_e_rejeitado(client):
     resp = client.post("/auth/login", json={"email": "ninguem@teste.com", "senha": "qualquer-coisa"})
     assert resp.status_code == 401
+    assert resp.json()["motivo"] == "conta_nao_encontrada"
+
+
+def test_login_de_email_com_registro_pendente_avisa_para_confirmar(client):
+    """Diferente de um e-mail nunca usado: aqui existe um `POST
+    /auth/registrar` anterior (nenhuma conta ainda, o link não foi
+    clicado) — `/auth/login` deve reconhecer isso via `RegistroPendente`,
+    não confundir com "conta não encontrada"."""
+    client.post("/auth/registrar", json={"email": "pendente@teste.com", "senha": "senha-forte-123"})
+    resp = client.post("/auth/login", json={"email": "pendente@teste.com", "senha": "senha-forte-123"})
+    assert resp.status_code == 401
+    assert resp.json()["motivo"] == "pendente_confirmacao"
+
+
+def test_login_de_registro_pendente_vencido_vira_conta_nao_encontrada(client):
+    from datetime import UTC, datetime, timedelta
+
+    from app.infra.db import RegistroPendente, SessionLocal
+
+    client.post("/auth/registrar", json={"email": "pendente-velho@teste.com", "senha": "senha-forte-123"})
+    db = SessionLocal()
+    try:
+        pendente = db.query(RegistroPendente).filter(RegistroPendente.email == "pendente-velho@teste.com").one()
+        pendente.criado_em = datetime.now(UTC).replace(tzinfo=None) - timedelta(hours=25)
+        db.commit()
+    finally:
+        db.close()
+
+    resp = client.post("/auth/login", json={"email": "pendente-velho@teste.com", "senha": "senha-forte-123"})
+    assert resp.status_code == 401
+    assert resp.json()["motivo"] == "conta_nao_encontrada"
+
+
+def test_registrar_duas_vezes_o_mesmo_email_nao_duplica_pendente(client):
+    from app.infra.db import RegistroPendente, SessionLocal
+
+    client.post("/auth/registrar", json={"email": "reenvio@teste.com", "senha": "senha-forte-123"})
+    client.post("/auth/registrar", json={"email": "reenvio@teste.com", "senha": "senha-nova-456"})
+
+    db = SessionLocal()
+    try:
+        pendentes = db.query(RegistroPendente).filter(RegistroPendente.email == "reenvio@teste.com").all()
+        assert len(pendentes) == 1
+    finally:
+        db.close()
+
+    resp = client.post("/auth/login", json={"email": "reenvio@teste.com", "senha": "qualquer-coisa"})
+    assert resp.json()["motivo"] == "pendente_confirmacao"
 
 
 def test_eu_sem_cookie_devolve_401(client):
@@ -316,6 +365,7 @@ def test_login_com_senha_em_conta_so_google_e_rejeitado(client, monkeypatch):
 
     resp = client.post("/auth/login", json={"email": "sogoogle@teste.com", "senha": "qualquer-coisa"})
     assert resp.status_code == 401
+    assert resp.json()["motivo"] == "conta_google"
 
 
 # ---------------------------------------------------------------------------

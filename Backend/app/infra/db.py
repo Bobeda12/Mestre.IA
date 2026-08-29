@@ -31,6 +31,27 @@ class Usuario(Base):
     personagens: Mapped[list["Personagem"]] = relationship(back_populates="usuario")
 
 
+class RegistroPendente(Base):
+    """Espelho consultável do token de confirmação (services/auth.py) — o
+    token continua sendo o que autentica o clique no link, mas sem nenhum
+    registro no banco `/auth/login` não tinha como saber que um e-mail tem
+    um cadastro esperando confirmação, e caía na mesma mensagem genérica de
+    "e-mail ou senha incorretos" de um e-mail nunca usado. `usuario_id` é
+    `None` num registro comum (`/auth/registrar`) e o id do convidado numa
+    reivindicação (`/auth/reivindicar`) — mesma distinção que já existe
+    dentro do token. Sem expiração ativa: uma linha mais velha que
+    `TTL_TOKEN_CONFIRMACAO` (services/auth.py) é tratada como inexistente
+    nas checagens, mas continua no banco (aceitável no volume do projeto)."""
+
+    __tablename__ = "registros_pendentes"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    email: Mapped[str] = mapped_column(unique=True, index=True)
+    senha_hash: Mapped[str]
+    usuario_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"), default=None)
+    criado_em: Mapped[datetime] = mapped_column(default=lambda: datetime.now(UTC))
+
+
 class Personagem(Base):
     __tablename__ = "personagens"
 

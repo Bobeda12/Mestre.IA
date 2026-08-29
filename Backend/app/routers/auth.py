@@ -1,15 +1,18 @@
+from datetime import UTC, datetime
+
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 
 from app.domain.auth import LoginRequest, RegistrarRequest, ReivindicarRequest
-from app.infra.db import Usuario, get_db
+from app.infra.db import RegistroPendente, Usuario, get_db
 from app.infra.email import enviar_email_confirmacao
 from app.infra.rate_limit import limiter
 from app.infra.settings import settings
 from app.services.auth import (
     NOME_COOKIE_OAUTH_STATE,
     NOME_COOKIE_SESSAO,
+    TTL_TOKEN_CONFIRMACAO,
     construir_url_autorizacao_google,
     criar_cookie_oauth_state,
     criar_cookie_sessao,
@@ -32,6 +35,19 @@ _TTL_COOKIE_SESSAO_SEGUNDOS = 30 * 24 * 60 * 60
 _TTL_COOKIE_STATE_SEGUNDOS = 10 * 60
 
 
+class ErroLogin(HTTPException):
+    """401 de `/auth/login` com um motivo à parte (`detail` continua string,
+    igual a todo outro endpoint da API — ver handler em `app/main.py`), para
+    o front distinguir sem precisar comparar texto. Troca deliberada da
+    proteção anti-enumeração original (ver comentário antigo desta rota):
+    saber se um e-mail está pendente de confirmação, sem conta, ou com senha
+    errada é mais útil pro jogador do que esconder qual dos três aconteceu."""
+
+    def __init__(self, mensagem: str, motivo: str) -> None:
+        super().__init__(status_code=401, detail=mensagem)
+        self.motivo = motivo
+
+
 def _setar_cookie_sessao(response: Response, usuario_id: int) -> None:
     response.set_cookie(
         key=NOME_COOKIE_SESSAO,
@@ -40,6 +56,21 @@ def _setar_cookie_sessao(response: Response, usuario_id: int) -> None:
         httponly=True,
         samesite="lax",
     )
+
+
+def _upsert_registro_pendente(db: Session, email: str, senha_hash: str, usuario_id: int | None) -> None:
+    pendente = db.query(RegistroPendente).filter(RegistroPendente.email == email).first()
+    if pendente is None:
+        db.add(RegistroPendente(email=email, senha_hash=senha_hash, usuario_id=usuario_id))
+    else:
+        pendente.senha_hash = senha_hash
+        pendente.usuario_id = usuario_id
+        pendente.criado_em = datetime.now(UTC).replace(tzinfo=None)
+    db.commit()
+
+
+def _pendente_expirado(pendente: RegistroPendente) -> bool:
+    return datetime.now(UTC).replace(tzinfo=None) - pendente.criado_em > TTL_TOKEN_CONFIRMACAO
 
 
 @router.get("/opcoes")
@@ -53,14 +84,21 @@ def opcoes() -> dict:
 @router.post("/registrar", status_code=200)
 @limiter.limit("10/minute")
 def registrar(request: Request, req: RegistrarRequest, db: Session = Depends(get_db)) -> dict:
-    """Registro sem estado: nada é gravado no banco aqui. O e-mail e o hash
-    da senha viajam dentro do próprio token do link de confirmação — só
-    `/auth/confirmar` cria o `Usuario`, quando (e se) o link for clicado.
-    Reenviar o e-mail é só chamar esta rota de novo com os mesmos dados: como
-    nada foi persistido, não esbarra na checagem de duplicidade acima."""
+    """Registro sem estado: nenhum `Usuario` é gravado aqui — só
+    `/auth/confirmar` cria a conta, quando (e se) o link for clicado. O
+    e-mail e o hash da senha viajam dentro do próprio token do link (é ele
+    quem autentica o clique), mas também ficam espelhados em
+    `RegistroPendente` (upsert por e-mail), para `/auth/login` conseguir
+    dizer "você ainda não confirmou" em vez de "e-mail ou senha incorretos"
+    pra quem esqueceu de clicar. Reenviar o e-mail é só chamar esta rota de
+    novo com os mesmos dados: o upsert atualiza a linha pendente em vez de
+    duplicar, e não esbarra na checagem de duplicidade acima (que só olha
+    contas já confirmadas)."""
     if db.query(Usuario).filter(Usuario.email == req.email).first() is not None:
         raise HTTPException(status_code=409, detail="Já existe uma conta com este e-mail.")
-    token = criar_token_registro_pendente(req.email, hash_senha(req.senha))
+    senha_hash = hash_senha(req.senha)
+    _upsert_registro_pendente(db, req.email, senha_hash, usuario_id=None)
+    token = criar_token_registro_pendente(req.email, senha_hash)
     link = f"{settings.confirmacao_email_url}?token={token}"
     enviar_email_confirmacao(req.email, link)
     return {"email": req.email}
@@ -92,14 +130,18 @@ def reivindicar(
 ) -> dict:
     """Etapa 10 (A-1) — o convidado vira uma conta de verdade, no mesmo
     `usuario_id`: os heróis dele não mudam de dono, só o `Usuario` ganha
-    e-mail e senha. Registro sem estado (igual `/registrar`): nada muda no
-    banco aqui, o `usuario_id` + e-mail + hash da senha viajam no token do
-    link, e só `/auth/confirmar` faz o UPDATE."""
+    e-mail e senha. Registro sem estado (igual `/registrar`): o `Usuario` só
+    muda em `/auth/confirmar`; o espelho em `RegistroPendente` (com
+    `usuario_id` preenchido, ver `_upsert_registro_pendente`) é só pro
+    `/auth/login` saber que existe uma reivindicação pendente pra esse
+    e-mail."""
     if current_user.email is not None:
         raise HTTPException(status_code=400, detail="Esta conta já tem um e-mail.")
     if db.query(Usuario).filter(Usuario.email == req.email).first() is not None:
         raise HTTPException(status_code=409, detail="Já existe uma conta com este e-mail.")
-    token = criar_token_reivindicacao_pendente(current_user.id, req.email, hash_senha(req.senha))
+    senha_hash = hash_senha(req.senha)
+    _upsert_registro_pendente(db, req.email, senha_hash, usuario_id=current_user.id)
+    token = criar_token_reivindicacao_pendente(current_user.id, req.email, senha_hash)
     link = f"{settings.confirmacao_email_url}?token={token}"
     enviar_email_confirmacao(req.email, link)
     return {"email": req.email}
@@ -109,16 +151,24 @@ def reivindicar(
 @limiter.limit("10/minute")
 def login(request: Request, req: LoginRequest, response: Response, db: Session = Depends(get_db)) -> dict:
     usuario = db.query(Usuario).filter(Usuario.email == req.email).first()
-    # Mensagem genérica em qualquer um dos três casos (e-mail não existe,
-    # conta é só-Google sem senha, senha errada) — não é este endpoint que
-    # revela qual dos três aconteceu.
-    erro = HTTPException(status_code=401, detail="E-mail ou senha incorretos.")
-    if usuario is None or usuario.senha_hash is None:
-        raise erro
-    if not verificar_senha(req.senha, usuario.senha_hash):
-        raise erro
-    _setar_cookie_sessao(response, usuario.id)
-    return {"email": usuario.email}
+    if usuario is not None:
+        if usuario.senha_hash is None:
+            raise ErroLogin(
+                'Essa conta usa login do Google — use o botão "Entrar com Google".',
+                motivo="conta_google",
+            )
+        if not verificar_senha(req.senha, usuario.senha_hash):
+            raise ErroLogin("E-mail ou senha incorretos.", motivo="senha_incorreta")
+        _setar_cookie_sessao(response, usuario.id)
+        return {"email": usuario.email}
+
+    pendente = db.query(RegistroPendente).filter(RegistroPendente.email == req.email).first()
+    if pendente is not None and not _pendente_expirado(pendente):
+        raise ErroLogin(
+            "Você ainda não confirmou seu e-mail. Confira sua caixa de entrada (e o spam).",
+            motivo="pendente_confirmacao",
+        )
+    raise ErroLogin("Não encontramos uma conta com esse e-mail.", motivo="conta_nao_encontrada")
 
 
 @router.post("/sair")
@@ -157,6 +207,7 @@ def confirmar(token: str, db: Session = Depends(get_db)) -> RedirectResponse:
             return _redirect_confirmado(sucesso=False)
         usuario = Usuario(email=email, senha_hash=senha_hash, email_verificado=True)
         db.add(usuario)
+        db.query(RegistroPendente).filter(RegistroPendente.email == email).delete()
         db.commit()
         db.refresh(usuario)
         resposta = _redirect_confirmado(sucesso=True)
@@ -176,6 +227,7 @@ def confirmar(token: str, db: Session = Depends(get_db)) -> RedirectResponse:
         usuario.email = email
         usuario.senha_hash = senha_hash
         usuario.email_verificado = True
+        db.query(RegistroPendente).filter(RegistroPendente.email == email).delete()
         db.commit()
         resposta = _redirect_confirmado(sucesso=True)
         _setar_cookie_sessao(resposta, usuario.id)

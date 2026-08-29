@@ -2,6 +2,7 @@ import logging
 
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
@@ -9,6 +10,7 @@ from slowapi.middleware import SlowAPIMiddleware
 from app.infra.rate_limit import limiter
 from app.infra.settings import settings
 from app.routers import auth, byok, character, game, options, personagens, regras
+from app.routers.auth import ErroLogin
 
 # Sem isto, `logger.info(...)`/`logger.error(...)` de qualquer módulo da app
 # não aparecem no console: uvicorn configura só os próprios loggers
@@ -47,6 +49,17 @@ def _tratar_rate_limit_excedido(request: Request, exc: Exception) -> Response:
 
 app.add_exception_handler(RateLimitExceeded, _tratar_rate_limit_excedido)
 app.add_middleware(SlowAPIMiddleware)
+
+
+def _tratar_erro_login(request: Request, exc: Exception) -> Response:
+    # `ErroLogin` (app/routers/auth.py) carrega um `motivo` além do `detail`
+    # de todo `HTTPException` — sem handler próprio, FastAPI serializaria só
+    # `{"detail": ...}` e o `motivo` se perderia.
+    assert isinstance(exc, ErroLogin)
+    return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail, "motivo": exc.motivo})
+
+
+app.add_exception_handler(ErroLogin, _tratar_erro_login)
 
 
 @app.get("/health")

@@ -36,7 +36,7 @@ NOME_COOKIE_SESSAO = "sessao"
 NOME_COOKIE_OAUTH_STATE = "oauth_state"
 _TTL_COOKIE = timedelta(days=30)
 _TTL_OAUTH_STATE = timedelta(minutes=10)
-_TTL_TOKEN_CONFIRMACAO = timedelta(hours=24)
+TTL_TOKEN_CONFIRMACAO = timedelta(hours=24)
 
 GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
@@ -304,7 +304,7 @@ def validar_token_registro_pendente(token: str) -> tuple[str, str] | None:
         emitido_em = datetime.fromisoformat(emitido_em_str)
     except ValueError:
         return None
-    if _agora() - emitido_em > _TTL_TOKEN_CONFIRMACAO:
+    if _agora() - emitido_em > TTL_TOKEN_CONFIRMACAO:
         return None
     return email, senha_hash
 
@@ -338,6 +338,6 @@ def validar_token_reivindicacao_pendente(token: str) -> tuple[int, str, str] | N
         emitido_em = datetime.fromisoformat(emitido_em_str)
     except ValueError:
         return None
-    if _agora() - emitido_em > _TTL_TOKEN_CONFIRMACAO:
+    if _agora() - emitido_em > TTL_TOKEN_CONFIRMACAO:
         return None
     return usuario_id, email, senha_hash

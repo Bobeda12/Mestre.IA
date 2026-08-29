@@ -33,6 +33,7 @@ Template: [`0000-template.md`](0000-template.md) · Sistema completo: [`../READM
 | [0028](0028-locais-inventados-revisao-da-validacao-fechada-de-mover.md) | Locais inventados: revisão da validação fechada de `mover` | Revisão de gameplay (Fase 5) | ✅ aceito | 25/08/2026 |
 | [0029](0029-pele-e-ficha-separadas.md) | Pele e ficha separadas: nome do monstro/local inicial deixam de estar presos à ficha | Rodada de conserto (Parte 2, item J) | ✅ aceito | 26/08/2026 |
 | [0030](0030-excluir-personagem-de-verdade-em-vez-de-arquivar.md) | Excluir personagem apaga a linha de verdade, não só marca `arquivado` | Polimento de UX pós-lançamento (Home/Login) | ✅ aceito | 26/08/2026 |
+| [0031](0031-login-com-motivo-de-erro-diferenciado.md) | Login devolve motivo distinto (senha errada / pendente / não encontrada / só-Google), abrindo mão da anti-enumeração | 15 | ✅ aceito | 29/08/2026 |
 
 **Legenda:** 🕓 previsto · ✅ aceito · ⛔ substituído
 

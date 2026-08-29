@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 
 from app import routers
 from app.infra import llm_client
-from app.infra.db import SessionLocal, Usuario
+from app.infra.db import RegistroPendente, SessionLocal, Usuario
 from app.main import app
 from app.services.auth import get_current_user
 from tests.test_smoke import _payload_base
@@ -39,13 +39,27 @@ def _token_de(link: str) -> str:
     return link.split("token=", 1)[1]
 
 
-class TestRegistrarNaoGravaNada:
+class TestRegistrarNaoCriaConta:
+    """Nenhum `Usuario` é gravado até o clique no link — mas, desde a
+    revisão que deu a `/auth/login` um motivo de erro diferenciado, um
+    espelho consultável (`RegistroPendente`) passou a existir para o
+    pendente ser reconhecido sem precisar de conta nenhuma."""
+
     def test_registrar_nao_cria_usuario_nem_loga(self, client, link_capturado):
         client.post("/auth/registrar", json={"email": "novo@teste.com", "senha": "senha-forte-123"})
         assert client.get("/auth/eu").status_code == 401
         db = SessionLocal()
         try:
             assert db.query(Usuario).filter(Usuario.email == "novo@teste.com").first() is None
+        finally:
+            db.close()
+
+    def test_registrar_grava_o_pendente(self, client, link_capturado):
+        client.post("/auth/registrar", json={"email": "pendente-grava@teste.com", "senha": "senha-forte-123"})
+        db = SessionLocal()
+        try:
+            pendente = db.query(RegistroPendente).filter(RegistroPendente.email == "pendente-grava@teste.com").one()
+            assert pendente.usuario_id is None
         finally:
             db.close()
 
@@ -56,7 +70,7 @@ class TestRegistrarNaoGravaNada:
         assert destinatario == "novo2@teste.com"
         assert "token=" in link
 
-    def test_reivindicar_tambem_nao_grava_nada(self, client, link_capturado):
+    def test_reivindicar_tambem_nao_grava_usuario(self, client, link_capturado):
         client.post("/auth/convidado")
         resp = client.post(
             "/auth/reivindicar", json={"email": "convidado-vira-conta@teste.com", "senha": "senha-forte-123"}
@@ -66,6 +80,22 @@ class TestRegistrarNaoGravaNada:
         # O convidado continua exatamente convidado — sem e-mail — até
         # confirmar pelo link.
         assert client.get("/auth/eu").json()["email"] is None
+
+    def test_reivindicar_grava_o_pendente_com_o_usuario_id_do_convidado(self, client, link_capturado):
+        client.post("/auth/convidado")
+        eu_convidado = client.get("/auth/eu")
+        client.post(
+            "/auth/reivindicar", json={"email": "convidado-pendente@teste.com", "senha": "senha-forte-123"}
+        )
+        db = SessionLocal()
+        try:
+            pendente = (
+                db.query(RegistroPendente).filter(RegistroPendente.email == "convidado-pendente@teste.com").one()
+            )
+            assert pendente.usuario_id is not None
+        finally:
+            db.close()
+        assert eu_convidado.status_code == 200
 
 
 class TestBloqueioAntesDeConfirmar:
@@ -97,6 +127,13 @@ class TestConfirmarRegistro:
         eu = client.get("/auth/eu")
         assert eu.status_code == 200
         assert eu.json() == {"email": "confirma@teste.com", "email_verificado": True}
+
+        # Confirmado: o espelho pendente não tem mais motivo pra existir.
+        db = SessionLocal()
+        try:
+            assert db.query(RegistroPendente).filter(RegistroPendente.email == "confirma@teste.com").first() is None
+        finally:
+            db.close()
 
     def test_confirmar_libera_criar_personagem(self, client, link_capturado, monkeypatch):
         monkeypatch.setattr(llm_client, "clients", {})
