@@ -37,14 +37,14 @@ const getPointCost = (score: number) => { if (score <= 8) return 0; const costs:
 // personagem. Estes descritores existem só para o prompt de imagem; o
 // resto do app continua em português (ver Backend/data/races.json).
 const RACE_VISUAL_EN: Record<string, string> = {
-  "Anão": "dwarf, short and stocky build, thick braided beard",
+  "Anão": "dwarf, short and stocky build",
   "Elfo": "elf, tall and slender, pointed ears, elegant features",
   "Halfling": "halfling, very short stature, curly hair, cheerful round face",
   "Humano": "human",
   "Draconato": "dragonborn, reptilian scaled skin, dragon-like head, no hair",
   "Gnomo": "gnome, tiny stature, large expressive eyes, pointed ears",
   "Meio-Elfo": "half-elf, slightly pointed ears, human build with elven grace",
-  "Meio-Orc": "half-orc, greenish-gray skin, prominent lower tusks, muscular build",
+  "Meio-Orc": "half-orc, greenish-gray skin, prominent lower tusks, sturdy build",
   "Tiefling": "tiefling, small horns, thin tail, reddish or violet skin",
 };
 
@@ -121,10 +121,10 @@ export default function CharacterCreation({ onCharacterCreated }: CharacterCreat
     // o clique mudava `variacao` e nada regerava — a condição precisa cobrir
     // a tela onde o botão está.
     if ((step === 4 || step === 5) && name && gender && selectedRace && selectedClass) {
-        const genderEn = gender === "Feminino" ? "female" : gender === "Masculino" ? "male" : "androgynous";
+        const genderEn = gender === "Feminino" ? "woman" : gender === "Masculino" ? "man" : "person";
         const raceVisual = RACE_VISUAL_EN[selectedRace] || selectedRace;
         const classVisual = CLASS_VISUAL_EN[selectedClass] || selectedClass;
-        const prompt = `fantasy rpg character portrait of a ${genderEn} ${raceVisual}, ${classVisual}, highly detailed face, looking at camera, dnd art style, masterpiece, sharp focus, dark fantasy background`;
+        const prompt = `fantasy rpg character portrait of a ${genderEn}, race is ${raceVisual}, class is ${classVisual}, highly detailed face, looking at camera, dnd art style, masterpiece, sharp focus, dark fantasy background`;
         // O seed saía de `name.length + 123`, ou seja dependia SÓ do
         // comprimento do nome: como quase todo nome tem 4 a 8 letras, todo
         // mundo caía entre 127 e 131, e "Pedro" e "Vorag" geravam com o

@@ -1,4 +1,5 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import Carregando from './Carregando';
 
 // O retrato do herói é gerado por IA (image.pollinations.ai) e volta como
 // pintura digital realista — bonita, mas em outra linguagem visual do resto do
@@ -106,10 +107,18 @@ export default function RetratoPixelado({
   grade?: number;
 }) {
   const ref = useRef<HTMLCanvasElement>(null);
+  const [carregando, setCarregando] = useState(true);
 
   useEffect(() => {
     if (!src) return;
     let cancelado = false;
+
+    setCarregando(true);
+    // Limpa o retrato antigo na hora: sem isso, trocar `src` (ex.: "Gerar
+    // outro retrato") deixa a imagem anterior parada na tela até a nova
+    // terminar de carregar, dando impressão de botão quebrado.
+    const cvAtual = ref.current;
+    cvAtual?.getContext('2d')?.clearRect(0, 0, cvAtual.width, cvAtual.height);
 
     // Desenha e, quando possível, quantiza. `podeLerPixels` diz se a imagem
     // veio por um pedido com CORS — sem isso o canvas fica "contaminado" e
@@ -128,6 +137,7 @@ export default function RetratoPixelado({
       cv.height = altura;
       ctx.imageSmoothingEnabled = false;
       ctx.drawImage(img, 0, 0, grade, altura);
+      setCarregando(false);
       if (!podeLerPixels) return;
 
       try {
@@ -165,6 +175,11 @@ export default function RetratoPixelado({
       if (cancelado) return;
       const semCors = new Image();
       semCors.onload = () => desenhar(semCors, false);
+      // Se essa segunda tentativa também falhar (ex.: sem rede), o
+      // carregando ficaria preso em `true` para sempre sem este `onerror`.
+      semCors.onerror = () => {
+        if (!cancelado) setCarregando(false);
+      };
       semCors.src = src;
     };
 
@@ -175,12 +190,20 @@ export default function RetratoPixelado({
   }, [src, grade]);
 
   return (
-    <canvas
-      ref={ref}
-      role="img"
-      aria-label={alt}
-      className={className}
-      style={{ imageRendering: 'pixelated' }}
-    />
+    <div className="relative w-full h-full">
+      <canvas
+        ref={ref}
+        role="img"
+        aria-label={alt}
+        className={className}
+        style={{ imageRendering: 'pixelated' }}
+      />
+      {carregando && src && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-black/60">
+          <Carregando tamanho={6} rotulo="Gerando retrato" />
+          <span className="text-[10px] text-rpg-gold uppercase tracking-widest font-rpg">Gerando...</span>
+        </div>
+      )}
+    </div>
   );
 }
