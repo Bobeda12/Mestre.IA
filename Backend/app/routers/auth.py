@@ -217,20 +217,27 @@ def confirmar(token: str, db: Session = Depends(get_db)) -> RedirectResponse:
     reivindicacao = validar_token_reivindicacao_pendente(token)
     if reivindicacao is not None:
         usuario_id, email, senha_hash = reivindicacao
-        usuario = db.get(Usuario, usuario_id)
+        # Rodada de conserto (checagem de tipos, mypy) — nome próprio, não
+        # `usuario`: reaproveitar o mesmo nome do `Usuario` recém-criado no
+        # bloco acima (não-opcional) para um `db.get(...)` que PODE devolver
+        # `None` fazia o mypy reclamar de atribuição incompatível na mesma
+        # variável. São conceitos diferentes mesmo — um é a conta nova, o
+        # outro é a conta existente sendo reivindicada — o nome só deixa
+        # isso explícito.
+        usuario_existente = db.get(Usuario, usuario_id)
         if (
-            usuario is None
-            or usuario.email is not None
+            usuario_existente is None
+            or usuario_existente.email is not None
             or db.query(Usuario).filter(Usuario.email == email).first() is not None
         ):
             return _redirect_confirmado(sucesso=False)
-        usuario.email = email
-        usuario.senha_hash = senha_hash
-        usuario.email_verificado = True
+        usuario_existente.email = email
+        usuario_existente.senha_hash = senha_hash
+        usuario_existente.email_verificado = True
         db.query(RegistroPendente).filter(RegistroPendente.email == email).delete()
         db.commit()
         resposta = _redirect_confirmado(sucesso=True)
-        _setar_cookie_sessao(resposta, usuario.id)
+        _setar_cookie_sessao(resposta, usuario_existente.id)
         return resposta
 
     return _redirect_confirmado(sucesso=False)
