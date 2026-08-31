@@ -244,6 +244,85 @@ img[src^="/assets/backgrounds/"] {
   will-change: transform;
 }
 
+/* Fase 1 do remaster UX (PLANO_REMASTER_UX.md) — entrada da notificação
+   flutuante de sistema (ouro/item), SistemaFeedbackToast.tsx. Só a entrada:
+   a saída é a remoção do item da lista (sem lib de animação nesta fase),
+   suficiente pro toast durar ~3s e sumir sem chamar atenção na saída. */
+@keyframes toastIn {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-toast-in {
+  animation: toastIn 0.2s ease-out forwards;
+}
+
+/* Fase 1 do remaster UX — carta de ação tática (PixelActionCard.tsx),
+   substitui o botão de formulário das sugestões [OPCOES]. Sem
+   `border-radius` (cantos retos, como o resto do pixel art) e glow em
+   degrau no hover em vez de sombra suave contínua — mesmo princípio do
+   `.pixel-frame`, só que reagindo a interação. */
+.pixel-action-card {
+  border: 2px solid var(--color-rpg-leather);
+  background: linear-gradient(180deg, rgba(74, 59, 42, 0.55), rgba(15, 14, 11, 0.75));
+  box-shadow: 0 0 0 1px #000;
+  transition: box-shadow 0.15s steps(3, end), border-color 0.15s steps(3, end), transform 0.1s steps(2, end);
+}
+.pixel-action-card:hover {
+  border-color: var(--color-rpg-gold);
+  box-shadow: 0 0 0 1px #000, 0 0 10px rgba(197, 160, 89, 0.55);
+  transform: translateY(-1px);
+}
+.pixel-action-card:active {
+  transform: translateY(0);
+  filter: brightness(0.92);
+}
+
+/* Fase 2 do remaster UX (PLANO_REMASTER_UX.md) — PixelBar.tsx `flash`
+   (dano: pico de brilho, some sozinho) e `glow` (level up: respiração
+   dourada, duas vezes). `barFlash` some rápido pra acompanhar o
+   `.animate-shake` (0.4s) já reaproveitado junto; `barGlowGold` é mais
+   lenta e repete, pra dar tempo do jogador notar o "ping" de subir de
+   nível sem precisar de texto. */
+@keyframes barFlash {
+  0%, 100% { filter: brightness(1); }
+  50% { filter: brightness(2.2) saturate(1.4); }
+}
+.animate-bar-flash {
+  animation: barFlash 0.4s ease-in-out;
+}
+@keyframes barGlowGold {
+  0%, 100% { box-shadow: 0 0 0 rgba(197, 160, 89, 0); }
+  50% { box-shadow: 0 0 10px 2px rgba(197, 160, 89, 0.85); }
+}
+.animate-bar-glow {
+  animation: barGlowGold 0.6s ease-in-out 2;
+}
+
+/* Fase 2 do remaster UX — chuva leve sobre o card de Mundo/Clima da
+   sidebar, quando `w_state`/`clima` indica chuva. Listras finas caindo em
+   diagonal, em `steps` (não contínuo) pro mesmo motivo do `mapaDeslizando`:
+   textura pixel não pode borrar em sub-pixel. */
+@keyframes chuvaCaindo {
+  from { background-position: 0 0; }
+  to { background-position: -8px 16px; }
+}
+.animate-chuva {
+  background-image: repeating-linear-gradient(115deg, rgba(140, 180, 220, 0.35) 0px, rgba(140, 180, 220, 0.35) 1px, transparent 1px, transparent 6px);
+  animation: chuvaCaindo 0.5s steps(4, end) infinite;
+}
+
+/* Pendência do remaster UX resolvida (PLANO_REMASTER_UX.md, item 2) —
+   véu de ambiência por período do dia sobre a área de chat. O jogo não tem
+   nenhuma arte de cenário por local/hora (escopo de asset, fora do
+   alcance desta correção) — isto é a versão honesta e barata do "o fundo
+   muda com o mundo": um gradiente de cor bem sutil por cima do fundo
+   escuro de sempre, nunca a ponto de brigar com o texto. `background-image`
+   some para `transparent` na borda pra não criar um retângulo visível. */
+.periodo-madrugada { background-image: radial-gradient(ellipse at top, rgba(70, 90, 160, 0.16), transparent 70%); }
+.periodo-manha { background-image: radial-gradient(ellipse at top, rgba(255, 210, 140, 0.09), transparent 70%); }
+.periodo-tarde { background-image: radial-gradient(ellipse at top, rgba(255, 255, 255, 0.04), transparent 70%); }
+.periodo-noite { background-image: radial-gradient(ellipse at top, rgba(255, 140, 60, 0.13), transparent 70%); }
+
 /* O jogo tem bastante coisa em loop (tocha, mapa, blocos de carregamento,
    pulsação do título). Uma única regra desliga tudo pra quem pediu menos
    movimento no sistema, em vez de cada componente ter que lembrar de checar.

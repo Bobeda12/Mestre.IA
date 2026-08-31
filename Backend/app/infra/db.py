@@ -131,6 +131,19 @@ class Personagem(Base):
     nivel: Mapped[int] = mapped_column(default=1, server_default="1")
     xp: Mapped[int] = mapped_column(default=0, server_default="0")
 
+    # Pendências do remaster UX (PLANO_REMASTER_UX.md) — itens 3 e 4.
+    # `monstros_derrotados`: nome do bestiário -> quantas vezes já morreu
+    # pra este herói (`ToolExecutor._conceder_xp`, services/tools.py, é o
+    # único lugar que escreve aqui — mesmo princípio de `inventario`/
+    # `reputacao_npcs`: o ToolExecutor nunca toca o banco direto, só
+    # reatribui a coluna). `morto_em`/`pontuacao_final` ficam `None`
+    # enquanto o herói está vivo, preenchidos uma vez em
+    # `_persistir_epitafio_se_confirmado` (routers/game.py) no mesmo
+    # commit que confirma a morte — mesmo padrão do `epitafio` acima.
+    monstros_derrotados: Mapped[dict] = mapped_column(JSON, default=dict)
+    morto_em: Mapped[datetime | None] = mapped_column(default=None)
+    pontuacao_final: Mapped[int | None] = mapped_column(default=None)
+
     usuario: Mapped["Usuario"] = relationship(back_populates="personagens")
     eventos_memoria: Mapped[list["EventoMemoria"]] = relationship(back_populates="personagem")
 

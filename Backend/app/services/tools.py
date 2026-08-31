@@ -274,6 +274,19 @@ class ToolExecutor:
         número). Sobe nível em loop porque uma vitória grande pode cruzar
         mais de um limiar de `rules_engine.XP_POR_NIVEL` de uma vez."""
         xp_ganho = sum((regras.get_monster(i.nome) or {}).get("xp", 0) for i in inimigos_derrotados)
+        # Pendência do remaster UX (PLANO_REMASTER_UX.md, item 3) —
+        # bestiário persistente: `_conceder_xp` é chamado exatamente uma
+        # vez por vitória, com a lista definitiva de inimigos derrotados
+        # (`self.c_state.inimigos`, todos já em 0 PV) — o único lugar do
+        # motor que sabe "este combate acabou e estes morreram", sem
+        # precisar recontar eventos ou arriscar contar o mesmo cadáver duas
+        # vezes. Chave é o nome do bestiário (`i.nome`), a mesma que o
+        # frontend já usa pra buscar o sprite em `/assets/monstros/`.
+        if inimigos_derrotados:
+            abates = dict(self.heroi.monstros_derrotados or {})
+            for inimigo in inimigos_derrotados:
+                abates[inimigo.nome] = abates.get(inimigo.nome, 0) + 1
+            self.heroi.monstros_derrotados = abates
         if xp_ganho <= 0:
             return {}
         return self._aplicar_xp(xp_ganho)
@@ -369,6 +382,11 @@ class ToolExecutor:
         self.w_state.local = destino
         if dados.get("clima"):
             self.w_state.clima = dados["clima"]
+        # Pendência do remaster UX (item 2) — viajar custa horas de
+        # verdade, não um turno abstrato; 2h é uma travessia curta entre
+        # locais vizinhos, consistente com a escala do resto do jogo (uma
+        # campanha de sessão única, não uma viagem de dias).
+        self.w_state.hora_do_dia = (self.w_state.hora_do_dia + 2) % 24
         self.eventos.append(f"🧭 Vocês seguem para {destino}.")
         resultado = {"local": destino, "descricao": dados.get("descricao", "")}
         # Fase 6 da revisão de gameplay — encontro aleatório de viagem: 1
@@ -442,6 +460,10 @@ class ToolExecutor:
             mod_con = motor.calcular_modificador(self.heroi.atributos.get("constituicao", 10))
             cura = max(1, motor.rolar_dado(f"1d{dado_vida}", self.rng) + mod_con)
             self.heroi.hp_atual = min(self.heroi.hp_max, self.heroi.hp_atual + cura)
+            # Pendência do remaster UX (item 2) — descanso curto é ~1h
+            # narrativa (uma pausa pra recuperar o fôlego), não a noite
+            # inteira do descanso longo abaixo.
+            self.w_state.hora_do_dia = (self.w_state.hora_do_dia + 1) % 24
             self.eventos.append(
                 EventoRolagem(
                     f"🏕️ Descanso curto: recupera {cura} PV. HP: {self.heroi.hp_atual}/{self.heroi.hp_max}.",
@@ -460,6 +482,11 @@ class ToolExecutor:
         cura = self.heroi.hp_max - self.heroi.hp_atual
         self.heroi.hp_atual = self.heroi.hp_max
         self.w_state.ultimo_descanso_longo = self.w_state.turno
+        # Pendência do remaster UX (item 2) — "dormir leva a noite toda":
+        # descanso longo pula 8h de verdade (não é "amanhecer" fixo — duas
+        # noites seguidas de manhã cedo continuam avançando, é a mesma
+        # aritmética de mod 24 dos outros dois avanços).
+        self.w_state.hora_do_dia = (self.w_state.hora_do_dia + 8) % 24
         self.eventos.append(
             EventoRolagem(
                 f"🏕️ Descanso longo: recupera totalmente os PV. HP: {self.heroi.hp_atual}/{self.heroi.hp_max}.",

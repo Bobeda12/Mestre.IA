@@ -20,6 +20,7 @@ export default function MenuConfiguracao({
   aberto,
   aoFechar,
   trilha,
+  sfx,
   mostrarVoltar = true,
 }: {
   aberto: boolean;
@@ -31,6 +32,14 @@ export default function MenuConfiguracao({
     alternarMudo: () => void;
     volume: number;
     setVolume: (v: number) => void;
+  };
+  // Fase 4 do remaster UX (PLANO_REMASTER_UX.md) — efeitos sonoros
+  // (useSfx.ts) são independentes da trilha: alguém pode querer o dado
+  // rolando sem música de fundo, ou vice-versa. Opcional porque a tela
+  // inicial/login não têm SFX pra controlar ainda, só a trilha.
+  sfx?: {
+    mudo: boolean;
+    alternarMudo: () => void;
   };
 }) {
   const navigate = useNavigate();
@@ -93,6 +102,20 @@ export default function MenuConfiguracao({
                 aria-label="Volume da música"
               />
             </label>
+
+            {sfx && (
+              <button
+                onClick={sfx.alternarMudo}
+                aria-pressed={!sfx.mudo}
+                className="w-full flex items-center justify-between gap-2 p-2 mt-3 border-2 border-gray-700 hover:border-rpg-gold text-gray-200 font-rpg text-sm transition-colors focus-visible:outline-none focus-visible:border-rpg-gold"
+              >
+                <span className="flex items-center gap-2">
+                  <PixelIcon name={sfx.mudo ? 'som-mudo' : 'som-ligado'} size={14} />
+                  Efeitos sonoros
+                </span>
+                <span className={sfx.mudo ? 'text-gray-400' : 'text-rpg-gold'}>{sfx.mudo ? 'Desligados' : 'Ligados'}</span>
+              </button>
+            )}
           </Secao>
 
           <Secao titulo="Velocidade do texto">

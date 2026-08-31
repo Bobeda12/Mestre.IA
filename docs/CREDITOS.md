@@ -19,6 +19,25 @@ do [OpenGameArt.org](https://opengameart.org):
 **Nota sobre "Dungeon 05" (CC-BY-SA 4.0):** compartilhar-igual se aplica a
 *adaptações* do arquivo — ele é usado aqui sem edição, só com atribuição.
 
+## Efeitos sonoros (Fase 4 do remaster UX, PLANO_REMASTER_UX.md)
+
+Quatro efeitos curtos em `Frontend/public/assets/audio/sfx/` (`useSfx.ts`),
+mesma fonte das trilhas acima:
+
+| Efeito | Arquivo | Autor | Licença | Fonte |
+|---|---|---|---|---|
+| Dado rolando | `dado.flac` | Wuzzy | [CC0](https://creativecommons.org/publicdomain/zero/1.0/) | [opengameart.org/content/wooden-dice-on-wodden-table-roll](https://opengameart.org/content/wooden-dice-on-wodden-table-roll) |
+| Item recebido | `item.wav` | Fupi | [CC0](https://creativecommons.org/publicdomain/zero/1.0/) | [opengameart.org/content/plingy-coin](https://opengameart.org/content/plingy-coin) |
+| Subir de nível | `levelup.wav` | Haley Halcyon | [CC0](https://creativecommons.org/publicdomain/zero/1.0/) | [opengameart.org/content/8bit-fanfare-jingle-the-lick](https://opengameart.org/content/8bit-fanfare-jingle-the-lick) |
+| Golpe de espada | `golpe.ogg` (recorte `sword.1.ogg` do pacote) | StarNinjas | [CC0](https://creativecommons.org/publicdomain/zero/1.0/) | [opengameart.org/content/20-sword-sound-effects-attacks-and-clashes](https://opengameart.org/content/20-sword-sound-effects-attacks-and-clashes) |
+
+Nenhuma licença exige atribuição — está aqui pela mesma razão de sempre.
+`dado.flac`/`item.wav`/`levelup.wav` ficaram no formato original do
+download (FLAC/WAV, não OGG como a trilha) porque não havia `ffmpeg`
+disponível pra converter — funcionam normalmente no `<audio>` dos
+navegadores que o projeto já alveja, só quebra a convenção de extensão das
+trilhas.
+
 ## Sprites de raça/classe/monstro (Etapa 11, B-1)
 
 > **Atualizado na revisão da Etapa 14 ([ADR-0025](adr/0025-retratos-por-ia-pixelizados-por-script.md)):**

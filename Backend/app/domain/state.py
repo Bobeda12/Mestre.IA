@@ -108,6 +108,13 @@ class WorldState(BaseModel):
     # sucedido; -999 nunca aconteceu. `descansar` usa isso pra impedir
     # descanso longo em sequência sem tempo narrativo passar entre eles.
     ultimo_descanso_longo: int = -999
+    # Pendência do remaster UX (PLANO_REMASTER_UX.md, item 2) — hora do dia
+    # (0-23), começa às 8h. Avança por AÇÃO lógica em services/tools.py
+    # (mover = poucas horas, descanso longo = uma noite inteira), nunca por
+    # `turno` — é exatamente a distinção que o documento de design original
+    # pedia e que não existia até aqui. `rules_engine.periodo_do_dia`
+    # traduz pra madrugada/manhã/tarde/noite.
+    hora_do_dia: int = 8
 
 
 class Ato(BaseModel):

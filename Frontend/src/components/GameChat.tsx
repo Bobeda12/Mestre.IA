@@ -8,6 +8,7 @@ import { ErroSse, postSse } from '../lib/sse';
 import { esconderTagOpcoes, getLocalImage, limparMarkdownLeve } from '../lib/utils';
 import { useAuth } from '../lib/auth';
 import { useTrilha, calcularTema } from '../lib/trilha';
+import { useSfx } from '../lib/sfx';
 import RollCard, { DURACAO_ANIMACAO_DADO_MS, type DadosRolagem } from './RollCard';
 import StatusCard, { type EventoStatus } from './StatusCard';
 import PixelBar from './PixelBar';
@@ -21,6 +22,12 @@ import RetratoPixelado from './RetratoPixelado';
 import MenuConfiguracao from './MenuConfiguracao';
 import PainelRegras from './PainelRegras';
 import ConfirmeEmail from './ConfirmeEmail';
+import PixelActionCard from './PixelActionCard';
+import SistemaFeedbackToast, { type ToastItem } from './SistemaFeedbackToast';
+import FloatingCombatText, { type FlutuanteHeroi } from './FloatingCombatText';
+import LootRevealOverlay, { type LootAtivo } from './LootRevealOverlay';
+import FichaModal from './FichaModal';
+import StatusEffectIcons, { statusEfeitosAtivos } from './StatusEffectIcons';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip';
 
 // Etapa 14 (revisão) — a ficha virou menu de abas estilo JRPG. Antes tudo
@@ -32,6 +39,11 @@ const ABAS = [
   { id: 'itens', rotulo: 'ITENS', icone: 'mochila' },
   { id: 'missao', rotulo: 'MISSÃO', icone: 'pergaminho' },
   { id: 'relacoes', rotulo: 'RELAÇÕES', icone: 'rosto' },
+  // Fase 3 do remaster UX (PLANO_REMASTER_UX.md) — "Bestiário": só os
+  // monstros encontrados NESTA sessão (o backend não guarda um histórico
+  // de abates por personagem, então não dá pra prometer um bestiário que
+  // sobrevive a um recarregar de página — ver comentário na aba abaixo).
+  { id: 'bestiario', rotulo: 'BESTIÁRIO', icone: 'caveira' },
   // Rodada de conserto (Parte 2, item K) — gerada de GET /regras, nunca
   // digitada à mão: se o motor mudar um número, esta aba muda junto.
   { id: 'regras', rotulo: 'REGRAS', icone: 'dado' },
@@ -39,11 +51,37 @@ const ABAS = [
 
 type AbaFicha = (typeof ABAS)[number]['id'];
 
+// Pendência do remaster UX resolvida (PLANO_REMASTER_UX.md, item 2) —
+// espelha `rules_engine.periodo_do_dia` (Backend/app/services/
+// rules_engine.py): mesmos limiares, só que do lado que exibe, não do que
+// decide. `w_state.hora_do_dia` é a fonte da verdade; isto só traduz.
+function periodoDoDia(hora: number): string {
+  const h = ((hora % 24) + 24) % 24;
+  if (h < 6) return 'madrugada';
+  if (h < 12) return 'manhã';
+  if (h < 18) return 'tarde';
+  return 'noite';
+}
+
 // Ordem e siglas dos atributos, na mesma sequência da ficha de criação.
 const ATRIBUTOS = [
   ['forca', 'FOR'], ['destreza', 'DES'], ['constituicao', 'CON'],
   ['inteligencia', 'INT'], ['sabedoria', 'SAB'], ['carisma', 'CAR'],
 ] as const;
+
+// Fase 4 do remaster UX (PLANO_REMASTER_UX.md) — "o jogador nunca deve se
+// sentir perdido": passar o mouse num atributo explica o modificador e pra
+// que ele serve, no mesmo espírito das siglas CD/CA que RollCard.tsx já
+// explica em tooltip. Nome completo + uso reaproveitado por ATRIBUTOS
+// acima (mesma sigla como chave).
+const ATRIBUTOS_INFO: Record<(typeof ATRIBUTOS)[number][0], { nome: string; uso: string }> = {
+  forca: { nome: 'Força', uso: 'Ataques corpo a corpo e testes de atletismo.' },
+  destreza: { nome: 'Destreza', uso: 'Ataques à distância, furtividade e Classe de Armadura.' },
+  constituicao: { nome: 'Constituição', uso: 'Pontos de vida e resistência a venenos e fadiga.' },
+  inteligencia: { nome: 'Inteligência', uso: 'Conhecimento, investigação e magias de Mago.' },
+  sabedoria: { nome: 'Sabedoria', uso: 'Percepção, intuição e magias de Clérigo/Druida.' },
+  carisma: { nome: 'Carisma', uso: 'Persuasão, intimidação e magias de Bardo/Feiticeiro.' },
+};
 
 type Message =
   // `turnoIndex` (Etapa 9) chega no frame SSE "state", junto do resto do
@@ -118,6 +156,26 @@ interface EstadoJogo {
   // rodada de combate (`turno_atual`, que reseta a cada luta): é o que a
   // tela de morte usa pra mostrar "quantos turnos você viveu".
   turno_mundo?: number;
+  // Pendência do remaster UX (PLANO_REMASTER_UX.md) — antes só chegavam no
+  // carregamento (`CargaJogo`); agora o backend manda em todo frame
+  // `state` (routers/game.py:_resposta), então local/clima já não ficam
+  // desatualizados depois de uma viagem no meio da sessão.
+  local?: string;
+  clima?: string | null;
+  // Item 2 — hora do dia (0-23), avança por ação lógica no backend
+  // (mover/descansar em services/tools.py), não por turno.
+  hora_do_dia?: number;
+  // Item 1 — as três flags táticas de CombatState, sem consumidor até aqui.
+  heroi_escondido?: boolean;
+  heroi_bonus_ca?: number;
+  heroi_vantagem_inimiga?: boolean | null;
+  // Item 3 — bestiário persistente: nome do bestiário -> quantas vezes já
+  // morreu para ESTE herói, ao longo de toda a vida do personagem (não só
+  // desta sessão de jogo, ao contrário do rascunho anterior).
+  monstros_derrotados?: Record<string, number>;
+  // Item 4 — Hall da Fama: `null`/`null` enquanto o herói está vivo.
+  morto_em?: string | null;
+  pontuacao_final?: number | null;
 }
 
 interface CargaJogo extends EstadoJogo {
@@ -128,7 +186,6 @@ interface CargaJogo extends EstadoJogo {
   atributos?: Record<string, number>;
   imagem?: string | null;
   // Etapa 11 (B-7) — tela de abertura da campanha.
-  clima?: string | null;
   background?: string | null;
   objetivo?: string | null;
   historia_texto?: string | null;
@@ -151,7 +208,6 @@ export default function GameChat() {
   const [loading, setLoading] = useState(false);
   const [showSidebar, setShowSidebar] = useState(true);
   const [abaAtiva, setAbaAtiva] = useState<AbaFicha>('status');
-  const [retratoAberto, setRetratoAberto] = useState(false);
   const [configAberta, setConfigAberta] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -172,10 +228,61 @@ export default function GameChat() {
   const [quest, setQuest] = useState<any>(null);
   // Fase 8 (revisão de gameplay) — cards de atitude de NPC.
   const [reputacoes, setReputacoes] = useState<Record<string, number>>({});
+  // Fase 2 do remaster UX (PLANO_REMASTER_UX.md) — card de Mundo/Clima da
+  // sidebar. `local`/`clima` só chegam no carregamento (CargaJogo), não em
+  // todo frame `state` — o backend hoje não manda local/clima por turno,
+  // só `turno_mundo`. Fica como retrato do início da sessão: se o herói
+  // viajar no meio dela, o card só atualiza no próximo load da página. O
+  // resumo rolante ("Jornada até aqui") é o mesmo `anteriormente` que já
+  // existe pro recap do log — antes só virava uma bolha de sistema, agora
+  // também fica disponível pro accordion da ficha.
+  const [localAtual, setLocalAtual] = useState('');
+  const [climaAtual, setClimaAtual] = useState('');
+  const [resumoJornada, setResumoJornada] = useState<string | null>(null);
+  const [jornadaAberta, setJornadaAberta] = useState(false);
+  // Fase 3 do remaster UX — FichaModal.tsx precisa de origem/objetivo/
+  // história, os mesmos três campos que a tela de Prólogo já usa direto de
+  // `cargaJogo`; copiados pro estado local pelo mesmo motivo dos outros
+  // campos acima (o resto do componente nunca lê `cargaJogo` depois do
+  // primeiro carregamento, só o snapshot local).
+  const [origemAtual, setOrigemAtual] = useState<string | null>(null);
+  const [objetivoAtual, setObjetivoAtual] = useState<string | null>(null);
+  const [historiaAtual, setHistoriaAtual] = useState<string | null>(null);
+  const [fichaModalAberta, setFichaModalAberta] = useState(false);
+  // Pendência do remaster UX resolvida — "Bestiário": `monstrosDerrotados`
+  // agora é o dado real e persistente do backend (Personagem.
+  // monstros_derrotados, incrementado só em ToolExecutor._conceder_xp).
+  // `monstrosAvistados` continua sendo um registro só desta sessão — não
+  // existe endpoint que exponha o catálogo completo de monstros
+  // (`data/monsters.json` é só do servidor), então "visto mas não morto"
+  // só é rastreável enquanto o inimigo está na tela. (o efeito que popula
+  // isto vive mais abaixo, depois de `enemies` ser declarado.)
+  const [monstrosDerrotados, setMonstrosDerrotados] = useState<Record<string, number>>({});
+  const [monstrosAvistados, setMonstrosAvistados] = useState<Set<string>>(new Set());
+  // Pendência do remaster UX — item 1: as três flags táticas de
+  // CombatState, sem consumidor visual até aqui.
+  const [heroiEscondido, setHeroiEscondido] = useState(false);
+  const [heroiBonusCa, setHeroiBonusCa] = useState(0);
+  const [heroiVantagemInimiga, setHeroiVantagemInimiga] = useState<boolean | null>(null);
+  // Pendência do remaster UX — item 2: hora do dia (0-23), vem do backend.
+  const [horaDoDia, setHoraDoDia] = useState<number | null>(null);
+  // Pendência do remaster UX — item 4: Hall da Fama.
+  const [mortoEm, setMortoEm] = useState<string | null>(null);
+  const [pontuacaoFinal, setPontuacaoFinal] = useState<number | null>(null);
 
   // COMBATE
   const [combatActive, setCombatActive] = useState(false);
   const [enemies, setEnemies] = useState<Inimigo[]>([]);
+  useEffect(() => {
+    if (enemies.length === 0) return;
+    setMonstrosAvistados(prev => {
+      const novos = enemies.map(en => en.nome).filter(nome => !prev.has(nome));
+      if (novos.length === 0) return prev;
+      const copia = new Set(prev);
+      novos.forEach(nome => copia.add(nome));
+      return copia;
+    });
+  }, [enemies]);
   const [ordemIniciativa, setOrdemIniciativa] = useState<number[]>([]);
   const [turnoAtual, setTurnoAtual] = useState(0);
   const [turnoMundo, setTurnoMundo] = useState(0);
@@ -201,10 +308,65 @@ export default function GameChat() {
   // Dano flutuante (Etapa 7) — `idx` é a posição no array `enemies`, não o
   // nome (dois inimigos podem ter o mesmo nome).
   const [danosFlutuantes, setDanosFlutuantes] = useState<{ id: number; valor: number; idx: number }[]>([]);
+  // Fase 3 do remaster UX (PLANO_REMASTER_UX.md) — generaliza o dano
+  // flutuante pro HERÓI: cura (verde) e XP ganho (dourado), ancorados nos
+  // ícones de coração/estrela da faixa de vitais. Ouro já tem o toast da
+  // Fase 1 (não existe ícone de ouro fixo na faixa hoje — duplicar o
+  // feedback ali seria ruído, não reforço).
+  const [flutuantesHeroi, setFlutuantesHeroi] = useState<(FlutuanteHeroi & { alvo: 'hp' | 'xp' })[]>([]);
+  const spawnFlutuanteHeroi = (alvo: 'hp' | 'xp', texto: string, cor: string) => {
+    const id = Date.now() + Math.random();
+    setFlutuantesHeroi(prev => [...prev, { id, alvo, texto, cor }]);
+    setTimeout(() => setFlutuantesHeroi(prev => prev.filter(f => f.id !== id)), 1200);
+  };
+
+  // Fase 3 do remaster UX — fila de loot: cada item novo do `state` entra
+  // na fila, e um efeito abaixo mostra um de cada vez em LootRevealOverlay
+  // (`dar_item` pode, em teoria, entregar mais de um item no mesmo turno —
+  // mostrar todos ao mesmo tempo empilhado não seria a mesma dose de
+  // dopamina que o documento de design pede).
+  const [lootQueue, setLootQueue] = useState<string[]>([]);
+  const [lootAtivo, setLootAtivo] = useState<LootAtivo | null>(null);
+  useEffect(() => {
+    if (!lootAtivo && lootQueue.length > 0) {
+      setLootAtivo({ id: Date.now(), item: lootQueue[0] });
+      setLootQueue(prev => prev.slice(1));
+    }
+  }, [lootQueue, lootAtivo]);
+
+  // Fase 1 do remaster UX (PLANO_REMASTER_UX.md) — "Feedback Visual de
+  // Sistema": ouro/item mudando não gera hoje nenhum tool_event dedicado
+  // (só ataque/teste/dano/morte/cura têm tipo próprio) — o sinal que temos
+  // é o diff do frame `state` contra o valor local anterior, o mesmo truque
+  // já usado abaixo pra `danosFlutuantes`. `toastIdRef` evita colidir com
+  // `proximoIdMsg()` (namespaces de id diferentes, sem relação com mensagens).
+  const [toasts, setToasts] = useState<ToastItem[]>([]);
+  const toastIdRef = useRef(0);
+  const pushToast = (icone: ToastItem['icone'], texto: string, tom: ToastItem['tom'] = 'neutro') => {
+    const id = ++toastIdRef.current;
+    setToasts(prev => [...prev, { id, icone, texto, tom }]);
+    setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 3200);
+  };
 
   // EFEITOS
   const [shakeScreen, setShakeScreen] = useState(false);
   const [wasDamaged, setWasDamaged] = useState(false);
+  // Fase 2 do remaster UX — glow dourado na barra de XP ao subir de nível.
+  // `nivelAnteriorRef` guarda o nível já visto pra detectar só o AUMENTO
+  // (o `state` de recarregar a página também traz `nivel`, e isso não é
+  // level up — sem a ref, o efeito abaixo dispararia glow em toda visita).
+  const [levelUpGlow, setLevelUpGlow] = useState(false);
+  const nivelAnteriorRef = useRef(nivel);
+  useEffect(() => {
+    if (nivel > nivelAnteriorRef.current) {
+      setLevelUpGlow(true);
+      sfx.tocar('levelup');
+      const t = setTimeout(() => setLevelUpGlow(false), 1300);
+      nivelAnteriorRef.current = nivel;
+      return () => clearTimeout(t);
+    }
+    nivelAnteriorRef.current = nivel;
+  }, [nivel]);
 
   // CONVITE PRA REIVINDICAR (Etapa 10, A-1) — só aparece pra convidado
   // (`usuario.email === null`), depois do primeiro momento bom: o primeiro
@@ -256,6 +418,7 @@ export default function GameChat() {
   // HP baixo, game over), nunca pedido ao modelo.
   const temaMusical = calcularTema({ gameOver, combateAtivo: combatActive, hpAtual, hpMax });
   const trilha = useTrilha(temaMusical);
+  const sfx = useSfx();
 
   const maiorTurnoIndex = messages.reduce(
     (max, m) => (m.kind === 'texto' && m.turnoIndex !== undefined ? Math.max(max, m.turnoIndex) : max),
@@ -328,6 +491,13 @@ export default function GameChat() {
     setDefesa(cargaJogo.defesa ?? null);
     setOuro(cargaJogo.ouro ?? 0);
     setNivel(cargaJogo.nivel ?? 1);
+    // Fase 2 do remaster UX — sem isto, carregar um personagem que já
+    // estava acima do nível 1 disparava o glow (e agora o som) de "subiu de
+    // nível" no load: `nivelAnteriorRef` nascia em 1 (valor inicial do
+    // `useState`) e via o nível carregado como um AUMENTO. Reprimir a ref
+    // aqui, no mesmo lugar que carrega o nível, evita o falso positivo sem
+    // acoplar o efeito de level up à lógica de carregamento.
+    nivelAnteriorRef.current = cargaJogo.nivel ?? 1;
     setXp(cargaJogo.xp ?? 0);
     setXpProximoNivel(cargaJogo.xp_proximo_nivel ?? null);
     setSucessosMorte(cargaJogo.sucessos_morte ?? 0);
@@ -337,6 +507,19 @@ export default function GameChat() {
     setInventory(cargaJogo.inventory || []);
     setAttributes(cargaJogo.atributos || {});
     setQuest(cargaJogo.missao);
+    setLocalAtual(cargaJogo.local ?? '');
+    setClimaAtual(cargaJogo.clima ?? '');
+    setResumoJornada(cargaJogo.anteriormente ?? null);
+    setMonstrosDerrotados(cargaJogo.monstros_derrotados ?? {});
+    setHeroiEscondido(cargaJogo.heroi_escondido ?? false);
+    setHeroiBonusCa(cargaJogo.heroi_bonus_ca ?? 0);
+    setHeroiVantagemInimiga(cargaJogo.heroi_vantagem_inimiga ?? null);
+    if (cargaJogo.hora_do_dia !== undefined) setHoraDoDia(cargaJogo.hora_do_dia);
+    setMortoEm(cargaJogo.morto_em ?? null);
+    setPontuacaoFinal(cargaJogo.pontuacao_final ?? null);
+    setOrigemAtual(cargaJogo.background ?? null);
+    setObjetivoAtual(cargaJogo.objetivo ?? null);
+    setHistoriaAtual(cargaJogo.historia_texto ?? null);
     setCombatActive(cargaJogo.combat_active);
     setEnemies(cargaJogo.inimigos || []);
     setOrdemIniciativa(cargaJogo.ordem_iniciativa || []);
@@ -437,6 +620,9 @@ export default function GameChat() {
           // frame, discriminados por `dados.tipo` na hora de renderizar.
           const dadosEvento = evt.data as DadosRolagem | EventoStatus;
           setMessages(prev => [...prev, { kind: 'rolagem', id: proximoIdMsg(), dados: dadosEvento }]);
+          // Fase 4 do remaster UX (PLANO_REMASTER_UX.md) — som de dado em
+          // toda rolagem estruturada (ataque/teste), não só nas de combate.
+          if ('d20' in dadosEvento && dadosEvento.d20 != null) sfx.tocar('dado');
           // Fase 8 (revisão de gameplay) — "fator cassino": segura o
           // consumo do stream (então a narração que vem a seguir) pela
           // mesma duração da animação do dado em RollCard.tsx, pra ela
@@ -494,13 +680,42 @@ export default function GameChat() {
           if (d.hp_atual !== undefined && d.hp_atual < hpAtual) {
               setWasDamaged(true); setShakeScreen(true);
               setTimeout(() => { setWasDamaged(false); setShakeScreen(false); }, 500);
+              spawnFlutuanteHeroi('hp', `-${hpAtual - d.hp_atual}`, 'text-red-400');
+              sfx.tocar('golpe');
+          } else if (d.hp_atual !== undefined && d.hp_atual > hpAtual) {
+              spawnFlutuanteHeroi('hp', `+${d.hp_atual - hpAtual}`, 'text-emerald-400');
           }
           setHpAtual(d.hp_atual); setHpMax(d.hp_max || hpMax);
           if (d.defesa !== undefined) setDefesa(d.defesa);
-          if (d.ouro !== undefined) setOuro(d.ouro);
+          if (d.ouro !== undefined) {
+            if (d.ouro !== ouro) {
+              const delta = d.ouro - ouro;
+              pushToast('moeda', `${delta > 0 ? '+' : ''}${delta} Ouro`, delta > 0 ? 'positivo' : 'negativo');
+            }
+            setOuro(d.ouro);
+          }
           if (d.nivel !== undefined) setNivel(d.nivel);
-          if (d.xp !== undefined) setXp(d.xp);
+          // XP some (reseta) quando sobe de nível — nesse turno o "delta"
+          // seria negativo e sem sentido pro jogador (o glow da barra já
+          // celebra o level up sozinho, não precisa de número aqui).
+          if (d.xp !== undefined) {
+            if (d.nivel === nivel && d.xp > xp) {
+              spawnFlutuanteHeroi('xp', `+${d.xp - xp}`, 'text-rpg-gold');
+            }
+            setXp(d.xp);
+          }
           if (d.xp_proximo_nivel !== undefined) setXpProximoNivel(d.xp_proximo_nivel);
+          if (d.inventory) {
+            // Fase 3 do remaster UX — item novo ganhou a animação de loot
+            // (LootRevealOverlay) no lugar do toast simples da Fase 1; ouro
+            // continua no toast (não é um objeto com ícone próprio pra
+            // justificar a cena inteira).
+            const itensNovos = d.inventory.filter(item => !inventory.includes(item));
+            if (itensNovos.length > 0) {
+              setLootQueue(prev => [...prev, ...itensNovos]);
+              sfx.tocar('item');
+            }
+          }
           setInventory(d.inventory || []);
           setCombatActive(d.combat_active);
 
@@ -525,6 +740,18 @@ export default function GameChat() {
           setOpcoes(d.opcoes || []);
           if (d.turno_mundo !== undefined) setTurnoMundo(d.turno_mundo);
           if (d.missao) setQuest(d.missao);
+          // Pendências do remaster UX — o backend agora manda estes campos
+          // em todo frame `state` (antes só no load), então local/clima/
+          // hora do dia já não ficam presos no valor do início da sessão.
+          if (d.local !== undefined) setLocalAtual(d.local);
+          if (d.clima !== undefined) setClimaAtual(d.clima ?? '');
+          if (d.hora_do_dia !== undefined) setHoraDoDia(d.hora_do_dia);
+          if (d.heroi_escondido !== undefined) setHeroiEscondido(d.heroi_escondido);
+          if (d.heroi_bonus_ca !== undefined) setHeroiBonusCa(d.heroi_bonus_ca);
+          if (d.heroi_vantagem_inimiga !== undefined) setHeroiVantagemInimiga(d.heroi_vantagem_inimiga);
+          if (d.monstros_derrotados) setMonstrosDerrotados(d.monstros_derrotados);
+          if (d.morto_em !== undefined) setMortoEm(d.morto_em);
+          if (d.pontuacao_final !== undefined) setPontuacaoFinal(d.pontuacao_final);
           if (d.resultado_combate === 'morte') setGameOver(true);
 
           if (d.turno_index !== undefined) {
@@ -652,10 +879,18 @@ export default function GameChat() {
   return (
     <div className={`flex h-screen w-screen bg-black text-gray-100 font-sans overflow-hidden relative ${shakeScreen ? 'animate-shake' : ''}`}>
 
+      <SistemaFeedbackToast toasts={toasts} />
+      <LootRevealOverlay loot={lootAtivo} onFinish={() => setLootAtivo(null)} />
+
       <div className={`absolute inset-0 z-50 bg-red-600 pointer-events-none transition-opacity duration-200 ${wasDamaged ? 'opacity-20' : 'opacity-0'}`} />
 
+      {/* Fase 4 do remaster UX (PLANO_REMASTER_UX.md) — "fade to black": a
+          trilha já muda pra `tristeza` sozinha (calcularTema, acima) assim
+          que `gameOver` vira true, então a música triste já acompanha esta
+          transição sem precisar de nada novo aqui — só faltava a tela em
+          si não aparecer com um corte seco. */}
       {gameOver && (
-        <div className="absolute inset-0 z-[100] bg-black/95 flex flex-col items-center justify-center px-6 text-center overflow-y-auto py-10">
+        <div className="absolute inset-0 z-[100] bg-black/95 flex flex-col items-center justify-center px-6 text-center overflow-y-auto py-10 animate-fade-in">
           <h1 className="text-3xl md:text-5xl font-pixel-title text-red-600 tracking-widest leading-relaxed">GAME OVER</h1>
           <p className="text-gray-500 mt-2 font-serif italic">{charName || 'O herói'} não resistiu.</p>
 
@@ -675,6 +910,22 @@ export default function GameChat() {
               <div className="text-[10px] uppercase tracking-widest text-gray-500 mt-1">Ouro</div>
             </div>
           </div>
+
+          {/* Pendência do remaster UX resolvida (PLANO_REMASTER_UX.md, item
+              4) — pontuação real (XP + turnos sobreviventes + abates do
+              bestiário, fórmula em routers/game.py:
+              _persistir_epitafio_se_confirmado), a mesma que aparece no
+              Salão dos Heróis Mortos da Home. */}
+          {pontuacaoFinal != null && (
+            <div className="mt-4 flex items-center gap-2 text-rpg-gold font-pixel-title text-sm">
+              <PixelIcon name="estrela" size={16} /> {pontuacaoFinal} pontos
+            </div>
+          )}
+          {mortoEm && (
+            <p className="text-[10px] text-gray-600 mt-1 font-rpg">
+              {new Date(mortoEm).toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' })}
+            </p>
+          )}
 
           {quest?.nome_missao && (
             <p className="text-xs text-gray-500 mt-6 max-w-sm italic">
@@ -766,9 +1017,9 @@ export default function GameChat() {
               ~88px e continua sendo a âncora de identidade do menu; quem
               quiser ver grande clica e abre em tela cheia. */}
           <button
-              onClick={() => setRetratoAberto(true)}
+              onClick={() => setFichaModalAberta(true)}
               className="shrink-0 m-3 mb-0 flex items-center gap-3 p-2 border-2 border-gray-700 hover:border-rpg-gold bg-black/50 transition-colors text-left focus-visible:outline-none focus-visible:border-rpg-gold"
-              aria-label={`Ver retrato de ${charName} em tamanho grande`}
+              aria-label={`Abrir ficha completa de ${charName}`}
           >
               <div className="pixel-frame w-16 h-16 shrink-0 bg-black overflow-hidden">
                   <RetratoPixelado src={charImage} alt="" className="w-full h-full object-cover object-top" />
@@ -776,8 +1027,31 @@ export default function GameChat() {
               <div className="min-w-0">
                   <p className="text-white font-rpg text-lg leading-tight truncate">{charName}</p>
                   <p className="text-[10px] text-gray-300 uppercase tracking-wide font-rpg truncate">{charRace} {charClass}</p>
+                  <StatusEffectIcons efeitos={statusEfeitosAtivos({ escondido: heroiEscondido, bonusCa: heroiBonusCa, vantagemInimiga: heroiVantagemInimiga })} />
               </div>
           </button>
+
+          {/* Card de Mundo. Pendência do remaster UX resolvida — local/
+              clima/hora do dia agora chegam em TODO frame `state`
+              (routers/game.py:_resposta), não só no carregamento: viajar
+              no meio da sessão atualiza o card na hora, não só no próximo
+              load. Chuva é detectada pelo texto do clima porque não existe
+              um campo estruturado "está chovendo" — heurística simples,
+              não tentativa de cobrir todo vocabulário de clima. */}
+          {localAtual && (
+              <div className={`shrink-0 mx-3 mt-2 p-2 border-2 border-gray-700 bg-black/40 relative overflow-hidden ${/chuv/i.test(climaAtual) ? 'animate-chuva' : ''}`}>
+                  <div className="flex items-center gap-2 text-[11px] font-rpg text-gray-300">
+                      <PixelIcon name="seta" size={11} className="rotate-90 opacity-60" />
+                      <span className="truncate">{localAtual}</span>
+                      {horaDoDia != null && (
+                          <span className="ml-auto shrink-0 text-[9px] text-gray-500 uppercase tracking-widest">{periodoDoDia(horaDoDia)}</span>
+                      )}
+                  </div>
+                  {climaAtual && (
+                      <p className="text-[10px] text-gray-500 italic mt-0.5 truncate">{climaAtual}</p>
+                  )}
+              </div>
+          )}
 
           {/* Abas. A ficha inteira empilhada numa coluna de 320px ficava
               espremida e obrigava a rolar pra achar qualquer coisa; separada em
@@ -823,14 +1097,29 @@ export default function GameChat() {
                       no código, embora o backend sempre mandasse os seis em
                       `atributos` — quem jogava de Clérigo ou Bardo não via o
                       atributo que mais importa pra ele. */}
-                  <div className="grid grid-cols-3 gap-2">
-                     {ATRIBUTOS.map(([chave, sigla]) => (
-                       <div key={chave} className="bg-black/50 p-2 text-center border-2 border-gray-700">
-                           <span className="text-[9px] text-gray-300 block font-rpg">{sigla}</span>
-                           <span className="font-rpg text-xl text-gray-100">{attributes?.[chave] ?? '-'}</span>
-                       </div>
-                     ))}
-                  </div>
+                  <TooltipProvider delayDuration={150}>
+                    <div className="grid grid-cols-3 gap-2">
+                       {ATRIBUTOS.map(([chave, sigla]) => {
+                         const valor = attributes?.[chave];
+                         const info = ATRIBUTOS_INFO[chave];
+                         const modificador = typeof valor === 'number' ? Math.floor((valor - 10) / 2) : null;
+                         return (
+                           <Tooltip key={chave}>
+                             <TooltipTrigger asChild>
+                               <div tabIndex={0} className="bg-black/50 p-2 text-center border-2 border-gray-700 hover:border-gray-500 cursor-help focus-visible:outline-none focus-visible:border-rpg-gold transition-colors">
+                                   <span className="text-[9px] text-gray-300 block font-rpg">{sigla}</span>
+                                   <span className="font-rpg text-xl text-gray-100">{valor ?? '-'}</span>
+                               </div>
+                             </TooltipTrigger>
+                             <TooltipContent>
+                               {info.nome}{modificador != null && ` — Modificador ${modificador >= 0 ? '+' : ''}${modificador}`}.{' '}
+                               {info.uso}
+                             </TooltipContent>
+                           </Tooltip>
+                         );
+                       })}
+                    </div>
+                  </TooltipProvider>
                 </div>
               )}
 
@@ -847,16 +1136,45 @@ export default function GameChat() {
                 </div>
               )}
 
+              {/* Fase 2 do remaster UX (PLANO_REMASTER_UX.md) — "Diário de
+                  Bordo": a missão vira card de pergaminho (PanelFrame já
+                  usado na narração da Fase 1), e o resumo rolante que o
+                  próprio backend já gera pra memória do LLM (`anteriormente`,
+                  antes só virava uma bolha de sistema) ganha um segundo uso
+                  aqui como accordion — reler o que já aconteceu sem rolar o
+                  chat inteiro pra cima. */}
               {abaAtiva === 'missao' && (
-                <div className="animate-fade-in">
+                <div className="animate-fade-in space-y-3">
                   {quest ? (
-                      <div className="bg-black/50 border-2 border-blue-800 p-3">
-                          <h3 className="text-[10px] text-blue-300 uppercase font-rpg mb-2 tracking-widest">Missão atual</h3>
+                      <PanelFrame borderWidth={8} className="bg-black/50 p-3">
+                          <h3 className="text-[10px] text-blue-300 uppercase font-rpg mb-2 tracking-widest flex items-center gap-1">
+                              <PixelIcon name="pergaminho" size={11} /> Missão atual
+                          </h3>
                           <p className="text-base text-blue-100 font-rpg leading-tight mb-2">{quest.nome_missao}</p>
                           <p className="text-xs text-gray-200 leading-relaxed">{quest.objetivo_missao}</p>
-                      </div>
+                      </PanelFrame>
                   ) : (
                       <p className="text-sm text-gray-400 font-rpg text-center py-8">Nenhuma missão em andamento.</p>
+                  )}
+
+                  {resumoJornada && (
+                      <div className="border-2 border-gray-700 bg-black/40">
+                          <button
+                              type="button"
+                              onClick={() => setJornadaAberta(a => !a)}
+                              aria-expanded={jornadaAberta}
+                              aria-controls="jornada-ate-aqui"
+                              className="w-full flex items-center justify-between gap-2 px-2.5 py-2 text-[10px] uppercase tracking-widest font-rpg text-gray-300 hover:text-rpg-gold transition-colors"
+                          >
+                              <span>A Jornada Até Aqui</span>
+                              <PixelIcon name="seta" size={10} className={`transition-transform ${jornadaAberta ? 'rotate-90' : ''}`} />
+                          </button>
+                          {jornadaAberta && (
+                              <p id="jornada-ate-aqui" className="px-2.5 pb-2.5 text-xs text-gray-400 leading-relaxed italic animate-fade-in">
+                                  {resumoJornada}
+                              </p>
+                          )}
+                      </div>
                   )}
                 </div>
               )}
@@ -867,64 +1185,119 @@ export default function GameChat() {
                   nenhum consumidor no frontend. -100 (Inimigo) a +100
                   (Aliado); a barra reaproveita PixelBar deslocando o
                   intervalo pra 0..200. */}
+              {/* Fase 2 do remaster UX — cards de NPC ganham "juice" de
+                  hover (levantam 2px, como o documento de design pede) e um
+                  tooltip com a leitura por extenso da reputação, no lugar
+                  de só o número — reaproveita o Tooltip que RollCard e a
+                  faixa de vitais já usam. */}
               {abaAtiva === 'relacoes' && (
-                <div className="space-y-2 animate-fade-in">
-                  {Object.keys(reputacoes).length > 0 ? (
-                    Object.entries(reputacoes).map(([npc, valor]) => {
-                      const cor = valor > 15 ? 'bg-emerald-600' : valor < -15 ? 'bg-red-600' : 'bg-gray-500';
-                      return (
-                        <div key={npc} className="bg-black/50 border-2 border-gray-700 p-2">
-                          <div className="flex items-center justify-between mb-1">
-                            <span className="text-xs text-gray-200 font-rpg truncate">{npc}</span>
-                            <span className="text-[10px] text-gray-400 font-rpg shrink-0">{valor > 0 ? `+${valor}` : valor}</span>
-                          </div>
-                          <PixelBar value={valor + 100} max={200} segments={10} colorClass={cor} />
-                          <div className="flex justify-between mt-0.5 text-[8px] text-gray-600 uppercase tracking-widest">
-                            <span>Inimigo</span>
-                            <span>Aliado</span>
-                          </div>
-                        </div>
-                      );
-                    })
-                  ) : (
-                    <p className="text-sm text-gray-400 font-rpg text-center py-8">Nenhum NPC conhecido ainda.</p>
-                  )}
-                </div>
+                <TooltipProvider delayDuration={150}>
+                  <div className="space-y-2 animate-fade-in">
+                    {Object.keys(reputacoes).length > 0 ? (
+                      Object.entries(reputacoes).map(([npc, valor]) => {
+                        const cor = valor > 15 ? 'bg-emerald-600' : valor < -15 ? 'bg-red-600' : 'bg-gray-500';
+                        const leitura = valor > 50 ? `${npc} confia profundamente em você.`
+                          : valor > 15 ? `${npc} confia em você.`
+                          : valor < -50 ? `${npc} é seu inimigo declarado.`
+                          : valor < -15 ? `${npc} desconfia de você.`
+                          : `${npc} ainda não formou opinião sobre você.`;
+                        return (
+                          <Tooltip key={npc}>
+                            <TooltipTrigger asChild>
+                              <div tabIndex={0} className="bg-black/50 border-2 border-gray-700 p-2 transition-transform hover:-translate-y-0.5 hover:border-gray-500 cursor-help focus-visible:outline-none focus-visible:border-rpg-gold">
+                                <div className="flex items-center justify-between mb-1">
+                                  <span className="text-xs text-gray-200 font-rpg truncate">{npc}</span>
+                                  <span className="text-[10px] text-gray-400 font-rpg shrink-0">{valor > 0 ? `+${valor}` : valor}</span>
+                                </div>
+                                <PixelBar value={valor + 100} max={200} segments={10} colorClass={cor} />
+                                <div className="flex justify-between mt-0.5 text-[8px] text-gray-600 uppercase tracking-widest">
+                                  <span>Inimigo</span>
+                                  <span>Aliado</span>
+                                </div>
+                              </div>
+                            </TooltipTrigger>
+                            <TooltipContent>{leitura}</TooltipContent>
+                          </Tooltip>
+                        );
+                      })
+                    ) : (
+                      <p className="text-sm text-gray-400 font-rpg text-center py-8">Nenhum NPC conhecido ainda.</p>
+                    )}
+                  </div>
+                </TooltipProvider>
               )}
+              {/* Fase 3 do remaster UX — grid de cards de monstro, sprites
+                  reais de `/assets/monstros/` (mesmos usados no card de
+                  combate). `onError` some com a imagem em vez de quebrar o
+                  layout — a maioria dos nomes gerados pelo narrador não tem
+                  sprite dedicado (só 5 existem hoje), então "sem sprite" é
+                  o caso comum, não a exceção. */}
+              {abaAtiva === 'bestiario' && (() => {
+                // Pendência do remaster UX resolvida — os abates agora
+                // persistem de verdade (Personagem.monstros_derrotados);
+                // "avistado sem contagem" continua só desta sessão, porque
+                // ainda não existe um endpoint com o catálogo completo.
+                const nomes = Array.from(new Set([...Object.keys(monstrosDerrotados), ...monstrosAvistados]));
+                return (
+                  <div className="animate-fade-in">
+                    {nomes.length > 0 ? (
+                      <div className="grid grid-cols-3 gap-2">
+                        {nomes.map((nome) => {
+                          const abates = monstrosDerrotados[nome] ?? 0;
+                          return (
+                            <div key={nome} className="bg-black/50 border-2 border-gray-700 p-2 flex flex-col items-center gap-1 text-center">
+                              <img
+                                src={getLocalImage('monstros', nome)}
+                                alt=""
+                                className="w-8 h-8"
+                                onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                              />
+                              <span className="text-[10px] font-rpg text-gray-300 leading-tight truncate w-full">{nome}</span>
+                              <span className={`text-[8px] uppercase tracking-widest font-rpg ${abates > 0 ? 'text-red-400' : 'text-gray-500'}`}>
+                                {abates > 0 ? `Derrotado ×${abates}` : 'Avistado'}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <p className="text-sm text-gray-400 font-rpg text-center py-8">Nenhum monstro encontrado ainda.</p>
+                    )}
+                  </div>
+                );
+              })()}
               {abaAtiva === 'regras' && <PainelRegras />}
           </div>
       </div>
 
-      {/* Retrato em tamanho grande, sob demanda. A ficha mostra a versão
-          compacta pra não gastar 343px de altura com algo que se olha uma vez;
-          quem quiser admirar clica e vem parar aqui. */}
-      {retratoAberto && (
-          <div
-              className="fixed inset-0 z-[60] bg-black/85 flex items-center justify-center p-6 animate-fade-in"
-              onClick={() => setRetratoAberto(false)}
-              role="dialog"
-              aria-modal="true"
-              aria-label={`Retrato de ${charName}`}
-          >
-              <div className="pixel-frame bg-black max-w-sm w-full aspect-[3/4] relative overflow-hidden" onClick={(e) => e.stopPropagation()}>
-                  <RetratoPixelado src={charImage} alt={`Retrato de ${charName}`} grade={110} className="w-full h-full object-cover object-top" />
-                  <div className="absolute bottom-0 w-full bg-gradient-to-t from-black via-black/85 to-transparent p-3 pt-10">
-                      <p className="text-white font-rpg text-xl leading-tight">{charName}</p>
-                      <p className="text-[11px] text-gray-300 uppercase tracking-wide font-rpg">{charRace} {charClass}</p>
-                  </div>
-                  <button
-                      onClick={() => setRetratoAberto(false)}
-                      aria-label="Fechar retrato"
-                      className="absolute top-2 right-2 p-1 bg-black/70 border-2 border-gray-600 hover:border-rpg-gold focus-visible:outline-none focus-visible:border-rpg-gold"
-                  ><PixelIcon name="fechar" size={16}/></button>
-              </div>
-          </div>
-      )}
+      {/* Fase 3 do remaster UX (PLANO_REMASTER_UX.md) — "Ficha de
+          Personagem": substitui o antigo modal de só-o-retrato (mesma
+          informação de nome/raça/classe já cabe dentro da ficha inteira,
+          não precisa dos dois). */}
+      <FichaModal
+          aberto={fichaModalAberta}
+          onFechar={() => setFichaModalAberta(false)}
+          nome={charName}
+          raca={charRace}
+          classe={charClass}
+          charImage={charImage}
+          atributos={attributes}
+          hpAtual={hpAtual}
+          hpMax={hpMax}
+          defesa={defesa}
+          origem={origemAtual}
+          objetivo={objetivoAtual}
+          historia={historiaAtual}
+      />
 
-      <MenuConfiguracao aberto={configAberta} aoFechar={() => setConfigAberta(false)} trilha={trilha} />
+      <MenuConfiguracao aberto={configAberta} aoFechar={() => setConfigAberta(false)} trilha={trilha} sfx={sfx} />
 
-      {/* CHAT AREA */}
-      <div className="flex-1 flex flex-col relative bg-[#050505]">
+      {/* CHAT AREA. Pendência do remaster UX resolvida (item 2) — ambiência
+          reage à hora do dia de verdade (`horaDoDia`, vinda do backend),
+          com um véu de cor sutil em vez de arte de cenário nova (o jogo
+          não tem nenhum fundo por local/bioma hoje — produzir isso é
+          escopo de arte, não só de código; ver PLANO_REMASTER_UX.md §5). */}
+      <div className={`flex-1 flex flex-col relative bg-[#050505] ${horaDoDia != null ? `periodo-${periodoDoDia(horaDoDia).replace('ã', 'a')}` : ''}`}>
         {/* Vitais sobre a área de jogo, não dentro da ficha: vida, nível e
             defesa são o que se olha NO MEIO da luta, e aqui continuam
             visíveis mesmo com a ficha fechada — que é como jogo faz. De
@@ -964,10 +1337,11 @@ export default function GameChat() {
             <TooltipProvider delayDuration={120}>
                 <Tooltip>
                     <TooltipTrigger asChild>
-                        <div tabIndex={0} className="flex items-center gap-2 min-w-0 max-w-[260px] cursor-help px-1 py-0.5 border-2 border-transparent hover:border-gray-700 focus-visible:outline-none focus-visible:border-rpg-gold transition-colors">
+                        <div tabIndex={0} className="relative flex items-center gap-2 min-w-0 max-w-[260px] cursor-help px-1 py-0.5 border-2 border-transparent hover:border-gray-700 focus-visible:outline-none focus-visible:border-rpg-gold transition-colors">
                             <PixelIcon name="coracao" size={14} />
                             <span className="text-[11px] font-rpg text-gray-200 shrink-0">{hpAtual}/{hpMax}</span>
-                            <div className="flex-1 min-w-[60px] max-w-[180px]"><PixelBar value={hpAtual} max={hpMax} colorClass="bg-red-600" /></div>
+                            <div className="flex-1 min-w-[60px] max-w-[180px]"><PixelBar value={hpAtual} max={hpMax} colorClass="bg-red-600" flash={wasDamaged} /></div>
+                            <FloatingCombatText itens={flutuantesHeroi.filter(f => f.alvo === 'hp')} />
                         </div>
                     </TooltipTrigger>
                     <TooltipContent>
@@ -978,7 +1352,7 @@ export default function GameChat() {
 
                 <Tooltip>
                     <TooltipTrigger asChild>
-                        <div tabIndex={0} className="hidden sm:flex items-center gap-2 min-w-0 max-w-[260px] cursor-help px-1 py-0.5 border-2 border-transparent hover:border-gray-700 focus-visible:outline-none focus-visible:border-rpg-gold transition-colors">
+                        <div tabIndex={0} className="relative hidden sm:flex items-center gap-2 min-w-0 max-w-[260px] cursor-help px-1 py-0.5 border-2 border-transparent hover:border-gray-700 focus-visible:outline-none focus-visible:border-rpg-gold transition-colors">
                             <PixelIcon name="estrela" size={14} />
                             <span className="text-[11px] font-rpg text-gray-200 shrink-0">Nv {nivel}</span>
                             <div className="flex-1 min-w-[60px] max-w-[180px]">
@@ -986,8 +1360,10 @@ export default function GameChat() {
                                     value={xpProximoNivel != null ? xp : 1}
                                     max={xpProximoNivel != null ? xpProximoNivel : 1}
                                     colorClass="bg-rpg-gold"
+                                    glow={levelUpGlow}
                                 />
                             </div>
+                            <FloatingCombatText itens={flutuantesHeroi.filter(f => f.alvo === 'xp')} />
                         </div>
                     </TooltipTrigger>
                     <TooltipContent>
@@ -1204,11 +1580,9 @@ export default function GameChat() {
                                 ${morto ? 'border-gray-800 opacity-40 cursor-default' : 'border-red-900/50 hover:border-rpg-gold cursor-pointer'}
                                 ${suaVez && !morto ? 'ring-1 ring-rpg-gold' : ''}`}
                         >
-                            {danosFlutuantes.filter(f => f.idx === i).map(f => (
-                                <span key={f.id} className="absolute left-1/2 top-0 -translate-x-1/2 text-red-400 font-bold text-sm pointer-events-none animate-float-up">
-                                    -{f.valor}
-                                </span>
-                            ))}
+                            <FloatingCombatText
+                                itens={danosFlutuantes.filter(f => f.idx === i).map(f => ({ id: f.id, texto: `-${f.valor}`, cor: 'text-red-400' }))}
+                            />
                             <div className="flex justify-between items-center mb-1 gap-1">
                                 {posicao !== -1 && (
                                     <span className={`text-[9px] font-mono px-1 shrink-0 ${suaVez ? 'bg-rpg-gold text-black' : 'bg-gray-800 text-gray-400'}`}>
@@ -1297,28 +1671,40 @@ export default function GameChat() {
                     );
                 }
 
-                return (
-                    <div key={msg.id} className={`flex items-start gap-3 ${isUser ? 'flex-row-reverse' : 'flex-row'} animate-fade-in`}>
-                        <div className={`w-9 h-9 shrink-0 flex items-center justify-center border shadow-md overflow-hidden ${isUser ? 'border-blue-900 bg-blue-950' : msg.isError ? 'border-amber-700 bg-amber-950' : 'border-gray-700 bg-gray-900'}`}>
-                             {isUser ? (
-                                 <img src={charImage} className="w-full h-full object-cover" onError={(e) => {e.currentTarget.style.display='none'}}/>
-                             ) : msg.isError ? (
-                                 <PixelIcon name="alerta" size={16}/>
-                             ) : (
-                                 <PixelIcon name="dado" size={16}/>
-                             )}
-                             {isUser && <PixelIcon name="rosto" size={16} className="absolute -z-10"/>}
+                // Fase 1 do remaster UX (PLANO_REMASTER_UX.md) — a narração
+                // deixa de ser bolha de chat (avatar + balão lado a lado,
+                // cara de app de mensagem) e vira parágrafo dentro de uma
+                // moldura de pergaminho (PanelFrame, 9-slice já usado na
+                // sidebar/modais); a fala do jogador vira só uma linha de
+                // "ação" alinhada à direita, como o comando digitado, sem
+                // balão próprio — a narração do Mestre é a protagonista
+                // visual da tela, não uma troca de mensagens equivalente.
+                if (isUser) {
+                    return (
+                        <div key={msg.id} className="flex justify-end animate-fade-in">
+                            <div className="max-w-[80%] md:max-w-[70%] text-right border-r-2 border-rpg-gold/30 pr-3">
+                                <span className="block font-pixel-title text-[8px] tracking-widest text-rpg-gold/70 mb-1">VOCÊ</span>
+                                <p className="whitespace-pre-wrap break-words font-rpg text-sm md:text-base italic text-gray-300 leading-relaxed">
+                                    {msg.content}
+                                </p>
+                            </div>
                         </div>
+                    );
+                }
 
-                        <div className={`max-w-[85%] p-3.5 text-sm md:text-base leading-relaxed shadow-lg backdrop-blur-sm
-                            ${isUser
-                                ? 'bg-blue-950/40 border border-blue-900/30 text-blue-100'
-                                : msg.isError
-                                ? 'bg-amber-950/30 border border-amber-800/40 text-amber-200 italic'
-                                : 'bg-gray-900/60 border border-gray-800 text-gray-300'
-                            }`}>
-                            <p className="whitespace-pre-wrap break-words">{msg.content}</p>
-                            {!isUser && !msg.isError && msg.turnoIndex !== undefined && (
+                return (
+                    <div key={msg.id} className="animate-fade-in">
+                        <PanelFrame
+                            borderWidth={10}
+                            className={`relative max-w-[820px] mx-auto p-4 md:p-6 ${msg.isError ? 'bg-amber-950/20' : 'bg-gray-900/50'} backdrop-blur-sm`}
+                        >
+                            <span className={`absolute -top-3 left-3 px-2 py-0.5 font-pixel-title text-[8px] tracking-widest ${msg.isError ? 'bg-amber-800 text-amber-100' : 'bg-rpg-leather text-rpg-gold'}`}>
+                                {msg.isError ? 'AVISO' : 'MESTRE'}
+                            </span>
+                            <p className={`whitespace-pre-wrap break-words font-rpg text-base md:text-lg leading-relaxed ${msg.isError ? 'text-amber-200 italic' : 'text-gray-300'}`}>
+                                {msg.content}
+                            </p>
+                            {!msg.isError && msg.turnoIndex !== undefined && (
                                 comentarioAbertoIdx === idx ? (
                                     <div className="mt-2 -mb-1 flex flex-col gap-1.5">
                                         <input
@@ -1374,7 +1760,7 @@ export default function GameChat() {
                                     </div>
                                 )
                             )}
-                        </div>
+                        </PanelFrame>
                     </div>
                 );
             })}
@@ -1398,14 +1784,13 @@ export default function GameChat() {
             {opcoes.length > 0 && !loading && !gameOver && (
                 <div className="max-w-4xl mx-auto flex flex-wrap gap-2 mb-2 animate-fade-in">
                     {opcoes.map((op, i) => (
-                        <button
+                        <PixelActionCard
                             key={i}
-                            type="button"
                             onClick={() => setInput(op)}
-                            className="text-xs px-3 py-1.5 bg-black/40 border border-gray-700 text-gray-300 hover:border-rpg-gold hover:text-rpg-gold transition-colors"
+                            className="text-xs md:text-sm px-3 py-2"
                         >
                             {op}
-                        </button>
+                        </PixelActionCard>
                     ))}
                 </div>
             )}

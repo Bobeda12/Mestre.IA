@@ -19,12 +19,15 @@ const _PALAVRAS_POCAO = ['poção', 'pocao', 'elixir', 'frasco'];
 const _PALAVRAS_ARMA = ['espada', 'cimitarra', 'machado', 'adaga', 'maça', 'martelo', 'arco', 'lança', 'rapier'];
 const _PALAVRAS_ARMADURA = ['armadura', 'cota', 'escudo', 'couro', 'placas'];
 
-interface Categoria {
+// Exportados (Fase 3 do remaster UX, PLANO_REMASTER_UX.md) — LootRevealOverlay
+// usa a mesma heurística nome→ícone pra mostrar o item certo na animação de
+// loot, em vez de duplicar a lista de palavras-chave.
+export interface Categoria {
   icone: PixelIconName;
   rotulo: string;
 }
 
-function categoriaDe(nome: string): Categoria {
+export function categoriaDe(nome: string): Categoria {
   const n = nome.toLowerCase();
   if (_PALAVRAS_POCAO.some((p) => n.includes(p))) return { icone: 'pocao-verde', rotulo: 'Consumível' };
   if (_PALAVRAS_ARMA.some((p) => n.includes(p))) return { icone: 'espada', rotulo: 'Arma' };

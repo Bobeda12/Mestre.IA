@@ -55,6 +55,11 @@ def listar_personagens(
             "defesa": p.defesa,
             "nivel": p.nivel,
             "criado_em": p.criado_em.isoformat(),
+            # Pendência do remaster UX (PLANO_REMASTER_UX.md, item 4) — "Hall
+            # da Fama": o roster da Home precisa saber quais heróis morreram
+            # pra mostrar a lenda, sem precisar abrir cada um pra descobrir.
+            "morto_em": p.morto_em.isoformat() if p.morto_em else None,
+            "pontuacao_final": p.pontuacao_final,
         }
         for p in personagens
     ]

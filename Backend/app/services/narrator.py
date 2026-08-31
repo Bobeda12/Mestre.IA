@@ -462,7 +462,7 @@ Ouro: {heroi.ouro}{secao_tracos}
 Alinhamento: {heroi.alinhamento}{historia_resumo}
     [INVENTÁRIO] {heroi.inventario}{secao_aliados}
     [MISSÃO ATUAL] {q_state.nome_missao}: {q_state.objetivo_missao}{secao_ato}{secao_evento_global}
-    [CENA] {w_state.local} | {w_state.clima}
+    [CENA] {w_state.local} | {w_state.clima} | {motor.periodo_do_dia(w_state.hora_do_dia)}
     {secao_combate}
 
     Você tem ferramentas para agir no mundo (dano, item, ouro, movimento,

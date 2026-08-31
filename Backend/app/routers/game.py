@@ -1,5 +1,6 @@
 import json
 from collections.abc import Callable, Generator
+from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Request
@@ -156,6 +157,23 @@ def _resposta(heroi: Personagem, c_state: CombatState, q_state: QuestLog, **extr
         "epitafio": heroi.epitafio,
         "inimigos": [i.model_dump() for i in c_state.inimigos],
         "missao": q_state.model_dump(),
+        # Pendência do remaster UX (PLANO_REMASTER_UX.md, item 1) — as três
+        # flags táticas já existiam em CombatState (Fase 1 da revisão de
+        # gameplay) e nunca tinham chegado ao frame `state`; sem isso o
+        # frontend não tinha como saber "o herói está escondido" ou "com
+        # +2 de CA temporário" pra mostrar ícone de status nenhum.
+        "heroi_escondido": c_state.heroi_escondido,
+        "heroi_bonus_ca": c_state.heroi_bonus_ca,
+        "heroi_vantagem_inimiga": c_state.heroi_vantagem_inimiga,
+        # Pendência do remaster UX (item 3) — bestiário persistente:
+        # {"Goblin": 3, ...}, incrementado só em `ToolExecutor._conceder_xp`
+        # (services/tools.py), a única fonte de verdade de vitória.
+        "monstros_derrotados": heroi.monstros_derrotados or {},
+        # Pendência do remaster UX (item 4) — Hall da Fama: `None`/`None`
+        # enquanto o herói está vivo, preenchidos uma vez por
+        # `_persistir_epitafio_se_confirmado` na morte confirmada.
+        "morto_em": heroi.morto_em.isoformat() if heroi.morto_em else None,
+        "pontuacao_final": heroi.pontuacao_final,
         **extra,
     }
 
@@ -167,18 +185,32 @@ def regras_xp_proximo_nivel(nivel: int) -> int | None:
 
 
 def _persistir_epitafio_se_confirmado(
-    db: Session, heroi: Personagem, c_state: CombatState, chave: ChaveUsuario
+    db: Session, heroi: Personagem, c_state: CombatState, w_state: WorldState, chave: ChaveUsuario
 ) -> None:
     """Fase 7 da revisão de gameplay — gerado uma vez, na primeira vez que
     `c_state.resultado` vira "morte" (chamado logo depois de
     `combat.turno_morte`, nos dois caminhos de `/chat`). `heroi.epitafio`
     já preenchido é o guarda: regerar a cada visita custaria dinheiro e
-    daria uma memória diferente da mesma morte a cada vez."""
+    daria uma memória diferente da mesma morte a cada vez.
+
+    Pendência do remaster UX (PLANO_REMASTER_UX.md, item 4) — `morto_em` e
+    `pontuacao_final` são gravados no MESMO commit que confirma a morte,
+    pelo mesmo motivo do epitáfio: é o único lugar do sistema que sabe "esta
+    é a morte de verdade, aconteceu agora" — tentar derivar isso depois
+    (ex: `resultado_combate == "morte"` no frame de estado) corre o risco de
+    recalcular a cada visita à tela de morte. Fórmula da pontuação,
+    documentada aqui por ser a única fonte da verdade: XP total + 1 ponto
+    por turno de mundo sobrevivido + 10 pontos por monstro derrotado no
+    bestiário — pesos de primeira passada, sem simulação por trás (mesmo
+    espírito de `XP_OBJETIVO_NAO_COMBATE`, ajustável depois sem migração)."""
     if c_state.resultado != "morte" or heroi.epitafio is not None:
         return
     resumo = ResumoRolante.model_validate(heroi.resumo_rolante or {})
     marcantes = memory.eventos_marcantes(db, heroi.id)
     heroi.epitafio = gerar_epitafio(heroi, marcantes, resumo, chamar_fn=chave.chamar_fn)
+    heroi.morto_em = datetime.now(UTC)
+    total_abates = sum((heroi.monstros_derrotados or {}).values())
+    heroi.pontuacao_final = (heroi.xp or 0) + w_state.turno + total_abates * 10
 
 
 @router.post("/load_game")
@@ -203,7 +235,7 @@ def load_game(
     return _resposta(
         heroi, c_state, q_state,
         nome=heroi.nome, raca=heroi.raca, classe=heroi.classe, local=w_state.local, missao=heroi.quest_log,
-        imagem=heroi.imagem, turno_mundo=w_state.turno, clima=w_state.clima,
+        imagem=heroi.imagem, turno_mundo=w_state.turno, clima=w_state.clima, hora_do_dia=w_state.hora_do_dia,
         background=heroi.background, objetivo=heroi.objetivo, historia_texto=heroi.historia_texto,
         historico_chat=heroi.historico_chat, anteriormente=anteriormente,
         # Rodada de conserto — antes disto, `opcoes` só vinha nos turnos de
@@ -251,7 +283,7 @@ async def chat_endpoint(
     if heroi.hp_atual <= 0:
         eventos_morte, hp_morte = combat.turno_morte(c_state)
         heroi.hp_atual = hp_morte
-        _persistir_epitafio_se_confirmado(db, heroi, c_state, chave)
+        _persistir_epitafio_se_confirmado(db, heroi, c_state, w_state, chave)
         prompt_morte = (
             f"{regras.get_biblia()}\n[HEROI] {heroi.nome} está inconsciente, a 0 PV, lutando contra a morte. "
             "[MOMENTO DE ALTO IMPACTO] — a vida por um fio, o momento mais tenso do jogo. Deixe a "
@@ -316,6 +348,7 @@ async def chat_endpoint(
             return _resposta(
                 heroi, c_state, q_state, narrativa="", erro=True, erro_mensagem=e.mensagem,
                 erro_codigo="chave_usuario_falhou" if chave.presente else None, turno_mundo=turno_mundo_persistido,
+                local=w_state.local, clima=w_state.clima, hora_do_dia=w_state.hora_do_dia,
             )
 
     violacoes = validar_narrativa(narrativa, heroi, c_state, w_state)
@@ -372,6 +405,7 @@ async def chat_endpoint(
     return _resposta(
         heroi, c_state, q_state, narrativa=narrativa, opcoes=opcoes,
         turno_index=len(heroi.historico_chat) - 1, turno_mundo=w_state.turno,
+        local=w_state.local, clima=w_state.clima, hora_do_dia=w_state.hora_do_dia,
     )
 
 
@@ -439,7 +473,7 @@ def chat_stream_endpoint(
         if heroi.hp_atual <= 0:
             eventos_morte, hp_morte = combat.turno_morte(c_state)
             heroi.hp_atual = hp_morte
-            _persistir_epitafio_se_confirmado(db, heroi, c_state, chave)
+            _persistir_epitafio_se_confirmado(db, heroi, c_state, w_state, chave)
             prompt_morte = (
                 f"{regras.get_biblia()}\n[HEROI] {heroi.nome} está inconsciente, a 0 PV, lutando contra a morte. "
                 "[MOMENTO DE ALTO IMPACTO] — a vida por um fio, o momento mais tenso do jogo. Deixe a "
@@ -508,6 +542,7 @@ def chat_stream_endpoint(
                     _resposta(
                         heroi, c_state, q_state, narrativa="", erro=True,
                         erro_mensagem=erro_turno, turno_mundo=turno_mundo_persistido,
+                        local=w_state.local, clima=w_state.clima, hora_do_dia=w_state.hora_do_dia,
                     ),
                 )
                 return
@@ -588,6 +623,7 @@ def chat_stream_endpoint(
             _resposta(
                 heroi, c_state, q_state, narrativa=narrativa, opcoes=opcoes,
                 turno_index=len(heroi.historico_chat) - 1, turno_mundo=w_state.turno,
+                local=w_state.local, clima=w_state.clima, hora_do_dia=w_state.hora_do_dia,
             ),
         )
 

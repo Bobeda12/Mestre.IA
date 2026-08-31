@@ -21,6 +21,10 @@ interface Personagem {
   defesa: number;
   nivel: number;
   criado_em: string;
+  // Pendência do remaster UX (PLANO_REMASTER_UX.md, item 4) — "Hall da
+  // Fama": `null` enquanto o herói está vivo.
+  morto_em: string | null;
+  pontuacao_final: number | null;
 }
 
 export default function Home() {
@@ -177,8 +181,12 @@ export default function Home() {
                 <p className="text-gray-400 text-sm text-center py-6 font-rpg">
                   Nenhum herói ainda. Crie sua lenda.
                 </p>
+              ) : personagens.data.filter(p => !p.morto_em).length === 0 ? (
+                <p className="text-gray-400 text-sm text-center py-6 font-rpg">
+                  Nenhum herói vivo agora — veja o Salão dos Heróis Mortos abaixo.
+                </p>
               ) : (
-                personagens.data.map((p, i) => (
+                personagens.data.filter(p => !p.morto_em).map((p, i) => (
                   <div
                     key={p.session_id}
                     onClick={() => continuarComo(p)}
@@ -221,6 +229,51 @@ export default function Home() {
                 ))
               )}
             </div>
+
+            {/* Pendência do remaster UX resolvida (PLANO_REMASTER_UX.md,
+                item 4) — "Salão dos Heróis Mortos": personagens com
+                `morto_em` preenchido (Backend/app/routers/game.py:
+                _persistir_epitafio_se_confirmado) viram lenda visível
+                aqui, com a pontuação final. Clicar leva pro mesmo
+                `/jogar/:sessionId` de sempre — GameChat já mostra a tela
+                de morte completa (epitáfio incluso) assim que carrega um
+                herói com `resultado_combate === "morte"`, então não
+                precisa de uma rota nova só pra isso. */}
+            {personagens.data && personagens.data.some(p => p.morto_em) && (
+              <div className="mt-6">
+                <h2 className="text-red-400/80 font-rpg text-sm mb-3 flex items-center gap-2 uppercase tracking-widest">
+                  <PixelIcon name="caveira" size={16} /> Salão dos Heróis Mortos
+                </h2>
+                <div className="max-h-56 overflow-y-auto custom-scrollbar pr-1 space-y-2">
+                  {personagens.data.filter(p => p.morto_em).map((p) => (
+                    <div
+                      key={p.session_id}
+                      onClick={() => continuarComo(p)}
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); continuarComo(p); } }}
+                      aria-label={`Ver o epitáfio de ${p.nome}, ${p.raca} ${p.classe}`}
+                      className="group flex items-center gap-3 p-2 bg-black/50 border-2 border-red-900/40 hover:border-red-700 grayscale hover:grayscale-0 transition-all duration-150 cursor-pointer animate-fade-in"
+                    >
+                      <div className="pixel-frame w-10 h-10 shrink-0 bg-black overflow-hidden opacity-70">
+                        <img src={getLocalImage('classes', p.classe)} alt="" className="w-full h-full" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <h3 className="font-rpg text-gray-300 group-hover:text-gray-100 truncate">{p.nome}</h3>
+                        <p className="text-[11px] text-gray-500 uppercase tracking-wide font-rpg">
+                          {p.raca} {p.classe} · Nível {p.nivel}
+                        </p>
+                      </div>
+                      {p.pontuacao_final != null && (
+                        <span className="text-[11px] text-rpg-gold font-rpg shrink-0 flex items-center gap-1">
+                          <PixelIcon name="estrela" size={12} /> {p.pontuacao_final}
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>

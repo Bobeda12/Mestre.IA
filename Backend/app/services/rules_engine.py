@@ -45,6 +45,24 @@ def calcular_modificador(valor: int) -> int:
     return (valor - 10) // 2
 
 
+# Pendência do remaster UX (PLANO_REMASTER_UX.md, item 2) — "o tempo não
+# passa por número de turnos, passa por ação lógica": `WorldState.hora_do_dia`
+# (0-23) avança por horas de verdade em `services/tools.py` (mover soma
+# poucas horas, descansar longo soma uma noite inteira), não por turno de
+# jogo. Esta função só traduz a hora num período legível — mesmo motivo de
+# `bonus_proficiencia` morar aqui: é o juiz que decide o número, não o
+# narrador nem o front.
+def periodo_do_dia(hora: int) -> str:
+    hora = hora % 24
+    if hora < 6:
+        return "madrugada"
+    if hora < 12:
+        return "manhã"
+    if hora < 18:
+        return "tarde"
+    return "noite"
+
+
 def _parse_dado(expressao: str) -> tuple[int, int, int]:
     m = _PADRAO_DADO.match(expressao.strip())
     if not m:
