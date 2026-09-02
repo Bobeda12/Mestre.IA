@@ -1,3 +1,4 @@
+import type { ReactNode } from "react"
 import { clsx, type ClassValue } from "clsx"
 import { twMerge } from "tailwind-merge"
 
@@ -39,11 +40,37 @@ function _arquivo(name: string) {
 // Etapa 10 (A-7) — limpeza leve enquanto o texto ainda está chegando aos
 // pedaços (GameChat.tsx). O servidor (services/guardrail.limpar_formatacao)
 // já limpa o texto completo antes de persistir; isto é só para a tela não
-// piscar um `**` cru por meio segundo antes do fechamento chegar. Passa
-// sempre sobre o texto ACUMULADO, nunca sobre o pedaço isolado — um `**`
-// pode chegar partido entre dois frames SSE.
+// piscar um crase cru por meio segundo antes do fechamento chegar. Passa
+// sempre sobre o texto ACUMULADO, nunca sobre o pedaço isolado — uma crase
+// pode chegar partida entre dois frames SSE.
+//
+// Item 9 da rodada de polish pós-remaster: `**negrito**` deixou de ser
+// APAGADO aqui — agora sobrevive em `msg.content` de propósito, pra
+// `renderizarNarrativa` (abaixo) transformar em destaque dourado na hora de
+// desenhar a bolha do Mestre, em vez de virar texto plano.
 export function limparMarkdownLeve(texto: string) {
-  return texto.replace(/\*{1,3}([^*\n]+?)\*{1,3}/g, '$1').replace(/`([^`\n]+?)`/g, '$1')
+  return texto.replace(/`([^`\n]+?)`/g, '$1')
+}
+
+// Item 9 da rodada de polish pós-remaster — "loot visual": em vez de um
+// parser de markdown completo (fora de escopo, e a narração do modelo só
+// usa `**negrito**` mesmo, nunca listas/links/etc.), isto faz um split
+// manual em segmentos e devolve nós React prontos — texto puro e
+// `<strong>` dourado com glow pros trechos em negrito. De propósito NÃO usa
+// `dangerouslySetInnerHTML`: a narração vem do LLM, e um nó React por
+// segmento evita qualquer risco de HTML injetado, sem precisar de
+// sanitização à parte.
+export function renderizarNarrativa(texto: string): ReactNode[] {
+  const partes = texto.split(/(\*{1,3}[^*\n]+?\*{1,3})/g)
+  return partes.map((parte, i) => {
+    const m = /^\*{1,3}([^*\n]+?)\*{1,3}$/.exec(parte)
+    if (!m) return parte
+    return (
+      <strong key={i} className="text-rpg-gold text-glow font-bold">
+        {m[1]}
+      </strong>
+    )
+  })
 }
 
 // Fase 1 da revisão de gameplay — o narrador sempre termina com

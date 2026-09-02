@@ -25,7 +25,7 @@ export default function PixelActionCard({
       className={`pixel-action-card flex items-center gap-2 text-left font-rpg text-rpg-parchment ${className}`}
     >
       <PixelIcon name="seta" size={10} className="pixel-action-card__seta shrink-0" />
-      <span className="min-w-0">{children}</span>
+      <span className="pixel-action-card__texto min-w-0">{children}</span>
     </button>
   );
 }

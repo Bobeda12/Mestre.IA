@@ -72,7 +72,14 @@ function formatSinal(valor: number): string {
 // quase imperceptível mesmo quando a animação roda. 700ms com o giro mais
 // rápido (ver `[animation-duration:...]` abaixo) dá mais de uma volta
 // inteira dentro da janela.
-export const DURACAO_ANIMACAO_DADO_MS = 700;
+// Item 3 da rodada de polish pós-remaster ("fator cassino") — subiu de
+// 700ms pra ~1s: o giro sozinho não vendia suspense de cassino, precisava
+// de mais tempo pro número embaralhando (abaixo) dar pra ler pelo menos
+// 2-3 trocas antes de parar.
+export const DURACAO_ANIMACAO_DADO_MS = 1000;
+// Intervalo de troca do número embaralhando — rápido o bastante pra parecer
+// "girando", devagar o bastante pra não virar borrão ilegível.
+const INTERVALO_EMBARALHAR_MS = 70;
 
 export default function RollCard({ dados }: { dados: DadosRolagem }) {
   // Rodada de conserto — achado ao vivo: `index.css` já desliga a animação
@@ -82,10 +89,17 @@ export default function RollCard({ dados }: { dados: DadosRolagem }) {
   // espera. `useState(prefereMovimentoReduzido)` (inicializador lento, não
   // um efeito) já nasce revelado nesse caso, sem esperar nada.
   const [revelado, setRevelado] = useState(prefereMovimentoReduzido);
+  // Item 3 — número "embaralhando" (1-20 aleatório trocando rápido) durante
+  // a espera, no lugar de só o ícone girando sem número nenhum. Pulado
+  // inteiro quando `prefereMovimentoReduzido()` (mesmo guard do efeito
+  // abaixo — `revelado` já nasce `true` nesse caso, então este efeito nem
+  // chega a rodar).
+  const [numeroEmbaralhado, setNumeroEmbaralhado] = useState(() => 1 + Math.floor(Math.random() * 20));
   useEffect(() => {
     if (prefereMovimentoReduzido()) return;
     const t = setTimeout(() => setRevelado(true), DURACAO_ANIMACAO_DADO_MS);
-    return () => clearTimeout(t);
+    const i = setInterval(() => setNumeroEmbaralhado(1 + Math.floor(Math.random() * 20)), INTERVALO_EMBARALHAR_MS);
+    return () => { clearTimeout(t); clearInterval(i); };
   }, []);
 
   const cor = dados.critico
@@ -129,7 +143,7 @@ export default function RollCard({ dados }: { dados: DadosRolagem }) {
               de 1s), pra caber mais de uma volta inteira dentro dos 700ms
               de espera acima. */}
           <PixelIcon name="dado" size={22} className="animate-spin [animation-duration:0.45s]" />
-          <span className="tracking-widest">rolando</span>
+          <span className="tracking-widest tabular-nums">d20({numeroEmbaralhado})</span>
         </div>
       </div>
     );
@@ -142,8 +156,12 @@ export default function RollCard({ dados }: { dados: DadosRolagem }) {
         {/* Rodada de conserto (Parte 2, item I) — o motivo do teste, não só
             o atributo. "Teste de Sabedoria" sozinho não diz se é pra
             perceber uma emboscada ou resistir a medo. */}
+        {/* Item 4 da rodada de polish pós-remaster — tirado `max-w-[220px]`
+            e `truncate`: o motivo não pode mais terminar em "..." nem ficar
+            cortado. `title` continua como reforço de acessibilidade, mesmo
+            com o texto inteiro já visível. */}
         {dados.tipo === 'teste' && dados.motivo && (
-          <span className="text-[10px] text-gray-500 italic max-w-[220px] text-center truncate" title={dados.motivo}>
+          <span className="max-w-[90vw] text-[10px] text-gray-500 italic text-center" title={dados.motivo}>
             {dados.motivo}
           </span>
         )}

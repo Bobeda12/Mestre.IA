@@ -280,9 +280,17 @@ img[src^="/assets/backgrounds/"] {
     0 0 0 1px #000;
   transition: box-shadow 0.15s steps(3, end), border-color 0.15s steps(3, end), transform 0.1s steps(2, end);
 }
+/* Item 7 da rodada de polish pós-remaster — a seta era só um enfeite
+   sempre meio visível (opacity 0.6 parado); virou o "cursor" de menu de
+   JRPG de verdade (tipo ☛): some por completo em repouso e só aparece,
+   deslizando, quando o cursor passa por cima — o mesmo gesto de "> Atacar"
+   piscando em RPG de console clássico. */
 .pixel-action-card__seta {
-  opacity: 0.6;
+  opacity: 0;
   transition: opacity 0.15s steps(3, end), transform 0.15s steps(3, end);
+}
+.pixel-action-card__texto {
+  transition: color 0.15s steps(3, end);
 }
 .pixel-action-card:hover {
   border-color: var(--color-rpg-gold);
@@ -296,6 +304,9 @@ img[src^="/assets/backgrounds/"] {
 .pixel-action-card:hover .pixel-action-card__seta {
   opacity: 1;
   transform: translateX(2px);
+}
+.pixel-action-card:hover .pixel-action-card__texto {
+  color: var(--color-rpg-gold);
 }
 .pixel-action-card:active {
   transform: translateY(0);
@@ -347,6 +358,36 @@ img[src^="/assets/backgrounds/"] {
 .periodo-manha { background-image: radial-gradient(ellipse at top, rgba(255, 210, 140, 0.09), transparent 70%); }
 .periodo-tarde { background-image: radial-gradient(ellipse at top, rgba(255, 255, 255, 0.04), transparent 70%); }
 .periodo-noite { background-image: radial-gradient(ellipse at top, rgba(255, 140, 60, 0.13), transparent 70%); }
+
+/* Item 9 da rodada de polish pós-remaster — sistema de feridas por
+   percentual de vida. `wasDamaged`/`shakeScreen`/`.animate-shake` (acima)
+   continuam exatamente como estavam, reagindo só ao MOMENTO do golpe; isto
+   aqui é ESTADO contínuo enquanto a vida fica baixa, sem relação com aquele
+   flash de um tiro só.
+
+   `.animate-ferimento-pulso` — pulso vermelho no overlay de marcas sobre o
+   retrato (tiers ≤25% e ≤10% de HudPersonagem.tsx), respiração mais lenta
+   que qualquer efeito de golpe pra não competir com ele quando os dois
+   coincidem. */
+@keyframes ferimentoPulso {
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 0.85; }
+}
+.animate-ferimento-pulso {
+  animation: ferimentoPulso 1.6s ease-in-out infinite;
+}
+
+/* `.animate-tela-critica` — o "piscando vermelho" da TELA INTEIRA quando a
+   vida está ≤10% (loop contínuo enquanto durar esse patamar, decisão
+   aprovada com o usuário). Overlay próprio, distinto do flash de
+   `wasDamaged` (`GameChat.tsx:888`, que continua de um tiro só). */
+@keyframes telaCriticaPiscando {
+  0%, 100% { opacity: 0; }
+  50% { opacity: 0.3; }
+}
+.animate-tela-critica {
+  animation: telaCriticaPiscando 1.3s ease-in-out infinite;
+}
 
 /* O jogo tem bastante coisa em loop (tocha, mapa, blocos de carregamento,
    pulsação do título). Uma única regra desliga tudo pra quem pediu menos

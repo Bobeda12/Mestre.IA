@@ -106,6 +106,23 @@ orelha pontuda, símbolo sagrado ou traje de monge visível a 16px; nenhuma
 fonte CC0/CC-BY encontrada tinha esses três SEM quebrar a consistência
 visual com o resto do conjunto).
 
+## Marcas de ferimento no retrato (rodada de polish pós-remaster, item 9)
+
+Splats em `Frontend/public/assets/effects/` (`ferimento-leve.png`,
+`ferimento-medio.png`, `ferimento-grave.png`), sobrepostos ao retrato do
+herói e tingidos de vermelho via `mask-image` (`HudPersonagem.tsx`) conforme
+a vida cai — sem geração por IA, mesmo pacote Kenney já usado pra outros
+sprites/molduras do projeto:
+
+| Pacote | Autor | Licença | Fonte |
+|---|---|---|---|
+| Splat Pack | Kenney | [CC0](https://creativecommons.org/publicdomain/zero/1.0/) | [kenney.nl/assets/splat-pack](https://kenney.nl/assets/splat-pack) |
+
+Três arquivos do pacote (`splat05`, `splat14`, `splat26` do conjunto
+"Default (256px)") renomeados por tier de gravidade — a forma exata do splat
+não tem significado além de "mais ou menos marcado"; a cor vem inteira do
+`mask-image`, não do PNG original (que é uma silhueta preta/cinza).
+
 ## Ícones de jogo, painéis e botões (Etapa 14, C-1)
 
 `Frontend/public/assets/icons/` e `Frontend/public/assets/ui/` — mesma

@@ -5,7 +5,7 @@ import { isAxiosError } from 'axios';
 import { api, API_URL } from '../lib/api';
 import { prefereMovimentoReduzido } from '../lib/acessibilidade';
 import { ErroSse, postSse } from '../lib/sse';
-import { esconderTagOpcoes, getLocalImage, limparMarkdownLeve } from '../lib/utils';
+import { esconderTagOpcoes, getLocalImage, limparMarkdownLeve, renderizarNarrativa } from '../lib/utils';
 import { useAuth } from '../lib/auth';
 import { useTrilha, calcularTema } from '../lib/trilha';
 import { useSfx } from '../lib/sfx';
@@ -18,7 +18,6 @@ import PanelFrame from './PanelFrame';
 import PixelButton from './PixelButton';
 import InventoryGrid from './InventoryGrid';
 import Carregando from './Carregando';
-import RetratoPixelado from './RetratoPixelado';
 import MenuConfiguracao from './MenuConfiguracao';
 import PainelRegrasModal from './PainelRegrasModal';
 import ConfirmeEmail from './ConfirmeEmail';
@@ -27,8 +26,12 @@ import SistemaFeedbackToast, { type ToastItem } from './SistemaFeedbackToast';
 import FloatingCombatText, { type FlutuanteHeroi } from './FloatingCombatText';
 import LootRevealOverlay, { type LootAtivo } from './LootRevealOverlay';
 import FichaModal from './FichaModal';
-import StatusEffectIcons, { statusEfeitosAtivos } from './StatusEffectIcons';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip';
+import HudPersonagem from './HudPersonagem';
+import CabecalhoRegiao from './CabecalhoRegiao';
+import PixelTooltip from './PixelTooltip';
+import DetalheMonstroModal from './DetalheMonstroModal';
+import GuiaAventureiro from './GuiaAventureiro';
 
 // Etapa 14 (revisão) — a ficha virou menu de abas estilo JRPG. Antes tudo
 // (retrato, barras, atributos, missão, inventário) era uma pilha só numa
@@ -211,6 +214,11 @@ export default function GameChat() {
   const [abaAtiva, setAbaAtiva] = useState<AbaFicha>('status');
   const [configAberta, setConfigAberta] = useState(false);
   const [manualAberto, setManualAberto] = useState(false);
+  // Item 11 da rodada de polish pós-remaster — onboarding conceitual.
+  const [guiaAberto, setGuiaAberto] = useState(false);
+  // Item 10 — nome do monstro cuja "página de bestiário" está aberta,
+  // `null` quando fechado.
+  const [monstroDetalheAberto, setMonstroDetalheAberto] = useState<string | null>(null);
   const [atributoInspecionado, setAtributoInspecionado] = useState<(typeof ATRIBUTOS)[number][0] | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -422,6 +430,13 @@ export default function GameChat() {
   const temaMusical = calcularTema({ gameOver, combateAtivo: combatActive, hpAtual, hpMax });
   const trilha = useTrilha(temaMusical);
   const sfx = useSfx();
+
+  // Item 9 da rodada de polish pós-remaster — vida ≤10% dispara a tela
+  // piscando vermelho em loop contínuo (decisão aprovada: para só quando a
+  // vida sobe do patamar ou o jogo acaba), distinto do flash de um tiro só
+  // de `wasDamaged`. `hpAtual > 0` evita o pisca continuar por cima da tela
+  // de GAME OVER.
+  const hpCritico = hpMax > 0 && hpAtual > 0 && hpAtual / hpMax <= 0.10;
 
   const maiorTurnoIndex = messages.reduce(
     (max, m) => (m.kind === 'texto' && m.turnoIndex !== undefined ? Math.max(max, m.turnoIndex) : max),
@@ -886,6 +901,11 @@ export default function GameChat() {
       <LootRevealOverlay loot={lootAtivo} onFinish={() => setLootAtivo(null)} />
 
       <div className={`absolute inset-0 z-50 bg-red-600 pointer-events-none transition-opacity duration-200 ${wasDamaged ? 'opacity-20' : 'opacity-0'}`} />
+      {/* Item 9 — pisca contínuo enquanto a vida fica ≤10%, separado do
+          flash de um tiro só acima (`wasDamaged`). */}
+      {hpCritico && (
+        <div className="absolute inset-0 z-50 bg-red-700 pointer-events-none animate-tela-critica" aria-hidden="true" />
+      )}
 
       {/* Fase 4 do remaster UX (PLANO_REMASTER_UX.md) — "fade to black": a
           trilha já muda pra `tristeza` sozinha (calcularTema, acima) assim
@@ -993,7 +1013,7 @@ export default function GameChat() {
               fixed md:relative top-0 bottom-0 z-50 md:z-auto
               transition-all duration-300 bg-gray-900 border-r border-gray-800 flex flex-col shrink-0 overflow-hidden`}
       >
-          <div className="p-4 border-b border-gray-800 flex justify-between items-center bg-black/20">
+          <div className="p-6 border-b border-gray-800 flex justify-between items-center bg-black/20">
               <h2 className="font-pixel-title text-sm text-rpg-gold flex items-center gap-2 truncate"><PixelIcon name="pergaminho" size={18}/> FICHA</h2>
               {/* Rodada de conserto — restaurado aqui: o botão que eu tinha
                   movido pra faixa de vitais só é renderizado quando a ficha
@@ -1006,6 +1026,17 @@ export default function GameChat() {
                       title="Manual do Jogo"
                       className="text-gray-300 hover:text-rpg-gold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rpg-gold"
                   ><PixelIcon name="dado" size={18}/></button>
+                  {/* Item 11 da rodada de polish pós-remaster — "Guia do
+                      Aventureiro": não existe ícone de interrogação em
+                      PixelIcon.tsx, então usa um glifo de texto no mesmo
+                      chrome dos outros botões de ícone (mesmo espírito de
+                      "FICHA"/"MESTRE", que também são texto). */}
+                  <button
+                      onClick={() => setGuiaAberto(true)}
+                      aria-label="Abrir guia do aventureiro"
+                      title="Guia do Aventureiro"
+                      className="w-[18px] h-[18px] flex items-center justify-center font-pixel-title text-[10px] text-gray-300 hover:text-rpg-gold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rpg-gold"
+                  >?</button>
                   <button
                       onClick={() => setConfigAberta(true)}
                       aria-label="Abrir configurações"
@@ -1020,53 +1051,38 @@ export default function GameChat() {
               </div>
           </div>
 
-          {/* Retrato COMPACTO. O busto grande ocupava 343px de altura — mais
-              que todo o conteúdo da aba STATUS junto (293px, medido), e num
-              notebook de 768px sobrava pouco pro resto. Em linha ele custa
-              ~88px e continua sendo a âncora de identidade do menu; quem
-              quiser ver grande clica e abre em tela cheia. */}
-          <button
-              onClick={() => setFichaModalAberta(true)}
-              className="shrink-0 m-3 mb-0 flex items-center gap-3 p-2 border-2 border-gray-700 hover:border-rpg-gold bg-black/50 transition-colors text-left focus-visible:outline-none focus-visible:border-rpg-gold"
-              aria-label={`Abrir ficha completa de ${charName}`}
-          >
-              <div className="pixel-frame w-16 h-16 shrink-0 bg-black overflow-hidden">
-                  <RetratoPixelado src={charImage} alt="" className="w-full h-full object-cover object-top" />
-              </div>
-              <div className="min-w-0">
-                  <p className="text-white font-rpg text-lg leading-tight truncate">{charName}</p>
-                  <p className="text-[10px] text-gray-300 uppercase tracking-wide font-rpg truncate">{charRace} {charClass}</p>
-                  <StatusEffectIcons efeitos={statusEfeitosAtivos({ escondido: heroiEscondido, bonusCa: heroiBonusCa, vantagemInimiga: heroiVantagemInimiga })} />
-              </div>
-          </button>
-
-          {/* Card de Mundo. Pendência do remaster UX resolvida — local/
-              clima/hora do dia agora chegam em TODO frame `state`
-              (routers/game.py:_resposta), não só no carregamento: viajar
-              no meio da sessão atualiza o card na hora, não só no próximo
-              load. Chuva é detectada pelo texto do clima porque não existe
-              um campo estruturado "está chovendo" — heurística simples,
-              não tentativa de cobrir todo vocabulário de clima. */}
-          {localAtual && (
-              <div className={`shrink-0 mx-3 mt-2 p-2 border-2 border-gray-700 bg-black/40 relative overflow-hidden ${/chuv/i.test(climaAtual) ? 'animate-chuva' : ''}`}>
-                  <div className="flex items-center gap-2 text-[11px] font-rpg text-gray-300">
-                      <PixelIcon name="seta" size={11} className="rotate-90 opacity-60" />
-                      <span className="truncate">{localAtual}</span>
-                      {horaDoDia != null && (
-                          <span className="ml-auto shrink-0 text-[9px] text-gray-500 uppercase tracking-widest">{periodoDoDia(horaDoDia)}</span>
-                      )}
-                  </div>
-                  {climaAtual && (
-                      <p className="text-[10px] text-gray-500 italic mt-0.5 truncate">{climaAtual}</p>
-                  )}
-              </div>
-          )}
+          {/* Item 1 da rodada de polish pós-remaster — "a barra lateral deve
+              concentrar tudo do herói": retrato + nome + HP/XP/Ouro (com
+              barras) juntos, extraídos pra HudPersonagem.tsx. Local/Clima
+              saiu daqui (foi pro topo central, CabecalhoRegiao.tsx). */}
+          <HudPersonagem
+              charName={charName}
+              charRace={charRace}
+              charClass={charClass}
+              charImage={charImage}
+              hpAtual={hpAtual}
+              hpMax={hpMax}
+              xp={xp}
+              nivel={nivel}
+              xpProximoNivel={xpProximoNivel}
+              ouro={ouro}
+              defesa={defesa}
+              wasDamaged={wasDamaged}
+              levelUpGlow={levelUpGlow}
+              flutuantesHeroi={flutuantesHeroi}
+              heroiEscondido={heroiEscondido}
+              heroiBonusCa={heroiBonusCa}
+              heroiVantagemInimiga={heroiVantagemInimiga}
+              onAbrirFicha={() => setFichaModalAberta(true)}
+          />
 
           {/* Abas. A ficha inteira empilhada numa coluna de 320px ficava
               espremida e obrigava a rolar pra achar qualquer coisa; separada em
               três telas, cada uma respira. Um `role="tablist"` de verdade, pra
-              seta do teclado e leitor de tela funcionarem como o esperado. */}
-          <div role="tablist" aria-label="Ficha do personagem" className="flex shrink-0 px-3 pt-3 gap-1">
+              seta do teclado e leitor de tela funcionarem como o esperado.
+              Item 6 (respiro) — `pt-3`→`pt-4` e `gap-1`→`gap-1.5`: os botões
+              de aba estavam colados no bloco de cima. */}
+          <div role="tablist" aria-label="Ficha do personagem" className="flex shrink-0 px-3 pt-4 gap-1.5">
               {ABAS.map((aba) => (
                   <button
                       key={aba.id}
@@ -1094,7 +1110,7 @@ export default function GameChat() {
               role="tabpanel"
               id={`painel-${abaAtiva}`}
               aria-labelledby={`aba-${abaAtiva}`}
-              className="p-3 space-y-4 overflow-y-auto custom-scrollbar flex-1"
+              className="p-6 space-y-6 overflow-y-auto custom-scrollbar flex-1"
           >
               {abaAtiva === 'status' && (
                 <div className="space-y-4 animate-fade-in">
@@ -1291,18 +1307,30 @@ export default function GameChat() {
                         {nomes.map((nome) => {
                           const abates = monstrosDerrotados[nome] ?? 0;
                           return (
-                            <div key={nome} className="bg-black/50 border-2 border-gray-700 p-2 flex flex-col items-center gap-1 text-center">
-                              <img
-                                src={getLocalImage('monstros', nome)}
-                                alt=""
-                                className="w-8 h-8"
-                                onError={(e) => { e.currentTarget.style.display = 'none'; }}
-                              />
-                              <span className="text-[10px] font-rpg text-gray-300 leading-tight truncate w-full">{nome}</span>
-                              <span className={`text-[8px] uppercase tracking-widest font-rpg ${abates > 0 ? 'text-red-400' : 'text-gray-500'}`}>
-                                {abates > 0 ? `Derrotado ×${abates}` : 'Avistado'}
-                              </span>
-                            </div>
+                            // Item 10 da rodada de polish pós-remaster —
+                            // tooltip pixelado (não mais silêncio total no
+                            // hover) e clique abre a "página de bestiário".
+                            <PixelTooltip
+                              key={nome}
+                              content={abates > 0 ? `Derrotado ×${abates} — clique para ver mais` : 'Avistado, nunca derrotado — clique para ver mais'}
+                            >
+                              <button
+                                type="button"
+                                onClick={() => setMonstroDetalheAberto(nome)}
+                                className="bg-black/50 border-2 border-gray-700 hover:border-rpg-gold p-2 flex flex-col items-center gap-1 text-center transition-colors focus-visible:outline-none focus-visible:border-rpg-gold"
+                              >
+                                <img
+                                  src={getLocalImage('monstros', nome)}
+                                  alt=""
+                                  className="w-8 h-8"
+                                  onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                                />
+                                <span className="text-[10px] font-rpg text-gray-300 leading-tight truncate w-full">{nome}</span>
+                                <span className={`text-[8px] uppercase tracking-widest font-rpg ${abates > 0 ? 'text-red-400' : 'text-gray-500'}`}>
+                                  {abates > 0 ? `Derrotado ×${abates}` : 'Avistado'}
+                                </span>
+                              </button>
+                            </PixelTooltip>
                           );
                         })}
                       </div>
@@ -1337,6 +1365,17 @@ export default function GameChat() {
 
       <MenuConfiguracao aberto={configAberta} aoFechar={() => setConfigAberta(false)} trilha={trilha} sfx={sfx} />
       <PainelRegrasModal aberto={manualAberto} aoFechar={() => setManualAberto(false)} />
+      {/* Item 11 da rodada de polish pós-remaster. */}
+      <GuiaAventureiro aberto={guiaAberto} aoFechar={() => setGuiaAberto(false)} />
+      {/* Item 10 da rodada de polish pós-remaster. */}
+      {monstroDetalheAberto && (
+          <DetalheMonstroModal
+              aberto
+              onFechar={() => setMonstroDetalheAberto(null)}
+              nome={monstroDetalheAberto}
+              abates={monstrosDerrotados[monstroDetalheAberto] ?? 0}
+          />
+      )}
 
       {/* CHAT AREA. Pendência do remaster UX resolvida (item 2) — ambiência
           reage à hora do dia de verdade (`horaDoDia`, vinda do backend),
@@ -1344,11 +1383,14 @@ export default function GameChat() {
           não tem nenhum fundo por local/bioma hoje — produzir isso é
           escopo de arte, não só de código; ver PLANO_REMASTER_UX.md §5). */}
       <div className={`flex-1 flex flex-col relative bg-[#050505] ${horaDoDia != null ? `periodo-${periodoDoDia(horaDoDia).replace('ã', 'a')}` : ''}`}>
-        {/* Vitais sobre a área de jogo, não dentro da ficha: vida, nível e
-            defesa são o que se olha NO MEIO da luta, e aqui continuam
-            visíveis mesmo com a ficha fechada — que é como jogo faz. De
-            quebra devolveram ~150px de altura pra barra lateral. */}
-        <div className="shrink-0 flex items-center gap-3 md:gap-4 px-3 py-2 border-b-2 border-gray-800 bg-black/60">
+        {/* Item 1+2 da rodada de polish pós-remaster — a faixa antiga de
+            vitais (HP/nível/defesa) virou CabecalhoRegiao.tsx (Local/Clima
+            + pílula de HP compacta): HP/XP/Ouro detalhados agora moram na
+            sidebar (HudPersonagem.tsx), mas a pílula de HP continua fora
+            dela — decisão de HUD híbrido aprovada com o usuário, porque no
+            mobile a ficha é `fixed` e cobre a tela inteira: sem uma pílula
+            aqui, fechar a ficha durante combate apagaria a vida da tela. */}
+        <div className="shrink-0 flex items-center gap-1 px-2 pt-2 bg-black/60">
             {/* Rodada de conserto — o HUD de combate (antes `absolute`)
                 cobria este botão inteiro em combate, deixando o jogador sem
                 gesto nenhum pra reabrir a ficha; corrigido tirando o HUD do
@@ -1378,68 +1420,31 @@ export default function GameChat() {
             )}
             {!showSidebar && (
                 <button
+                    onClick={() => setGuiaAberto(true)}
+                    aria-label="Abrir guia do aventureiro"
+                    title="Guia do Aventureiro"
+                    className="shrink-0 w-[26px] h-[26px] flex items-center justify-center border-2 border-gray-700 hover:border-rpg-gold font-pixel-title text-[9px] text-gray-300 hover:text-rpg-gold transition-colors focus-visible:outline-none focus-visible:border-rpg-gold"
+                >?</button>
+            )}
+            {!showSidebar && (
+                <button
                     onClick={() => setConfigAberta(true)}
                     aria-label="Abrir configurações"
                     title="Configurações"
                     className="shrink-0 p-1 border-2 border-gray-700 hover:border-rpg-gold text-gray-300 hover:text-rpg-gold transition-colors focus-visible:outline-none focus-visible:border-rpg-gold"
                 ><PixelIcon name="config" size={16}/></button>
             )}
-            {/* As tres medidas reagem ao mouse e dizem o que sao. Sem isso a
-                faixa era uma fileira de barras coloridas sem legenda: dava pra
-                jogar sem saber qual e vida e qual e experiencia. O mesmo
-                `ui/tooltip` que o RollCard e o inventario ja usam. */}
-            <TooltipProvider delayDuration={120}>
-                <Tooltip>
-                    <TooltipTrigger asChild>
-                        <div tabIndex={0} className="relative flex items-center gap-2 min-w-0 max-w-[260px] cursor-help px-1 py-0.5 border-2 border-transparent hover:border-gray-700 focus-visible:outline-none focus-visible:border-rpg-gold transition-colors">
-                            <PixelIcon name="coracao" size={14} />
-                            <span className="text-[11px] font-rpg text-gray-200 shrink-0">{hpAtual}/{hpMax}</span>
-                            <div className="flex-1 min-w-[60px] max-w-[180px]"><PixelBar value={hpAtual} max={hpMax} colorClass="bg-red-600" flash={wasDamaged} /></div>
-                            <FloatingCombatText itens={flutuantesHeroi.filter(f => f.alvo === 'hp')} />
-                        </div>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                        Vida: {hpAtual} de {hpMax}
-                        {hpMax > 0 && ` (${Math.round((hpAtual / hpMax) * 100)}%)`}
-                    </TooltipContent>
-                </Tooltip>
-
-                <Tooltip>
-                    <TooltipTrigger asChild>
-                        <div tabIndex={0} className="relative hidden sm:flex items-center gap-2 min-w-0 max-w-[260px] cursor-help px-1 py-0.5 border-2 border-transparent hover:border-gray-700 focus-visible:outline-none focus-visible:border-rpg-gold transition-colors">
-                            <PixelIcon name="estrela" size={14} />
-                            <span className="text-[11px] font-rpg text-gray-200 shrink-0">Nv {nivel}</span>
-                            <div className="flex-1 min-w-[60px] max-w-[180px]">
-                                <PixelBar
-                                    value={xpProximoNivel != null ? xp : 1}
-                                    max={xpProximoNivel != null ? xpProximoNivel : 1}
-                                    colorClass="bg-rpg-gold"
-                                    glow={levelUpGlow}
-                                />
-                            </div>
-                            <FloatingCombatText itens={flutuantesHeroi.filter(f => f.alvo === 'xp')} />
-                        </div>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                        {xpProximoNivel != null
-                            ? `Experiência: ${xp} de ${xpProximoNivel} para o nível ${nivel + 1}`
-                            : `Nível ${nivel} — experiência no máximo`}
-                    </TooltipContent>
-                </Tooltip>
-
-                <Tooltip>
-                    <TooltipTrigger asChild>
-                        <div tabIndex={0} className="flex items-center gap-1 shrink-0 ml-auto cursor-help px-1 py-0.5 border-2 border-transparent hover:border-gray-700 focus-visible:outline-none focus-visible:border-rpg-gold transition-colors">
-                            <PixelIcon name="escudo" size={14} />
-                            <span className="text-[11px] font-rpg text-blue-200">{defesa ?? "?"}</span>
-                        </div>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                        Defesa {defesa ?? "?"} — o número que um ataque precisa alcançar para acertar você.
-                    </TooltipContent>
-                </Tooltip>
-            </TooltipProvider>
         </div>
+        <CabecalhoRegiao
+            localAtual={localAtual}
+            climaAtual={climaAtual}
+            horaDoDia={horaDoDia}
+            periodoDoDia={periodoDoDia}
+            hpAtual={hpAtual}
+            hpMax={hpMax}
+            wasDamaged={wasDamaged}
+            flutuantesHeroiHp={flutuantesHeroi.filter(f => f.alvo === 'hp')}
+        />
 
         {/* Convite pra reivindicar (Etapa 10, A-1) — aparece só pro
             convidado, depois do primeiro momento bom. Fica embaixo, longe
@@ -1616,19 +1621,17 @@ export default function GameChat() {
                     const posicao = ordemIniciativa.indexOf(i);
                     const suaVez = posicao !== -1 && ordemIniciativa[turnoAtual] === i;
                     const morto = en.hp <= 0;
-                    return (
+                    // Item 10 da rodada de polish pós-remaster — o `title=`
+                    // nativo (rodada de conserto, Parte 2, item I) virava
+                    // uma caixa branca padrão do navegador, fora do tema;
+                    // troca por PixelTooltip quando há `comportamento` pra
+                    // mostrar, sem perder o botão nu quando não há.
+                    const cardBotao = (
                         <button
-                            key={i}
                             type="button"
                             onClick={() => !morto && setInput(`Eu ataco ${en.nome}`)}
                             disabled={morto}
                             aria-label={morto ? `${en.nome} (derrotado)` : `Atacar ${en.nome}`}
-                            // Rodada de conserto (Parte 2, item I) — o estilo de luta do
-                            // bestiário (`data/monsters.json`) nunca tinha chegado à tela;
-                            // um `title` nativo é suficiente pra virar informação acessível
-                            // ao passar o mouse, sem inventar telegraph que o servidor não
-                            // garante (não é a PRÓXIMA ação, é o padrão do inimigo).
-                            title={en.comportamento || undefined}
                             className={`relative min-w-[100px] bg-black/80 p-2 border-2 backdrop-blur-sm text-left transition-colors
                                 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rpg-gold
                                 ${morto ? 'border-gray-800 opacity-40 cursor-default' : 'border-red-900/50 hover:border-rpg-gold cursor-pointer'}
@@ -1656,6 +1659,11 @@ export default function GameChat() {
                             </div>
                             <PixelBar value={en.hp} max={en.max_hp} segments={8} colorClass="bg-red-600" />
                         </button>
+                    );
+                    return en.comportamento ? (
+                        <PixelTooltip key={i} content={en.comportamento}>{cardBotao}</PixelTooltip>
+                    ) : (
+                        <div key={i}>{cardBotao}</div>
                     );
                 })}
             </div>
@@ -1748,15 +1756,29 @@ export default function GameChat() {
 
                 return (
                     <div key={msg.id} className="animate-fade-in">
+                        {/* Item 8 da rodada de polish pós-remaster — fundo
+                            escuro/marrom mais presente que o `bg-gray-900/50`
+                            genérico de antes (reaproveita os tokens
+                            `rpg-dark`/`rpg-leather` já existentes, em vez de
+                            inventar cor nova), pra separar a caixa do Mestre
+                            do fundo geral da página. */}
                         <PanelFrame
                             borderWidth={10}
-                            className={`relative max-w-[820px] mx-auto p-4 md:p-6 ${msg.isError ? 'bg-amber-950/20' : 'bg-gray-900/50'} backdrop-blur-sm`}
+                            className={`relative max-w-[820px] mx-auto p-4 md:p-6 ${msg.isError ? 'bg-amber-950/20' : 'bg-[#1a140d]/85'} backdrop-blur-sm`}
                         >
                             <span className={`absolute -top-3 left-3 px-2 py-0.5 font-pixel-title text-[8px] tracking-widest ${msg.isError ? 'bg-amber-800 text-amber-100' : 'bg-rpg-leather text-rpg-gold'}`}>
                                 {msg.isError ? 'AVISO' : 'MESTRE'}
                             </span>
-                            <p className={`whitespace-pre-wrap break-words font-rpg text-base md:text-lg leading-relaxed ${msg.isError ? 'text-amber-200 italic' : 'text-gray-300'}`}>
-                                {msg.content}
+                            {/* Item 8 — `leading-relaxed` (1.625) virou
+                                `leading-loose` (2): a fonte pixelada (VT323)
+                                lê melhor com mais respiro entre linhas.
+                                Item 9 — `renderizarNarrativa` troca texto
+                                puro por nós React, pra `**negrito**`
+                                (`limparMarkdownLeve` não apaga mais, ver
+                                lib/utils.tsx) virar destaque dourado com
+                                glow em vez de sumir. */}
+                            <p className={`whitespace-pre-wrap break-words font-rpg text-base md:text-lg leading-loose ${msg.isError ? 'text-amber-200 italic' : 'text-gray-300'}`}>
+                                {msg.isError ? msg.content : renderizarNarrativa(msg.content)}
                             </p>
                             {!msg.isError && msg.turnoIndex !== undefined && (
                                 comentarioAbertoIdx === idx ? (
@@ -1796,21 +1818,36 @@ export default function GameChat() {
                                         </div>
                                     </div>
                                 ) : (
+                                    // Item 5 da rodada de polish pós-remaster — área de clique
+                                    // maior (`p-1`→`p-2.5`) e feedback tátil (`active:scale-95`).
+                                    // `PixelIcon` é um `<img>` de PNG com cor própria, então
+                                    // `text-emerald-500`/`text-red-500` no botão nunca recolorem
+                                    // o ícone (achado ao ler PixelIcon.tsx) — a "cor viva
+                                    // permanente + brilho" vira o FUNDO do botão (chip), não o
+                                    // ícone em si.
                                     <div className="flex gap-2 mt-2 -mb-1">
                                         <button
                                             type="button"
                                             onClick={() => enviarFeedback(idx, msg.turnoIndex!, 1)}
                                             disabled={msg.feedback !== undefined}
                                             aria-label="Gostei desta narração"
-                                            className={`p-1 transition-colors ${msg.feedback === 1 ? 'text-emerald-500' : 'text-gray-600 hover:text-emerald-500 disabled:hover:text-gray-600'}`}
-                                        ><PixelIcon name="polegar-cima" size={13}/></button>
+                                            className={`p-2.5 border-2 transition-all active:scale-95 ${
+                                                msg.feedback === 1
+                                                    ? 'border-emerald-500 bg-emerald-600/90 shadow-[0_0_8px_rgba(16,185,129,0.7)]'
+                                                    : 'border-transparent text-gray-600 hover:text-emerald-500 hover:border-gray-700 disabled:hover:text-gray-600 disabled:hover:border-transparent'
+                                            }`}
+                                        ><PixelIcon name="polegar-cima" size={16}/></button>
                                         <button
                                             type="button"
                                             onClick={() => { if (msg.feedback === undefined) setComentarioAbertoIdx(idx); }}
                                             disabled={msg.feedback !== undefined}
                                             aria-label="Não gostei desta narração"
-                                            className={`p-1 transition-colors ${msg.feedback === -1 ? 'text-red-500' : 'text-gray-600 hover:text-red-500 disabled:hover:text-gray-600'}`}
-                                        ><PixelIcon name="polegar-baixo" size={13}/></button>
+                                            className={`p-2.5 border-2 transition-all active:scale-95 ${
+                                                msg.feedback === -1
+                                                    ? 'border-red-500 bg-red-600/90 shadow-[0_0_8px_rgba(239,68,68,0.7)]'
+                                                    : 'border-transparent text-gray-600 hover:text-red-500 hover:border-gray-700 disabled:hover:text-gray-600 disabled:hover:border-transparent'
+                                            }`}
+                                        ><PixelIcon name="polegar-baixo" size={16}/></button>
                                     </div>
                                 )
                             )}
