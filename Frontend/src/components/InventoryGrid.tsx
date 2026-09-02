@@ -46,6 +46,11 @@ const SLOTS_MINIMOS = 12;
 // inventário vira apoio criativo, não um botão de "usar". Isto substitui a
 // ideia antiga do backlog ("abrir inventário e usar de verdade"); as duas
 // conflitavam, e esta foi a escolhida (ver docs/backlog-pos-lancamento.md, D-3).
+//
+// Correção de UX pós Fase 1 do remaster: o clique no slot fazia as duas
+// coisas de uma vez (abrir detalhes E injetar no chat), o que gerava clique
+// acidental no chat. Agora são dois passos: o slot só abre/fecha o painel de
+// descrição; o botão "Citar no chat" dentro do painel é que injeta.
 export default function InventoryGrid({ items, onUsarItem }: { items: string[]; onUsarItem?: (item: string) => void }) {
   const [selecionado, setSelecionado] = useState<number | null>(null);
   const vazios = Math.max(0, SLOTS_MINIMOS - items.length);
@@ -62,9 +67,10 @@ export default function InventoryGrid({ items, onUsarItem }: { items: string[]; 
               <TooltipTrigger asChild>
                 <button
                   type="button"
-                  onClick={() => { setSelecionado(ativo ? null : i); onUsarItem?.(item); }}
-                  aria-label={`Mencionar ${item} na ação`}
-                  aria-pressed={ativo}
+                  onClick={() => setSelecionado(ativo ? null : i)}
+                  aria-label={`Ver detalhes de ${item}`}
+                  aria-expanded={ativo}
+                  aria-controls="painel-detalhe-item"
                   className={`aspect-square flex items-center justify-center border-2 transition-colors animate-fade-in focus-visible:outline-none focus-visible:border-rpg-gold ${
                     ativo
                       ? 'border-rpg-gold bg-rpg-gold/20'
@@ -88,13 +94,23 @@ export default function InventoryGrid({ items, onUsarItem }: { items: string[]; 
           mesmo lugar (embaixo da grade) em vez de virar um popover flutuante,
           que é como menu de RPG de console faz — assim a grade não pula de
           posição quando o jogador seleciona algo. */}
-      <div className="mt-2 border-2 border-gray-700 bg-black/60 p-2 min-h-[3.5rem] flex items-center">
+      <div id="painel-detalhe-item" className="mt-2 border-2 border-gray-700 bg-black/60 p-2 min-h-[3.5rem] flex items-center">
         {itemAberto ? (
-          <div className="animate-fade-in">
-            <p className="font-rpg text-rpg-gold leading-tight">{itemAberto}</p>
-            <p className="text-[10px] text-gray-300 uppercase tracking-widest font-rpg">
-              {categoriaDe(itemAberto).rotulo}
-            </p>
+          <div className="animate-fade-in flex items-center justify-between gap-2 w-full">
+            <div className="min-w-0">
+              <p className="font-rpg text-rpg-gold leading-tight truncate">{itemAberto}</p>
+              <p className="text-[10px] text-gray-300 uppercase tracking-widest font-rpg">
+                {categoriaDe(itemAberto).rotulo}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => onUsarItem?.(itemAberto)}
+              aria-label={`Mencionar ${itemAberto} na ação`}
+              className="shrink-0 flex items-center gap-1 text-[10px] uppercase tracking-widest font-rpg text-rpg-gold border-2 border-rpg-leather hover:border-rpg-gold px-2 py-1 transition-colors focus-visible:outline-none focus-visible:border-rpg-gold"
+            >
+              💬 Citar no chat
+            </button>
           </div>
         ) : (
           <p className="text-[11px] text-gray-400 font-rpg">

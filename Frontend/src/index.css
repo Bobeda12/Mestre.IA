@@ -260,17 +260,42 @@ img[src^="/assets/backgrounds/"] {
    substitui o botão de formulário das sugestões [OPCOES]. Sem
    `border-radius` (cantos retos, como o resto do pixel art) e glow em
    degrau no hover em vez de sombra suave contínua — mesmo princípio do
-   `.pixel-frame`, só que reagindo a interação. */
+   `.pixel-frame`, só que reagindo a interação.
+
+   Correção de UX pós Fase 1: bisel `inset` (claro em cima, escuro embaixo)
+   simulando entalhe de madeira/metal, mais uma textura sutil em diagonal —
+   opacidade baixa o bastante pra não brigar com o texto por cima. A seta
+   (PixelActionCard.tsx) ganha vida no hover, sugerindo "opção selecionável"
+   de menu de RPG clássico. Transições continuam todas em `steps()` — nada
+   de easing suave, que quebraria a estética 8-bit. */
 .pixel-action-card {
+  position: relative;
   border: 2px solid var(--color-rpg-leather);
-  background: linear-gradient(180deg, rgba(74, 59, 42, 0.55), rgba(15, 14, 11, 0.75));
-  box-shadow: 0 0 0 1px #000;
+  background:
+    repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.025) 0 2px, transparent 2px 4px),
+    linear-gradient(180deg, rgba(74, 59, 42, 0.55), rgba(15, 14, 11, 0.75));
+  box-shadow:
+    inset 0 1px 0 rgba(212, 197, 169, 0.15),
+    inset 0 -2px 0 rgba(0, 0, 0, 0.5),
+    0 0 0 1px #000;
   transition: box-shadow 0.15s steps(3, end), border-color 0.15s steps(3, end), transform 0.1s steps(2, end);
+}
+.pixel-action-card__seta {
+  opacity: 0.6;
+  transition: opacity 0.15s steps(3, end), transform 0.15s steps(3, end);
 }
 .pixel-action-card:hover {
   border-color: var(--color-rpg-gold);
-  box-shadow: 0 0 0 1px #000, 0 0 10px rgba(197, 160, 89, 0.55);
+  box-shadow:
+    inset 0 1px 0 rgba(212, 197, 169, 0.25),
+    inset 0 -2px 0 rgba(0, 0, 0, 0.5),
+    0 0 0 1px #000,
+    0 0 10px rgba(197, 160, 89, 0.55);
   transform: translateY(-1px);
+}
+.pixel-action-card:hover .pixel-action-card__seta {
+  opacity: 1;
+  transform: translateX(2px);
 }
 .pixel-action-card:active {
   transform: translateY(0);

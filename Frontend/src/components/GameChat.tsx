@@ -20,7 +20,7 @@ import InventoryGrid from './InventoryGrid';
 import Carregando from './Carregando';
 import RetratoPixelado from './RetratoPixelado';
 import MenuConfiguracao from './MenuConfiguracao';
-import PainelRegras from './PainelRegras';
+import PainelRegrasModal from './PainelRegrasModal';
 import ConfirmeEmail from './ConfirmeEmail';
 import PixelActionCard from './PixelActionCard';
 import SistemaFeedbackToast, { type ToastItem } from './SistemaFeedbackToast';
@@ -44,10 +44,11 @@ const ABAS = [
   // de abates por personagem, então não dá pra prometer um bestiário que
   // sobrevive a um recarregar de página — ver comentário na aba abaixo).
   { id: 'bestiario', rotulo: 'BESTIÁRIO', icone: 'caveira' },
-  // Rodada de conserto (Parte 2, item K) — gerada de GET /regras, nunca
-  // digitada à mão: se o motor mudar um número, esta aba muda junto.
-  { id: 'regras', rotulo: 'REGRAS', icone: 'dado' },
 ] as const satisfies readonly { id: string; rotulo: string; icone: PixelIconName }[];
+// "Regras" saiu daqui na correção de UX pós Fase 1 — a faixa de abas estava
+// cheia demais. Virou um botão dedicado ("Manual do Jogo", ícone `dado`
+// reaproveitado) que abre PainelRegrasModal em tela cheia — ver esse arquivo
+// e os botões perto de setConfigAberta/setManualAberto mais abaixo.
 
 type AbaFicha = (typeof ABAS)[number]['id'];
 
@@ -209,6 +210,8 @@ export default function GameChat() {
   const [showSidebar, setShowSidebar] = useState(true);
   const [abaAtiva, setAbaAtiva] = useState<AbaFicha>('status');
   const [configAberta, setConfigAberta] = useState(false);
+  const [manualAberto, setManualAberto] = useState(false);
+  const [atributoInspecionado, setAtributoInspecionado] = useState<(typeof ATRIBUTOS)[number][0] | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // FICHA — sempre a verdade que vem do backend (load_game / chat)
@@ -998,6 +1001,12 @@ export default function GameChat() {
                   a única entrada pra configurações de novo. */}
               <div className="flex items-center gap-3">
                   <button
+                      onClick={() => setManualAberto(true)}
+                      aria-label="Abrir manual do jogo"
+                      title="Manual do Jogo"
+                      className="text-gray-300 hover:text-rpg-gold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rpg-gold"
+                  ><PixelIcon name="dado" size={18}/></button>
+                  <button
                       onClick={() => setConfigAberta(true)}
                       aria-label="Abrir configurações"
                       title="Configurações"
@@ -1097,21 +1106,38 @@ export default function GameChat() {
                       no código, embora o backend sempre mandasse os seis em
                       `atributos` — quem jogava de Clérigo ou Bardo não via o
                       atributo que mais importa pra ele. */}
+                  {/* Correção de UX pós Fase 1: o TooltipContent tinha z-index
+                      fixo (z-50, mesmo nível da sidebar) e sem `side`, então
+                      às vezes abria por cima da faixa de abas. `side="left"` +
+                      `z-[75]` (via className, tailwind-merge resolve o
+                      conflito de utilitário sem tocar em ui/tooltip.tsx, que é
+                      reusado em outros lugares) resolvem isso só aqui. Junto,
+                      um "Inspetor" fixo abaixo do grid — mesmo padrão do
+                      painel de descrição do InventoryGrid — porque tooltip
+                      sozinho não funciona em touch (sem hover de verdade). */}
                   <TooltipProvider delayDuration={150}>
                     <div className="grid grid-cols-3 gap-2">
                        {ATRIBUTOS.map(([chave, sigla]) => {
                          const valor = attributes?.[chave];
                          const info = ATRIBUTOS_INFO[chave];
                          const modificador = typeof valor === 'number' ? Math.floor((valor - 10) / 2) : null;
+                         const selecionado = atributoInspecionado === chave;
                          return (
                            <Tooltip key={chave}>
                              <TooltipTrigger asChild>
-                               <div tabIndex={0} className="bg-black/50 p-2 text-center border-2 border-gray-700 hover:border-gray-500 cursor-help focus-visible:outline-none focus-visible:border-rpg-gold transition-colors">
+                               <div
+                                 tabIndex={0}
+                                 onClick={() => setAtributoInspecionado(chave)}
+                                 onFocus={() => setAtributoInspecionado(chave)}
+                                 className={`bg-black/50 p-2 text-center border-2 cursor-help focus-visible:outline-none focus-visible:border-rpg-gold transition-colors ${
+                                   selecionado ? 'border-rpg-gold' : 'border-gray-700 hover:border-gray-500'
+                                 }`}
+                               >
                                    <span className="text-[9px] text-gray-300 block font-rpg">{sigla}</span>
                                    <span className="font-rpg text-xl text-gray-100">{valor ?? '-'}</span>
                                </div>
                              </TooltipTrigger>
-                             <TooltipContent>
+                             <TooltipContent side="left" className="z-[75]">
                                {info.nome}{modificador != null && ` — Modificador ${modificador >= 0 ? '+' : ''}${modificador}`}.{' '}
                                {info.uso}
                              </TooltipContent>
@@ -1120,6 +1146,26 @@ export default function GameChat() {
                        })}
                     </div>
                   </TooltipProvider>
+
+                  <div className="border-2 border-gray-700 bg-black/60 p-2 min-h-[3.5rem] flex items-center">
+                    {atributoInspecionado ? (
+                      <div className="animate-fade-in">
+                        <p className="font-rpg text-rpg-gold leading-tight">
+                          {ATRIBUTOS_INFO[atributoInspecionado].nome}
+                          {(() => {
+                            const valor = attributes?.[atributoInspecionado];
+                            const mod = typeof valor === 'number' ? Math.floor((valor - 10) / 2) : null;
+                            return mod != null ? ` — Modificador ${mod >= 0 ? '+' : ''}${mod}` : '';
+                          })()}
+                        </p>
+                        <p className="text-[11px] text-gray-300 font-rpg leading-snug">
+                          {ATRIBUTOS_INFO[atributoInspecionado].uso}
+                        </p>
+                      </div>
+                    ) : (
+                      <p className="text-[11px] text-gray-400 font-rpg">Toque num atributo para ver o que ele faz.</p>
+                    )}
+                  </div>
                 </div>
               )}
 
@@ -1266,7 +1312,6 @@ export default function GameChat() {
                   </div>
                 );
               })()}
-              {abaAtiva === 'regras' && <PainelRegras />}
           </div>
       </div>
 
@@ -1291,6 +1336,7 @@ export default function GameChat() {
       />
 
       <MenuConfiguracao aberto={configAberta} aoFechar={() => setConfigAberta(false)} trilha={trilha} sfx={sfx} />
+      <PainelRegrasModal aberto={manualAberto} aoFechar={() => setManualAberto(false)} />
 
       {/* CHAT AREA. Pendência do remaster UX resolvida (item 2) — ambiência
           reage à hora do dia de verdade (`horaDoDia`, vinda do backend),
@@ -1321,6 +1367,14 @@ export default function GameChat() {
                     aria-label="Abrir ficha do personagem"
                     className="shrink-0 p-1 border-2 border-gray-700 hover:border-rpg-gold text-gray-300 hover:text-rpg-gold transition-colors focus-visible:outline-none focus-visible:border-rpg-gold"
                 ><PixelIcon name="menu" size={16}/></button>
+            )}
+            {!showSidebar && (
+                <button
+                    onClick={() => setManualAberto(true)}
+                    aria-label="Abrir manual do jogo"
+                    title="Manual do Jogo"
+                    className="shrink-0 p-1 border-2 border-gray-700 hover:border-rpg-gold text-gray-300 hover:text-rpg-gold transition-colors focus-visible:outline-none focus-visible:border-rpg-gold"
+                ><PixelIcon name="dado" size={16}/></button>
             )}
             {!showSidebar && (
                 <button
