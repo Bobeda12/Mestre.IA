@@ -53,17 +53,34 @@ export function limparMarkdownLeve(texto: string) {
 }
 
 // Item 9 da rodada de polish pós-remaster — "loot visual": em vez de um
-// parser de markdown completo (fora de escopo, e a narração do modelo só
-// usa `**negrito**` mesmo, nunca listas/links/etc.), isto faz um split
-// manual em segmentos e devolve nós React prontos — texto puro e
+// parser de markdown completo (fora de escopo — desde o ajuste no prompt do
+// narrador, `Backend/app/services/narrator.py`, o modelo só tem permissão
+// de usar `**negrito**`, nunca itálico/listas/links/etc.), isto faz um
+// split manual em segmentos e devolve nós React prontos — texto puro e
 // `<strong>` dourado com glow pros trechos em negrito. De propósito NÃO usa
 // `dangerouslySetInnerHTML`: a narração vem do LLM, e um nó React por
 // segmento evita qualquer risco de HTML injetado, sem precisar de
 // sanitização à parte.
+const _PADRAO_NEGRITO = /(\*\*[^*\n]+?\*\*)/g
+
+// Enquanto o texto ainda está chegando aos pedaços (token a token, ver
+// `acrescentarTexto` em GameChat.tsx), um `**` de abertura pode chegar
+// vários frames SSE antes do de fechamento — sem isto, o jogador veria os
+// dois asteriscos crus piscando na tela por uma fração de segundo antes do
+// negrito "fechar" e virar dourado. Mesmo truque de "esconder a cauda
+// incompleta" que `esconderTagOpcoes` já usa pra tag `[OPCOES]`: com um
+// número ÍMPAR de `**` no texto acumulado, o último é uma abertura ainda
+// sem par — corta a exibição bem antes dele até o par chegar.
+function ocultarNegritoIncompleto(texto: string): string {
+  const total = (texto.match(/\*\*/g) || []).length
+  if (total % 2 === 0) return texto
+  return texto.slice(0, texto.lastIndexOf('**'))
+}
+
 export function renderizarNarrativa(texto: string): ReactNode[] {
-  const partes = texto.split(/(\*{1,3}[^*\n]+?\*{1,3})/g)
+  const partes = ocultarNegritoIncompleto(texto).split(_PADRAO_NEGRITO)
   return partes.map((parte, i) => {
-    const m = /^\*{1,3}([^*\n]+?)\*{1,3}$/.exec(parte)
+    const m = /^\*\*([^*\n]+?)\*\*$/.exec(parte)
     if (!m) return parte
     return (
       <strong key={i} className="text-rpg-gold text-glow font-bold">

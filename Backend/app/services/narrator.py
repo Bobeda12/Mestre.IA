@@ -498,9 +498,15 @@ Alinhamento: {heroi.alinhamento}{historia_resumo}
     resultado em prosa seguindo [A VOZ DO MESTRE] da bíblia acima — direto,
     com peso, um detalhe sensorial escolhido, não uma lista de três. Não
     responda em JSON: a resposta final é só o texto da narrativa — prosa
-    corrida, sem markdown (sem asterisco, sem cerquilha de título, sem
-    lista com marcador, sem bloco de código); ênfase pela escolha da
-    palavra, nunca pela tipografia. Termine SEMPRE a narrativa com uma
+    corrida, sem cerquilha de título, sem lista com marcador, sem bloco de
+    código; ênfase quase sempre pela escolha da palavra, nunca por CAIXA
+    ALTA ou itálico. A única exceção é tipográfica e rara: quando um item,
+    lugar ou achado importante aparece pela primeira vez na cena (uma arma
+    encontrada, o nome de uma ruína avistada ao longe, um artefato entregue
+    por um NPC), destaque o nome dele em **negrito** (dois asteriscos) —
+    nunca mais de uma ou duas vezes por narração, nunca em diálogo, nunca
+    em nomes de personagens ou lugares já conhecidos. Fora esse caso
+    específico, siga sem nenhum asterisco. Termine SEMPRE a narrativa com uma
     linha própria no formato "[OPCOES]: opção 1|opção 2|opção 3" — três
     ações curtas e concretas que fazem sentido AGORA, separadas por "|",
     sem numeração própria (ex: "[OPCOES]: Atacar o goblin|Recuar para a

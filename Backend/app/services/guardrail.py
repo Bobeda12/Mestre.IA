@@ -20,11 +20,16 @@ __all__ = [
     "validar_narrativa",
 ]
 
-# Etapa 10 (A-7) — o prompt já pede "sem markdown" (narrator.montar_contexto
-# e a bíblia), mas pedir ao modelo é a primeira linha, não a que vale: isto
-# é a segunda, determinística, aplicada antes de persistir. Importa
-# persistir limpo porque o histórico vira contexto do próximo turno —
-# markdown sujo no histórico ensina o modelo a formatar mais, não menos.
+# Etapa 10 (A-7) — o prompt pede prosa sem títulos/listas/código, e desde a
+# rodada de polish "juice" pós-remaster passou a permitir **negrito** só em
+# nome de item/lugar/achado novo (destaque dourado no frontend, ver
+# renderizarNarrativa em Frontend/src/lib/utils.tsx) — mas pedir ao modelo é
+# a primeira linha, não a que vale: isto é a segunda, determinística,
+# aplicada antes de PERSISTIR. Importa persistir limpo (sem `**` nenhum,
+# mesmo do uso permitido) porque o histórico vira contexto do próximo turno
+# — markdown no histórico ensina o modelo a formatar mais, não menos; o
+# destaque dourado só existe ao vivo, nos frames `token` do turno atual, que
+# não passam por aqui.
 _PADRAO_NEGRITO_ITALICO = re.compile(r"\*{1,3}([^*\n]+?)\*{1,3}")
 _PADRAO_TITULO = re.compile(r"^#{1,6}\s*", flags=re.MULTILINE)
 _PADRAO_LISTA = re.compile(r"^\s*(?:[-*+]|\d+\.)\s+", flags=re.MULTILINE)
