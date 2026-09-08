@@ -19,6 +19,7 @@ from app.infra.db import Personagem
 from app.services import combat
 from app.services import rules_engine as motor
 from app.services.class_abilities import limite_foco, perfil_classe
+from app.services.world_tools import WORLD_DISPATCH, WORLD_TOOLS
 
 
 def _efeito_pocao_cura(executor: "ToolExecutor") -> dict:
@@ -68,6 +69,9 @@ class ToolExecutor:
         self.eventos: list[str] = []
         self._acao_gasta = False
         self._aliados_acionados: set[str] = set()
+        self.c_state.bonus_especializacao = sum(
+            escolha == "combatente" for escolha in w_state.mundo.especializacoes.values()
+        )
 
     @property
     def eventos_estruturados(self) -> list[dict]:
@@ -135,7 +139,7 @@ class ToolExecutor:
         self.eventos.extend(eventos)
         self._recuperar_foco(1)
 
-        if all(i.hp <= 0 for i in self.c_state.inimigos):
+        if all(i.hp <= 0 or i.afastado for i in self.c_state.inimigos):
             self.c_state.ativo = False
             self.c_state.resultado = "vitoria"
             self.eventos.append("🏆 Combate vencido!")
@@ -152,7 +156,7 @@ class ToolExecutor:
             self.eventos.append(f"🔹 Recupera {self.c_state.foco - antes} Foco.")
 
     def _verificar_vitoria(self) -> dict:
-        if self.c_state.ativo and all(i.hp <= 0 for i in self.c_state.inimigos):
+        if self.c_state.ativo and all(i.hp <= 0 or i.afastado for i in self.c_state.inimigos):
             self.c_state.ativo = False
             self.c_state.resultado = "vitoria"
             self.eventos.append("🏆 Combate vencido!")
@@ -170,7 +174,7 @@ class ToolExecutor:
             return {"erro": f"habilidade desbloqueada no nível {tecnica['nivel']}"}
         if self.c_state.foco < tecnica["custo"]:
             return {"erro": "Foco insuficiente: ataque básico recupera 1; defender recupera 2"}
-        vivos = [i for i in self.c_state.inimigos if i.hp > 0]
+        vivos = [i for i in self.c_state.inimigos if i.hp > 0 and not i.afastado]
         if tecnica["alvo"] == "inimigo":
             escolhido = next((i for i in vivos if i.nome == alvo), None)
             if escolhido is None:
@@ -187,7 +191,8 @@ class ToolExecutor:
         mod = max(0, motor.calcular_modificador(self.heroi.atributos.get(atributo, 10)))
         dano_total = 0
         for inimigo in alvos:
-            dano = motor.calcular_dano(tecnica["dano"], rng=self.rng) + mod + self._nivel() // 2
+            dano = (motor.calcular_dano(tecnica["dano"], rng=self.rng) + mod + self._nivel() // 2
+                    + self.c_state.bonus_especializacao)
             if tecnica.get("oportunista") and (inimigo.hp < inimigo.max_hp or inimigo.efeitos):
                 dano += motor.calcular_dano("1d6", rng=self.rng)
             if tecnica.get("executar") and inimigo.hp * 2 < inimigo.max_hp:
@@ -261,7 +266,7 @@ class ToolExecutor:
         rodada, "até o próximo turno do herói" nunca sobrevive além dela
         porque cada ferramenta tática consome a rodada de inimigos na
         mesma chamada em que arma o efeito."""
-        if not self.c_state.ativo or all(i.hp <= 0 for i in self.c_state.inimigos):
+        if not self.c_state.ativo or all(i.hp <= 0 or i.afastado for i in self.c_state.inimigos):
             return {}
         ca_efetiva = self.heroi.defesa + self.c_state.heroi_bonus_ca
         if self.c_state.efeitos_heroi.get("guarda", 0):
@@ -310,7 +315,7 @@ class ToolExecutor:
             classe=self.heroi.classe,
         )
         self.eventos.extend(eventos)
-        if all(i.hp <= 0 for i in self.c_state.inimigos):
+        if all(i.hp <= 0 or i.afastado for i in self.c_state.inimigos):
             self.c_state.ativo = False
             self.c_state.resultado = "vitoria"
             self.eventos.append("🏆 Combate vencido!")
@@ -404,6 +409,8 @@ class ToolExecutor:
         if inimigos_derrotados:
             abates = dict(self.heroi.monstros_derrotados or {})
             for inimigo in inimigos_derrotados:
+                if inimigo.hp > 0:
+                    continue
                 chave = inimigo.arquetipo or inimigo.nome
                 abates[chave] = abates.get(chave, 0) + 1
             self.heroi.monstros_derrotados = abates
@@ -457,8 +464,11 @@ class ToolExecutor:
         return {"objetivo": objetivo, **resultado}
 
     def aplicar_dano(self, alvo: str, dado_dano: str, motivo: str = "") -> dict:
-        if self.c_state.ativo and alvo not in {"heroi", "herói", "você", "voce", self.heroi.nome}:
-            return {"erro": "em combate, use usar_habilidade ou interagir para dano ao inimigo"}
+        # Fase 0 do plano "jogo completo" (08/09/2026) — o guard que proibia
+        # dano ambiental em inimigo durante combate foi removido por decisão
+        # do autor: empurrar o goblin no fogo tem que funcionar. Para não
+        # virar ataque grátis, em combate a chamada consome a ação do turno
+        # (ver `executar`) e continua limitada a 4d12+10.
         qtd, faces, modificador = motor._parse_dado(dado_dano)
         if not (1 <= qtd <= 4 and 1 <= faces <= 12 and -10 <= modificador <= 10):
             return {"erro": "dano ambiental deve usar até 4 dados de no máximo 12 faces, modificador até 10"}
@@ -472,7 +482,7 @@ class ToolExecutor:
             )
             return {"dano": dano, "hp_atual": self.heroi.hp_atual}
 
-        alvo_obj = next((i for i in self.c_state.inimigos if i.nome == alvo and i.hp > 0), None)
+        alvo_obj = next((i for i in self.c_state.inimigos if i.nome == alvo and i.hp > 0 and not i.afastado), None)
         if alvo_obj is None:
             return {"erro": f"'{alvo}' não é um alvo válido (nem o herói, nem um inimigo vivo no combate)"}
         alvo_obj.hp = max(0, alvo_obj.hp - dano)
@@ -484,7 +494,7 @@ class ToolExecutor:
             self.eventos.append(
                 EventoRolagem(f"💀 {alvo_obj.nome} cai morto.", EventoStatus(tipo="morte_inimigo", quem=alvo_obj.nome))
             )
-        return {"dano": dano, "hp_atual": alvo_obj.hp}
+        return {"dano": dano, "hp_atual": alvo_obj.hp, **self._verificar_vitoria()}
 
     def mover(self, destino: str, descricao_proposta: str | None = None) -> dict:
         """Fase 5 da revisão de gameplay (Etapa 12/13, ADR-0028) — destino
@@ -497,6 +507,20 @@ class ToolExecutor:
         ou já descobertos nesta sessão)."""
         if self.c_state.ativo:
             return {"erro": "não é possível se mover durante um combate ativo"}
+        cena = self.w_state.mundo.cenas.get(self.w_state.local)
+        if cena:
+            # Fase 0 do plano "jogo completo" (08/09/2026) — saídas registradas
+            # pelo Mundo Vivo só restringem os destinos que elas NOMEIAM: uma
+            # passagem trancada para X impede ir a X, mas a cena nunca prende
+            # o herói para destinos sem saída registrada (a origem emergente
+            # promete "você pode partir sem aceitar compromisso", e o smoke
+            # test de `mover` para o catálogo depende disso).
+            caminhos = [e for e in cena.entidades.values() if e.tipo == "saida" and e.destino == destino]
+            if caminhos and all(
+                e.estado == "bloqueado" or ("trancado" in e.propriedades and e.estado != "destruido")
+                for e in caminhos
+            ):
+                return {"erro": "As passagens para esse destino estão bloqueadas ou trancadas."}
         ja_descoberto = self.w_state.locais_descobertos.get(destino)
         dados = {"descricao": ja_descoberto.descricao, "clima": ja_descoberto.clima} if ja_descoberto else (
             regras.get_location(destino)
@@ -764,7 +788,7 @@ class ToolExecutor:
             return {"erro": f"'{aliado}' não é um aliado vivo neste combate"}
         eventos = combat.turno_aliado(self.c_state, aliado_obj, alvo, self.rng)
         self.eventos.extend(eventos)
-        if all(i.hp <= 0 for i in self.c_state.inimigos):
+        if all(i.hp <= 0 or i.afastado for i in self.c_state.inimigos):
             self.c_state.ativo = False
             self.c_state.resultado = "vitoria"
             self.eventos.append("🏆 Combate vencido!")
@@ -797,9 +821,15 @@ class ToolExecutor:
         if not isinstance(args, dict):
             return {"erro": "argumentos precisam ser um objeto JSON"}, False
         acoes = {"atacar", "investir", "esquivar", "defender", "esconder_se", "fugir",
-                 "usar_habilidade", "interagir", "usar_item"}
+                 "usar_habilidade", "interagir", "usar_item", "agir_no_mundo", "intervir_conflito",
+                 "mover", "descansar"}
         em_combate = self.c_state.ativo
-        if nome in acoes and em_combate:
+        consome = nome in acoes and not (nome == "agir_no_mundo" and args.get("acao") == "examinar")
+        if nome == "aplicar_dano" and em_combate:
+            # dano ambiental num inimigo é uma ação de combate como outra qualquer
+            nomes_heroi = {"heroi", "herói", "você", "voce", self.heroi.nome.lower()}
+            consome = str(args.get("alvo", "")).lower() not in nomes_heroi
+        if consome:
             if self._acao_gasta:
                 return {"erro": "a ação deste turno já foi resolvida; narre o resultado e aguarde o jogador"}, False
             if self.heroi.hp_atual <= 0:
@@ -813,9 +843,17 @@ class ToolExecutor:
         except Exception as e:  # ferramenta com bug não pode derrubar o turno
             return {"erro": f"'{nome}' falhou ao executar: {e}"}, False
         if "erro" not in resultado:
-            if nome in acoes and em_combate:
+            if consome:
                 self._acao_gasta = True
                 self.c_state.acao_resolvida = True
+                from app.services.living_world import avancar_tempo
+
+                minutos = 1 if em_combate else 10
+                if nome == "mover" or (nome == "agir_no_mundo" and args.get("acao") == "atravessar"):
+                    minutos = 120
+                elif nome == "descansar":
+                    minutos = 480 if args.get("tipo") == "longo" else 60
+                avancar_tempo(self, minutos, atualizar_hora=nome not in {"mover", "descansar"})
             if nome == "atacar_com_aliado":
                 self._aliados_acionados.add(args.get("aliado", ""))
         return resultado, "erro" not in resultado
@@ -847,6 +885,9 @@ ToolExecutor._DESPACHO = {
 }
 
 
+ToolExecutor._DESPACHO.update(WORLD_DISPATCH)
+
+
 def sincronizar_aliados(heroi: Personagem, c_state: CombatState) -> None:
     """Fase 3 da revisão de gameplay — o HP de um aliado muda em combate
     (`c_state.aliados`, criado a cada `iniciar_combate`/`recrutar_aliado`),
@@ -864,7 +905,7 @@ def sincronizar_aliados(heroi: Personagem, c_state: CombatState) -> None:
     ]
 
 
-TOOLS_SCHEMA: list[dict] = [
+TOOLS_SCHEMA: list[dict] = [*WORLD_TOOLS,
     {
         "type": "function",
         "function": {

@@ -315,7 +315,7 @@ def validar_point_buy(valores: dict[str, int]) -> None:
 MATRIZ_CLASSICA = [15, 14, 13, 12, 10, 8]
 
 
-def rolar_atributos_4d6(rng: random.Random | None = None) -> list[int]:
+def rolar_atributos_4d6(rng: random.Random | None = None) -> int:
     """Um atributo: rola 4d6, descarta o menor dado. Chamado 6× por
     `gerar_atributos_dados` — mantido separado porque é a unidade que os
     testes/evals mais precisam conferir isoladamente."""

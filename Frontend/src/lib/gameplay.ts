@@ -33,16 +33,39 @@ export interface InimigoVisual {
   max_hp: number;
   ca: number;
   arquetipo?: string;
+  afastado?: boolean;
   intencao?: string;
   comportamento?: string;
   efeitos?: Record<string, number>;
 }
 
 export interface AcaoDireta {
-  acao: 'atacar' | 'defender' | 'esquivar' | 'investir' | 'esconder_se' | 'fugir' | 'usar_habilidade' | 'interagir' | 'descansar' | 'resistir';
+  acao: 'atacar' | 'defender' | 'esquivar' | 'investir' | 'esconder_se' | 'fugir' | 'usar_habilidade' | 'interagir' | 'descansar' | 'resistir' | 'agir_no_mundo' | 'intervir_conflito' | 'definir_objetivo' | 'escolher_especializacao';
   alvo?: string;
   habilidade?: string;
   interacao?: string;
+  operacao?: string;
+  meio?: string;
+  proposta?: string;
+  marco?: '3' | '7';
+  escolha?: 'explorador' | 'diplomata' | 'combatente';
+}
+
+export interface EntidadeMundo {
+  id: string; nome: string; descricao: string; tipo: string; propriedades: string[];
+  estado: string; destino: string; descoberto: boolean; pista?: string;
+}
+export interface PessoaMundo {
+  id: string; nome: string; descricao: string; disposicao: string; confianca: number;
+  necessidade: string; lembrancas: string[]; promessas: string[]; depoimento?: string;
+}
+export interface MundoPersistente {
+  local: string; descricao: string; entidades: EntidadeMundo[]; pessoas: PessoaMundo[];
+  conflitos: {id: string; nome: string; sinal: string; progresso: number; etapas: number;
+    estado: string; desfecho: string; minutos_restantes: number; intervencoes: number}[];
+  conhecimento: {texto: string; natureza: string; fonte: string; turno: number}[];
+  objetivos: string[]; especializacoes: Record<string, string>;
+  aptidao: {nome: string; acoes: string[]; bonus: number}; minutos: number;
 }
 
 /** The name remains the exact server target; only the visual uses an archetype. */
@@ -53,6 +76,6 @@ export function spriteInimigo(inimigo: InimigoVisual): string {
 }
 
 export function alvoValido(selecionado: string | null, inimigos: InimigoVisual[]): string | undefined {
-  return inimigos.find(inimigo => inimigo.nome === selecionado && inimigo.hp > 0)?.nome
-    ?? inimigos.find(inimigo => inimigo.hp > 0)?.nome;
+  return inimigos.find(inimigo => inimigo.nome === selecionado && inimigo.hp > 0 && !inimigo.afastado)?.nome
+    ?? inimigos.find(inimigo => inimigo.hp > 0 && !inimigo.afastado)?.nome;
 }

@@ -80,11 +80,11 @@ export default function AdventureStage(p: Props) {
             {p.inimigos.map((inimigo, indice) => (
               <button type="button" key={inimigo.nome}
                 className={`adventure-actor ${alvo === inimigo.nome && p.combate ? 'adventure-actor--selected' : ''} ${inimigo.hp <= 0 ? 'adventure-actor--dead' : ''}`}
-                disabled={inimigo.hp <= 0 || bloqueado || !p.combate}
+                disabled={inimigo.hp <= 0 || inimigo.afastado || bloqueado || !p.combate}
                 onClick={() => setSelecionado(inimigo.nome)}
                 aria-pressed={alvo === inimigo.nome && p.combate}
                 aria-label={`Selecionar ${inimigo.nome}, ${inimigo.hp}/${inimigo.max_hp} PV${inimigo.intencao ? `, intenção: ${inimigo.intencao}` : ''}`}>
-                <span className="adventure-actor__tag font-pixel-title">{inimigo.hp <= 0 ? 'DERROTADO' : inimigo.intencao || 'OBSERVANDO'}</span>
+                <span className="adventure-actor__tag font-pixel-title">{inimigo.afastado ? 'AFASTADO' : inimigo.hp <= 0 ? 'DERROTADO' : inimigo.intencao || 'OBSERVANDO'}</span>
                 <FloatingCombatText itens={p.danos.filter(dano => dano.idx === indice).map(dano => ({ id: dano.id, texto: `−${dano.valor}`, cor: 'text-red-300' }))} />
                 <img className="adventure-actor__sprite" src={spriteInimigo(inimigo)} alt="" draggable={false} />
                 <span className="adventure-actor__shadow" aria-hidden="true" />

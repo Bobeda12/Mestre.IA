@@ -32,6 +32,7 @@ from app.services.guardrail import (
     opcoes_padrao,
     validar_narrativa,
 )
+from app.services.living_world import painel_mundo
 from app.services.memory import contexto_recente
 from app.services.narrator import gerar_epitafio, montar_contexto
 from app.services.progression import migrar_progressao, painel_progressao
@@ -125,6 +126,7 @@ def _resposta(heroi: Personagem, c_state: CombatState, q_state: QuestLog, **extr
     mundo = WorldState.model_validate(heroi.world_state or {})
     return {
         "progressao": painel_progressao(heroi, c_state),
+        "mundo": painel_mundo(mundo, heroi.classe),
         "cena": painel_cena(c_state, mundo),
         "marcos": mundo.marcos,
         "local": mundo.local,
@@ -281,7 +283,8 @@ def game_action(
         raise HTTPException(status_code=409, detail="Esta jornada terminou.")
     if heroi.hp_atual <= 0 and action.acao != "resistir":
         raise HTTPException(status_code=400, detail="Você está caído. Use Resistir para lutar pela vida.")
-    if action.alvo and action.alvo not in {i.nome for i in c_state.inimigos if i.hp > 0}:
+    if (action.acao in {"atacar", "investir", "usar_habilidade"} and action.alvo
+            and action.alvo not in {i.nome for i in c_state.inimigos if i.hp > 0}):
         raise HTTPException(status_code=400, detail="Escolha um inimigo vivo como alvo.")
 
     migrar_progressao(heroi, w_state)
@@ -315,10 +318,22 @@ def game_action(
             argumentos = {"tipo": action.tipo}
         elif action.acao == "usar_item":
             argumentos = {"item": action.item or ""}
+        elif action.acao == "agir_no_mundo":
+            argumentos = {"acao": action.operacao, "alvo": action.alvo or "", "meio": action.meio,
+                          "proposta": action.proposta}
+        elif action.acao == "intervir_conflito":
+            argumentos = {"conflito": action.alvo or "", "abordagem": action.operacao,
+                          "proposta": action.proposta}
+        elif action.acao == "definir_objetivo":
+            argumentos = {"objetivo": action.proposta}
+        elif action.acao == "escolher_especializacao":
+            argumentos = {"marco": action.marco, "escolha": action.escolha}
         resultado, sucesso = executor.executar(action.acao, json.dumps(argumentos, ensure_ascii=False))
         if not sucesso:
             db.rollback()
             raise HTTPException(status_code=400, detail=resultado.get("erro", "A ação não pôde ser concluída."))
+        if not executor.eventos and resultado.get("descricao"):
+            executor.eventos.append(str(resultado["descricao"]))
 
     w_state.turno += 1
     narrativa = "\n".join(str(e) for e in executor.eventos)

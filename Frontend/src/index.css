@@ -604,3 +604,29 @@ img[src^="/assets/backgrounds/"] {
 @media (prefers-reduced-motion: reduce) {
   .adventure-actor__sprite, .adventure-actor--selected::before { animation: none; }
 }
+
+/* Pessoas, objetos e conhecimento compartilham a mesma cena persistente. */
+.living-world { padding: 1rem; background: #101923; color: #e4ebf3; border-top: 3px solid #566377; font-size: 1rem; line-height: 1.5; }
+.living-world p { margin: .5rem 0; }
+.living-world__title { display: flex; gap: .6rem; align-items: center; flex-wrap: wrap; }
+.living-world__title span { color: #9dabbf; font-size: .875rem; }
+.living-world__entities { display: grid; grid-template-columns: repeat(auto-fit,minmax(130px,1fr)); gap: .6rem; margin-block: .8rem; }
+.living-world button { background: #1e2d3f; border: 2px solid #596b82; padding: .55rem .7rem; color: #eef3fa; cursor: pointer; min-height: 42px; }
+.living-world button:hover:not(:disabled), .living-world button[aria-pressed=true] { border-color: #e8bd62; background: #303d4b; }
+.living-world button:disabled { opacity: .45; cursor: not-allowed; }
+.living-world :focus-visible { outline: 3px solid #e8bd62; outline-offset: 3px; }
+.living-world__entities button { display: flex; flex-direction: column; align-items: center; gap: .25rem; }
+.living-world img { image-rendering: pixelated; }
+.living-world small { display: block; font-size: .875rem; color: #bac9dc; }
+.living-world label { display: flex; flex-direction: column; gap: .2rem; margin-block: .5rem; font-size: .875rem; }
+.living-world input, .living-world select { width: 100%; min-width: 0; padding: .65rem; border: 1px solid #6c7e94; background: #0c1420; color: #fff; font-size: 1rem; }
+.living-world__interaction, .living-world__conflict { padding: .8rem; border: 1px solid #425570; margin-block: .7rem; background: #142030; }
+.living-world__controls { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem; }
+.living-world__primary { color: #ffda91 !important; border-color: #aa8138 !important; }
+.living-world details { margin-top: .9rem; border-top: 1px solid #425570; padding-top: .7rem; }
+.living-world summary { cursor: pointer; font-size: 1rem; color: #eed096; }
+.living-world__paths { display: flex; gap: .4rem; flex-wrap: wrap; margin-top: 1rem; }
+.living-world__paths > strong, .living-world__paths > small { width: 100%; }
+.living-world__fact { border-left: 3px solid #c9a456; padding-left: .7rem; }
+.living-world progress { display: block; width: 100%; accent-color: #daa64c; margin-block: .4rem; }
+@media (max-width: 520px) { .living-world__controls { grid-template-columns: 1fr; } .living-world { padding: .7rem; } }

@@ -9,6 +9,8 @@ from typing import Literal
 
 from pydantic import BaseModel
 
+from app.domain.living_world import MundoVivo
+
 
 class Inimigo(BaseModel):
     nome: str
@@ -26,6 +28,7 @@ class Inimigo(BaseModel):
     # vantagem em matilha etc., em vez de só bater sempre.
     comportamento: str = ""
     arquetipo: str = ""
+    afastado: bool = False
     xp: int = 0
     intencao: str = "atacar"
     efeitos: dict[str, int] = {}
@@ -50,6 +53,7 @@ class Aliado(BaseModel):
 
 class CombatState(BaseModel):
     ativo: bool = False
+    bonus_especializacao: int = 0
     foco: int = 3
     foco_max: int = 3
     rodada: int = 1
@@ -101,6 +105,7 @@ class LocalDescoberto(BaseModel):
 
 class WorldState(BaseModel):
     local: str = ""
+    mundo: MundoVivo = MundoVivo()
     inicio_aventura: str = "surpresa"
     semente_aventura: int = 0
     marcos: list[str] = []

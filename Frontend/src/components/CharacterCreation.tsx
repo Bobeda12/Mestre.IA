@@ -42,6 +42,7 @@ const TEMPERAMENTOS = [
 
 const DIFICULDADES = [
   { valor: 'Normal', titulo: 'Normal', descricao: 'O desafio padrão da campanha.' },
+  { valor: 'História', titulo: 'História', descricao: 'Testes mais acessíveis para explorar suas escolhas e a história.' },
   { valor: 'Difícil', titulo: 'Difícil', descricao: 'Testes mais exigentes (CD mais alta) — para quem quer sentir o risco de verdade.' },
 ] as const;
 

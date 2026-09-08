@@ -6,6 +6,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.domain.character import CharacterCreationRequest
+from app.domain.living_world import MundoVivo
 from app.domain.state import CombatState, LocalDescoberto, QuestLog, WorldState
 from app.infra.byok import ChaveUsuario
 from app.infra.data_manager import regras
@@ -100,6 +101,7 @@ def create_character(
         semente_aventura=roteiro.get("semente_aventura", 0),
         marcos=roteiro.get("chaves", []), hora_do_dia=roteiro.get("hora_do_dia", 8),
         versao_progressao=1,
+        mundo=MundoVivo.model_validate(roteiro.get("mundo_inicial", {})),
     )
     # Rodada de conserto (Parte 2, item J) — "chega de goblins", agora
     # também pro ponto de partida: quando `gerar_prologo_missao` aceitou um

@@ -11,6 +11,7 @@ class GameAction(BaseModel):
     acao: Literal[
         "atacar", "defender", "esquivar", "investir", "esconder_se", "fugir",
         "usar_habilidade", "interagir", "descansar", "usar_item", "resistir",
+        "agir_no_mundo", "intervir_conflito", "definir_objetivo", "escolher_especializacao",
     ]
     turno_esperado: int = Field(ge=1)
     alvo: str | None = Field(default=None, max_length=120)
@@ -18,3 +19,8 @@ class GameAction(BaseModel):
     interacao: str | None = Field(default=None, max_length=80)
     item: str | None = Field(default=None, max_length=120)
     tipo: Literal["curto", "longo"] = "curto"
+    operacao: str = Field(default="examinar", max_length=40)
+    meio: str | None = Field(default=None, max_length=120)
+    proposta: str = Field(default="", max_length=500)
+    marco: Literal["3", "7"] = "3"
+    escolha: Literal["explorador", "diplomata", "combatente"] = "explorador"

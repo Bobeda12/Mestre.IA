@@ -65,9 +65,10 @@ class CharacterCreationRequest(BaseModel):
         else:
             if not self.token_atributos:
                 raise ValueError("modo_atributos='dados' precisa de um token_atributos (de POST /gerar_atributos)")
-            conjunto = ler_token_atributos(self.token_atributos)
-            if conjunto is None:
+            conjunto_rolado = ler_token_atributos(self.token_atributos)
+            if conjunto_rolado is None:
                 raise ValueError("token_atributos inválido, expirado, ou adulterado — role de novo")
+            conjunto = conjunto_rolado
         validar_atributos_gerados(self.atributos, conjunto)
         return self
 

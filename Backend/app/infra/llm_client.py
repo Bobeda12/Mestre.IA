@@ -102,7 +102,7 @@ def _chamar_modelo(
     modelo: str,
     msgs: list[dict],
     tools: list[dict] | None,
-    tool_choice: str,
+    tool_choice: str | dict,
     response_format: dict | None = None,
     stream: bool = False,
 ) -> Any:
@@ -153,7 +153,7 @@ def chamar_modelo_unico(
     modelo_espec: str,
     msgs: list[dict],
     tools: list[dict] | None = None,
-    tool_choice: str = "auto",
+    tool_choice: str | dict = "auto",
     response_format: dict | None = None,
 ) -> Any:
     """Chama um único modelo específico (`"provedor:modelo"`), sem a cadeia
@@ -183,7 +183,7 @@ def chamar_modelo_unico(
         raise ErroMestre(f"O serviço de IA recusou o pedido (código {e.status_code}).") from e
 
 
-def chamar_com_fallback(msgs: list[dict], tools: list[dict] | None = None, tool_choice: str = "auto") -> Any:
+def chamar_com_fallback(msgs: list[dict], tools: list[dict] | None = None, tool_choice: str | dict = "auto") -> Any:
     """Tenta cada elo de `CADEIA` em ordem, pulando qualquer provedor sem
     chave configurada. Por elo, `tenacity` cobre até 2 tentativas com
     backoff curto para erro transitório (rate limit, timeout, conexão)
@@ -257,7 +257,7 @@ def chamar_com_chave_usuario(
     msgs: list[dict],
     api_key: str,
     tools: list[dict] | None = None,
-    tool_choice: str = "auto",
+    tool_choice: str | dict = "auto",
     modelo: str = "gemini-3.5-flash",
     response_format: dict | None = None,
 ) -> Any:
@@ -287,7 +287,7 @@ def chamar_stream_com_chave_usuario(
     msgs: list[dict],
     api_key: str,
     tools: list[dict] | None = None,
-    tool_choice: str = "auto",
+    tool_choice: str | dict = "auto",
     modelo: str = "gemini-3.5-flash",
 ) -> Iterator[Any]:
     """Versão em streaming de `chamar_com_chave_usuario`. Sem cadeia pra
@@ -307,7 +307,7 @@ def chamar_stream_com_chave_usuario(
 
 
 def chamar_stream_com_fallback(
-    msgs: list[dict], tools: list[dict] | None = None, tool_choice: str = "auto"
+    msgs: list[dict], tools: list[dict] | None = None, tool_choice: str | dict = "auto"
 ) -> Iterator[Any]:
     """Versão em streaming de `chamar_com_fallback` (Etapa 7, ADR-0012).
 

@@ -11,8 +11,10 @@ from app.infra.db import Personagem
 from app.infra.llm_client import ErroMestre
 from app.infra.settings import settings
 from app.services import rules_engine as motor
-from app.services.adventure import contexto_campanha, preparar_abertura
+from app.services.adventure import contexto_campanha
+from app.services.emergent_start import criar_origem, validar_mundo_inicial
 from app.services.encounters import painel_cena
+from app.services.living_world import painel_mundo
 from app.services.progression import painel_progressao
 from app.services.tools import RELOGIO_MAXIMO, RELOGIO_URGENCIA
 
@@ -114,7 +116,7 @@ def gerar_prologo_missao(
     # A abertura já é jogável sem IA. A mesma premissa permanece se uma
     # chamada falhar; lugares novos só entram no mundo com uma descrição.
     locais_validos = regras.get_locations_list()
-    abertura = preparar_abertura(char, semente)
+    abertura = criar_origem(char, semente)
     local_padrao = abertura["local_inicial"]
 
     # BYOK (rodada de conserto) — com a chave do jogador, `chamar_clients`
@@ -122,9 +124,6 @@ def gerar_prologo_missao(
     if chamar_fn is None and not llm_client.clients:
         return abertura
 
-    tem_historia = char.historia_texto.strip()
-    historia_extra = f"\n    História contada pelo próprio jogador: {char.historia_texto}" if tem_historia else ""
-    conexao = " e à história que ele contou" if tem_historia else ""
 
     # Etapa 11 (B-9) — o prólogo não herdava a bíblia (é a única chamada do
     # projeto em modo JSON solto, fora de montar_contexto). Como ele agora
@@ -133,56 +132,27 @@ def gerar_prologo_missao(
     # aqui a prosa pode crescer, não precisa do teto de palavras do dia a dia.
     prompt = f"""
     {regras.get_biblia()}
-
     {secao_tom_mestre(char.temperamento_mestre)}
-
-    Crie o prólogo de {char.nome} ({char.raca} {char.classe}) — a primeira cena que
-    ele vive, e a primeira coisa que o jogador vai ler no jogo.
-    Passado: {char.background} | Objetivo: {char.objetivo} | Alinhamento: {char.alinhamento}{historia_extra}
-
-    [ABERTURA ESCOLHIDA E CANÔNICA]
+    Crie condições iniciais para {char.nome} ({char.raca} {char.classe}).
+    Passado: {char.background}. Objetivo: {char.objetivo}. História: {char.historia_texto}.
+    Tema opcional escolhido: {char.inicio_aventura}. Não invente lembranças ou decisões do herói.
+    Gere uma situação própria para esse personagem: social, exploração, mistério, sobrevivência,
+    descoberta, festa interrompida, viagem, dívida ou disputa. Varie o tipo; evite repetir depósitos
+    e falta de suprimentos. Não existe missão obrigatória nem sequência de atos ou final predeterminado.
+    NPCs têm interesses, medos, limites e informações incompletas, podendo cooperar ou discordar.
+    O jogador pode ignorar tudo e seguir seu caminho. Sempre ofereça uma saída sem compromisso.
+    Responda APENAS JSON com as mesmas chaves e formato deste exemplo, que é uma referência de
+    ESTRUTURA e uma alternativa em caso de falha, NÃO uma cena obrigatória:
     {json.dumps(abertura, ensure_ascii=False)}
-    Preserve a situação, o local, os nomes, os vínculos e o dilema desta abertura.
-    Enriqueça a prosa e conecte as pistas ao passado declarado, sem reescrever a biografia
-    do jogador. A semente já decidiu as pessoas; não substitua a cena por uma taverna.
-    O campo direcao contém intenções privadas: sugira por comportamento, nunca revele
-    segredos na abertura. Não presuma que o jogador aceitou uma missão ou fez uma escolha.
-    As três opções devem expressar abordagens diferentes, sem fechar a entrada livre.
-
-    O prólogo começa 'in media res' (já na ação), conectado ao passado dele{conexao}.
-    Siga [A VOZ DO MESTRE] da bíblia acima, mas trate isto como um [MOMENTO DE ALTO
-    IMPACTO]: é a abertura do jogo, pode crescer além do teto de palavras normal.
-
-    "local_inicial" pode ser um destes nomes, exato, sem variação: {", ".join(locais_validos)}.
-    Ou, se nenhum encaixar bem na história do herói, PODE inventar um lugar novo — mas só nesse
-    caso preencha também "local_inicial_descricao" (2-3 frases: aparência, clima, o que o lugar
-    é) — sem essa descrição, um nome fora da lista é ignorado e o jogo cai no local padrão.
-
-    Além da missão imediata, esboce a campanha inteira em 3 a 5 Atos — o
-    arco que guia a história por trás das cenas (o jogador nunca vê essa
-    lista, só o Ato atual, um de cada vez). Cada Ato é um passo maior que
-    "nome_missao"/"objetivo_missao" (ex: Ato 1 pode conter várias missões
-    miúdas dentro dele). Ligue os Atos ao objetivo e ao passado do herói.
-    Os Atos são perguntas dramáticas abertas: contenha disputas de interesses,
-    vínculos que mudam por escolhas e consequências, não uma sequência de vitórias
-    obrigatórias. Resolver por negociação, resgate, exposição ou fuga deve abrir uma
-    continuação válida. Nunca exija matar um NPC para a história prosseguir.
-
-    Responda APENAS JSON:
-    {{
-        "local_inicial": "Nome do Local (da lista, exato — ou um nome novo, se justificado)",
-        "local_inicial_descricao": "Só se 'local_inicial' for um nome NOVO (2-3 frases). Null se for da lista.",
-        "clima_inicial": "Clima atmosférico",
-        "nome_missao": "Título da Missão Atual",
-        "objetivo_missao": "O que ele deve fazer agora (curto)",
-        "intro_narrativa": "Texto narrativo de 3 parágrafos imersivos.",
-        "opcoes": ["Ação concreta 1", "Ação concreta 2", "Ação concreta 3"],
-        "atos": [
-            {{"titulo": "Nome curto do Ato 1", "objetivo": "O que precisa acontecer para ele terminar"}},
-            {{"titulo": "Nome curto do Ato 2", "objetivo": "..."}},
-            {{"titulo": "Nome curto do Ato 3", "objetivo": "..."}}
-        ]
-    }}
+    Pode substituir inteiramente lugar, pessoas, objetos, disputa e texto. mundo_inicial.cenas
+    usa o NOME do local como chave; entidades usam seu id como chave; pessoas/conflitos também.
+    Todo agente de conflito deve existir e todo alvo de bloqueio deve existir na cena correspondente.
+    Objetos com propriedades movel/pesado/trancado/mecanismo/investigavel/inflamavel/cobertura/fragil
+    permitem ações reais. Saídas têm tipo=saida e destino. Não crie itens recebidos sem ferramenta.
+    Máximo 8 locais, 8 pessoas, 4 conflitos e 20 entidades por local. Uma cena pequena é suficiente.
+    Escreva intro_narrativa em 3 parágrafos: acontecimento, tensão humana, oportunidades concretas.
+    Segredos, objetivos privados e pistas não descobertas NÃO aparecem na introdução.
+    As 3 opcoes são sugestões curtas e variadas. atos deve ser []. Nunca decida pelo jogador.
     """
     try:
         roteiro = chamar_mestre([{"role": "user", "content": prompt}], chamar_fn=chamar_fn)
@@ -220,7 +190,13 @@ def gerar_prologo_missao(
             roteiro["local_inicial_descricao"] = abertura["local_inicial_descricao"]
     else:
         roteiro["local_inicial_descricao"] = None
-    roteiro["atos"] = _validar_atos(roteiro.get("atos"), abertura["atos"])
+    roteiro["atos"] = []
+    try:
+        roteiro["mundo_inicial"] = validar_mundo_inicial(
+            roteiro.get("mundo_inicial", abertura["mundo_inicial"]), roteiro["local_inicial"]
+        )
+    except (ValueError, TypeError):
+        return abertura
     opcoes = roteiro.get("opcoes")
     if not isinstance(opcoes, list) or len(opcoes) != 3 or any(
         not isinstance(opcao, str) or not opcao.strip() or len(opcao) > 160 for opcao in opcoes
@@ -229,7 +205,7 @@ def gerar_prologo_missao(
     # Identidade/seed são do servidor; não aceite uma campanha diferente vinda do modelo.
     for campo in ("inicio_aventura", "semente_aventura", "hora_do_dia", "chaves", "direcao"):
         roteiro[campo] = abertura[campo]
-    roteiro["chaves"][0] = f"Início da campanha: {abertura['nome_missao']} em {roteiro['local_inicial']}."
+    roteiro["chaves"] = [f"Chegou a {roteiro['local_inicial']}; seu caminho continua aberto."]
     return roteiro
 
 
@@ -466,7 +442,7 @@ def montar_contexto(
     # se chamado mais vezes do que há Atos.
     secao_ato = ""
     aviso_ato = ""
-    if q_state.atos:
+    if q_state.atos and not w_state.mundo.cenas:
         idx = max(0, min(q_state.ato_atual, len(q_state.atos) - 1))
         ato = q_state.atos[idx]
         secao_ato = f"\n    [ATO ATUAL] {ato.titulo}: {ato.objetivo}"
@@ -525,13 +501,30 @@ Alinhamento: {heroi.alinhamento}{historia_resumo}
     [INVENTÁRIO] {heroi.inventario}{secao_aliados}
     [MISSÃO ATUAL] {q_state.nome_missao}: {q_state.objetivo_missao}{secao_ato}{secao_evento_global}
     [CENA] {w_state.local} | {w_state.clima} | {motor.periodo_do_dia(w_state.hora_do_dia)}
+    [MUNDO PERSISTENTE — INTENÇÕES PRIVADAS NÃO SÃO CONHECIMENTO DO HERÓI]
+    {json.dumps(painel_mundo(w_state, heroi.classe, privado=True), ensure_ascii=False)}
+    Não há sequência obrigatória de cenas. A missão é um interesse do jogador; aceite partidas,
+    mudanças de lado, objetivos pessoais e soluções imprevistas. Atos legados são só anotações.
+    Registre cenas com registrar_cena, pessoas com registrar_pessoa e conflitos com registrar_conflito
+    ANTES de apresentá-los como reais. Cadastro não apaga alterações nem ressuscita pessoas.
+    Ao chegar a local vazio, registre elementos coerentes; não invente recursos para garantir sucesso.
+    Resolva intenções por agir_no_mundo: exemplo bloquear alvo=porta meio=estante. IDs vêm do estado.
+    Meio é objeto local ou item possuído. Uma ação pode combinar meios conhecidos de forma imprevista.
+    Use intervir_conflito para apoiar, atrasar ou negociar acordos. O tempo e seus efeitos são do motor.
+    Use definir_objetivo SOMENTE quando o jogador escolher um rumo, sem impor outro roteiro.
+    Aptidões e especializações valem também na exploração. Segredos, medos e intenções privadas
+    orientam a interpretação, mas não devem ser revelados sem descoberta. Boatos continuam boatos.
+    Pessoas reagem ao que sabem, lembram e desejam; nunca são oniscientes. Respeite seus limites.
+    Antes de viagem ou descanso, lembre prazos VISÍVEIS sem impedir a decisão de partir.
+    Uma falha não bloqueia a campanha: outros meios, saídas, pessoas e objetivos permanecem possíveis.
+    Narre resultados reais e nunca reverta uma consequência para salvar uma trama.
     {secao_combate}
 
     [TÉCNICAS DA CLASSE] {json.dumps(ficha_tatica, ensure_ascii=False)}
     [CENÁRIO INTERATIVO] {json.dumps(cena_tatica, ensure_ascii=False)}
     Se a intenção corresponder a uma técnica, use "usar_habilidade" com o id
     exato e um alvo válido. Respeite nível, Foco e disponibilidade; nunca invente
-    técnicas nem efeitos. Use "interagir_cenario" com o id de uma interação
+    técnicas nem efeitos. Use "interagir" com o id de uma interação
     disponível quando a intenção for cobertura, resgate, mecanismo ou negociação.
     Mostre oportunidades do terreno e a intenção anunciada de cada inimigo antes
     da próxima escolha. Objetivos de cenário podem encerrar o conflito com inimigos vivos.

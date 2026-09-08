@@ -29,9 +29,15 @@ _SEM_ORACULO = (
 # compartilhado como races.json/classes.json para alinhamento, então mudar um
 # lado sem o outro faz a sugestão da IA não bater com nenhuma opção do select.
 _ALINHAMENTOS = [
-    "Neutro", "Leal e Bom", "Neutro e Bom", "Caótico e Bom",
-    "Leal e Neutro", "Caótico e Neutro",
-    "Leal e Mau", "Neutro e Mau", "Caótico e Mau",
+    "Neutro",
+    "Leal e Bom",
+    "Neutro e Bom",
+    "Caótico e Bom",
+    "Leal e Neutro",
+    "Caótico e Neutro",
+    "Leal e Mau",
+    "Neutro e Mau",
+    "Caótico e Mau",
 ]
 
 
@@ -118,7 +124,9 @@ _SCHEMA_ESCREVER_HISTORIA = {
                 },
                 "background": {
                     "type": "string",
-                    "description": "Profissão/origem social do herói em poucas palavras (ex: 'Ex-guarda da guarda real').",
+                    "description": (
+                        "Profissão/origem social do herói em poucas palavras (ex: 'Ex-guarda da guarda real')."
+                    ),
                 },
                 "resumo_historia": {
                     "type": "string",
@@ -172,7 +180,11 @@ def sugerir_origem(conceito: str, chamar_fn: Callable[..., Any] | None = None) -
     if dados.get("classe") not in classes_validas:
         dados["classe"] = classes_validas[0]
     perguntas = dados.get("perguntas")
-    if not isinstance(perguntas, list) or len(perguntas) != 2 or not all(isinstance(p, str) and p.strip() for p in perguntas):
+    if (
+        not isinstance(perguntas, list)
+        or len(perguntas) != 2
+        or not all(isinstance(p, str) and p.strip() for p in perguntas)
+    ):
         dados["perguntas"] = [
             "O que seu herói perdeu antes desta jornada começar?",
             "Quem, do passado dele, ainda pesa na consciência dele hoje?",
@@ -183,10 +195,14 @@ def sugerir_origem(conceito: str, chamar_fn: Callable[..., Any] | None = None) -
 
 
 def escrever_historia(
-    conceito: str, raca: str, classe: str, perguntas: list[str], respostas: list[str],
+    conceito: str,
+    raca: str,
+    classe: str,
+    perguntas: list[str],
+    respostas: list[str],
     chamar_fn: Callable[..., Any] | None = None,
 ) -> dict:
-    perguntas_respostas = "\n".join(f"- {p}\n  Resposta: {r}" for p, r in zip(perguntas, respostas))
+    perguntas_respostas = "\n".join(f"- {p}\n  Resposta: {r}" for p, r in zip(perguntas, respostas, strict=True))
     prompt = f"""
     {regras.get_biblia()}
 
@@ -203,7 +219,7 @@ def escrever_historia(
 
     historia = dados.get("historia_texto")
     if not isinstance(historia, str) or not historia.strip():
-        historia = "\n\n".join(f"{p}\n{r}" for p, r in zip(perguntas, respostas))
+        historia = "\n\n".join(f"{p}\n{r}" for p, r in zip(perguntas, respostas, strict=True))
     background = dados.get("background")
     if not isinstance(background, str) or not background.strip():
         background = f"{raca} {classe}"

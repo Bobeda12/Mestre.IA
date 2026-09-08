@@ -134,7 +134,7 @@ def iniciar_combate(
             if escolhido:
                 pares = [(escolhido, escolhido_nome)]
 
-    selecionados = []
+    selecionados: list[tuple[Inimigo, str]] = []
     custo = 0
     for inimigo, arquetipo in pares:
         if selecionados and custo + inimigo.xp > orcamento:
@@ -222,7 +222,7 @@ def turno_jogador(
     `investida` (Fase 1 da revisão de gameplay — o botão de risco tático):
     -2 no bônus de acerto, +50% no dano — a troca clássica de precisão por
     força, aplicada no servidor, nunca decidida pelo modelo."""
-    vivos = [i for i in c_state.inimigos if i.hp > 0]
+    vivos = [i for i in c_state.inimigos if i.hp > 0 and not i.afastado]
     if not vivos:
         return []
 
@@ -277,7 +277,7 @@ def turno_jogador(
             dano += motor.calcular_dano("2d6" if nivel >= 10 else "1d6", resultado.critico, rng)
     dano += 3 if alvo.efeitos.get("marcado", 0) else 0
     dano += 2 if c_state.efeitos_heroi.get("furia", 0) else 0
-    dano = max(1, dano)
+    dano = max(1, dano + c_state.bonus_especializacao)
     if investida:
         dano = dano * 3 // 2
     alvo.hp = max(0, alvo.hp - dano)
@@ -300,7 +300,7 @@ def turno_aliado(
     arma nem lookup de atributo — ele ainda não tem inventário de combate
     próprio. Quem chama garante que `aliado` está vivo (`ToolExecutor.
     atacar_com_aliado`); esta função não revalida."""
-    vivos = [i for i in c_state.inimigos if i.hp > 0]
+    vivos = [i for i in c_state.inimigos if i.hp > 0 and not i.afastado]
     if not vivos:
         return []
     alvo = next((i for i in vivos if i.nome == alvo_proposto), vivos[0])
@@ -423,7 +423,7 @@ def turno_inimigos(
         if idx >= len(c_state.inimigos):
             continue
         inimigo = c_state.inimigos[idx]
-        if inimigo.hp <= 0:
+        if inimigo.hp <= 0 or inimigo.afastado:
             continue
         if inimigo.efeitos.get("queimando", 0):
             inimigo.hp = max(0, inimigo.hp - 2)
@@ -431,7 +431,7 @@ def turno_inimigos(
                 f"🔥 {inimigo.nome} sofre 2 de queimadura.",
                 DadosRolagem(tipo="dano", quem="heroi", alvo=inimigo.nome, dano=2),
             ))
-            if inimigo.hp <= 0:
+            if inimigo.hp <= 0 or inimigo.afastado:
                 eventos.append(EventoRolagem(
                     f"💀 {inimigo.nome} cai.", EventoStatus(tipo="morte_inimigo", quem=inimigo.nome)
                 ))
@@ -448,13 +448,13 @@ def turno_inimigos(
             eventos.append(f"💚 {inimigo.nome} regenera {cura} PV em vez de atacar.")
             continue
         c_state.turno_atual = turno_idx
-        outros_vivos = sum(1 for j, i in enumerate(c_state.inimigos) if j != idx and i.hp > 0)
+        outros_vivos = sum(1 for j, i in enumerate(c_state.inimigos) if j != idx and i.hp > 0 and not i.afastado)
         pula, vantagem_comportamento = _comportamento_inimigo(inimigo, outros_vivos)
         if pula:
             # Recuar encerra a ameaça; não cria um inimigo imóvel que só
             # pode ser perseguido e morto para liberar a cena.
-            inimigo.hp = 0
-            eventos.append(f"🏃 {inimigo.nome} foge e deixa de ameaçar o grupo.")
+            inimigo.afastado = True
+            eventos.append(f"🏃 {inimigo.nome} recua e deixa de ameaçar o grupo.")
             continue
 
         tipo_alvo, idx_aliado = _escolher_alvo(c_state, rng)
@@ -580,7 +580,7 @@ def resolver_turno(
     else:
         eventos.append("Você hesita e não ataca desta vez.")
 
-    if all(i.hp <= 0 for i in c_state.inimigos):
+    if all(i.hp <= 0 or i.afastado for i in c_state.inimigos):
         c_state.ativo = False
         c_state.resultado = "vitoria"
         eventos.append("🏆 Combate vencido!")

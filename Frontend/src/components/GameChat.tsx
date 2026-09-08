@@ -33,7 +33,8 @@ import PixelTooltip from './PixelTooltip';
 import DetalheMonstroModal from './DetalheMonstroModal';
 import GuiaAventureiro from './GuiaAventureiro';
 import AdventureStage from './AdventureStage';
-import type { AcaoDireta, Cena, InimigoVisual, Progressao } from '../lib/gameplay';
+import LivingWorld from './LivingWorld';
+import type { AcaoDireta, Cena, InimigoVisual, Progressao, MundoPersistente } from '../lib/gameplay';
 
 // Etapa 14 (revisão) — a ficha virou menu de abas estilo JRPG. Antes tudo
 // (retrato, barras, atributos, missão, inventário) era uma pilha só numa
@@ -153,6 +154,7 @@ interface EstadoJogo {
   progressao?: Progressao;
   cena?: Cena;
   marcos?: string[];
+  mundo?: MundoPersistente;
   turno_index?: number;
   // Etapa 11 (B-6) — turno do MUNDO (world_state.turno), não o turno da
   // rodada de combate (`turno_atual`, que reseta a cada luta): é o que a
@@ -283,6 +285,7 @@ export default function GameChat() {
   const [progressao, setProgressao] = useState<Progressao | null>(null);
   const [cena, setCena] = useState<Cena | null>(null);
   const [marcos, setMarcos] = useState<string[]>([]);
+  const [mundoPersistente, setMundoPersistente] = useState<MundoPersistente | null>(null);
 
   // COMBATE
   const [combatActive, setCombatActive] = useState(false);
@@ -576,6 +579,7 @@ export default function GameChat() {
     if (d.progressao !== undefined) setProgressao(d.progressao);
     if (d.cena !== undefined) setCena(d.cena);
     if (d.marcos !== undefined) setMarcos(d.marcos);
+    if (d.mundo !== undefined) setMundoPersistente(d.mundo);
     if (d.resultado_combate === 'morte') setGameOver(true);
 
     if (!inicial && d.turno_index !== undefined) {
@@ -880,6 +884,11 @@ export default function GameChat() {
           alvo: acao.alvo,
           habilidade: acao.habilidade,
           interacao: acao.interacao,
+          operacao: acao.operacao,
+          meio: acao.meio,
+          proposta: acao.proposta,
+          marco: acao.marco,
+          escolha: acao.escolha,
           tipo: 'curto',
         },
       );
@@ -1696,6 +1705,11 @@ export default function GameChat() {
                     aoAgir={aoAgir}
                     aoInspecionarHeroi={() => setFichaModalAberta(true)}
                 />
+                {mundoPersistente && <LivingWorld
+                    mundo={mundoPersistente} nivel={nivel} inventario={inventory}
+                    ocupado={loading || acaoTaticaEmCurso || hpAtual <= 0} combate={combatActive}
+                    aoAgir={aoAgir} aoIdeia={texto => sendAction(texto)}
+                />}
             </div>
         )}
 
