@@ -222,21 +222,21 @@ class TestBonusProficiencia:
 
 class TestSubirNivel:
     def test_xp_insuficiente_nao_sobe(self):
-        resultado = subir_nivel(xp_atual=299, nivel_atual=1, dado_vida=10, mod_constituicao=1)
+        resultado = subir_nivel(xp_atual=XP_POR_NIVEL[2] - 1, nivel_atual=1, dado_vida=10, mod_constituicao=1)
         assert resultado.subiu is False
         assert resultado.nivel_novo == 1
 
     def test_xp_suficiente_sobe_um_nivel_e_rola_hp(self):
-        assert XP_POR_NIVEL[2] == 300
+        assert XP_POR_NIVEL[2] == 100  # curva própria, ADR-0026
         resultado = subir_nivel(
-            xp_atual=300, nivel_atual=1, dado_vida=10, mod_constituicao=1, rng=RngFixo([6])
+            xp_atual=100, nivel_atual=1, dado_vida=10, mod_constituicao=1, rng=RngFixo([6])
         )
         assert resultado.subiu is True
         assert resultado.nivel_novo == 2
         assert resultado.hp_ganho == 7  # 1d10 (rolou 6) + mod con 1
 
     def test_hp_ganho_nunca_fica_abaixo_de_um(self):
-        resultado = subir_nivel(xp_atual=300, nivel_atual=1, dado_vida=6, mod_constituicao=-5, rng=RngFixo([1]))
+        resultado = subir_nivel(xp_atual=100, nivel_atual=1, dado_vida=6, mod_constituicao=-5, rng=RngFixo([1]))
         assert resultado.hp_ganho == 1
 
     def test_nivel_maximo_nao_sobe_mais(self):

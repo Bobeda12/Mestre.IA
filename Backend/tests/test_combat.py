@@ -113,7 +113,7 @@ class TestIniciarCombate:
         # Herói: d20=20+1(dex)=21. Goblin(idx 0): d20=3+2(dex)=5. Lobo(idx 1): d20=10+2(dex)=12.
         # Ninguém supera o herói -> sem rolagem de ataque de surpresa, só 3 valores no rng.
         c_state, _, dano_surpresa = combat.iniciar_combate(
-            ["Goblin", "Lobo"], ATRIBUTOS_HEROI, ca_heroi=15, rng=RngFixo([20, 3, 10])
+            ["Goblin", "Lobo"], ATRIBUTOS_HEROI, ca_heroi=15, rng=RngFixo([20, 3, 10]), nivel_heroi=3
         )
         assert dano_surpresa == 0
         # -1 é o herói; 1 (Lobo, iniciativa 12) vem antes de 0 (Goblin, iniciativa 5).

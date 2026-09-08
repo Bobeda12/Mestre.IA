@@ -183,12 +183,12 @@ class TestAtacar:
 
     def test_xp_suficiente_sobe_de_nivel_e_aumenta_hp_max(self):
         c_state = CombatState(ativo=True, inimigos=[self._goblin(hp=1)])
-        heroi = _heroi(xp=250, nivel=1, hp_max=10, hp_atual=10, classe="Guerreiro")
+        heroi = _heroi(xp=50, nivel=1, hp_max=10, hp_atual=10, classe="Guerreiro")
         # ataque: d20=15, dano d6=4. Subida de nível: 1d10 (dado_vida do Guerreiro) = 7.
         # mod constituição 13 -> +1. hp_ganho = 7+1 = 8.
         executor = _executor(heroi=heroi, c_state=c_state, rng=RngFixo([15, 4, 7]))
         resultado = executor.atacar("Goblin", "Cimitarra")
-        assert resultado["xp_total"] == 300  # 250 + 50 do Goblin
+        assert resultado["xp_total"] == 100  # 50 + 50 do Goblin = XP_POR_NIVEL[2] (ADR-0026)
         assert resultado["nivel"] == 2
         assert heroi.nivel == 2
         assert heroi.hp_max == 18
@@ -361,9 +361,37 @@ class TestAplicarDano:
         executor = _executor(c_state=c_state, rng=RngFixo([6]))
         executor.aplicar_dano("Goblin", "1d6", motivo="armadilha")
         assert goblin.hp == 0
-        [_evento_dano, evento_morte] = executor.eventos
+        evento_morte = next(
+            e for e in executor.eventos if getattr(e, "dados", None) and e.dados.tipo == "morte_inimigo"
+        )
         assert evento_morte.dados.tipo == "morte_inimigo"
         assert evento_morte.dados.quem == "Goblin"
+
+    def test_dano_ambiental_no_ultimo_inimigo_vence_o_combate(self):
+        # Fase 0 do plano "jogo completo" — o guard "em combate use
+        # usar_habilidade" foi removido: empurrar o último goblin no fogo
+        # encerra o combate com XP, igual a um ataque.
+        goblin = Inimigo(
+            nome="Goblin", hp=3, max_hp=7, ca=15, bonus_ataque=4, dano_dado="1d6+2", nome_ataque="Cimitarra"
+        )
+        heroi = _heroi(xp=0, nivel=1, hp_max=10, hp_atual=10, classe="Guerreiro")
+        c_state = CombatState(ativo=True, inimigos=[goblin])
+        executor = _executor(heroi=heroi, c_state=c_state, rng=RngFixo([6]))
+        resultado = executor.aplicar_dano("Goblin", "1d6", motivo="empurrado no fogo")
+        assert resultado["resultado"] == "vitoria"
+        assert c_state.ativo is False
+        assert heroi.xp == 50
+
+    def test_dano_ambiental_em_inimigo_consome_a_acao_do_turno(self):
+        goblin = Inimigo(
+            nome="Goblin", hp=7, max_hp=7, ca=15, bonus_ataque=4, dano_dado="1d6+2", nome_ataque="Cimitarra"
+        )
+        c_state = CombatState(ativo=True, inimigos=[goblin])
+        executor = _executor(c_state=c_state, rng=RngFixo([2, 2]))
+        _, ok = executor.executar("aplicar_dano", '{"alvo": "Goblin", "dado_dano": "1d6", "motivo": "fogo"}')
+        assert ok is True
+        resultado, ok = executor.executar("atacar", '{"alvo": "Goblin"}')
+        assert ok is False and "já foi resolvida" in resultado["erro"]
 
 
 class TestMover:
@@ -821,10 +849,10 @@ class TestConcluirObjetivo:
         assert resultado["objetivo"] == "Convenceu o guarda a abrir o portão"
 
     def test_xp_suficiente_sobe_de_nivel(self):
-        heroi = _heroi(xp=250, nivel=1, hp_max=10, hp_atual=10, classe="Guerreiro")
+        heroi = _heroi(xp=50, nivel=1, hp_max=10, hp_atual=10, classe="Guerreiro")
         executor = _executor(heroi=heroi, rng=RngFixo([7]))
         resultado = executor.concluir_objetivo("Resolveu o enigma da esfinge")
-        assert resultado["xp_total"] == 300
+        assert resultado["xp_total"] == 100  # 50 + 50 = XP_POR_NIVEL[2] (ADR-0026)
         assert resultado["nivel"] == 2
         assert heroi.nivel == 2
 

@@ -138,7 +138,7 @@ class TestMontarContexto:
 
 
 _ATRIBUTOS_MINIMOS = {
-    "forca": 8, "destreza": 8, "constituicao": 8, "inteligencia": 8, "sabedoria": 8, "carisma": 8,
+    "forca": 15, "destreza": 14, "constituicao": 13, "inteligencia": 12, "sabedoria": 10, "carisma": 8,
 }
 
 
@@ -184,83 +184,37 @@ class _ClienteFalso:
 
 
 class TestGerarPrologoMissaoLocalInicial:
-    """Etapa 11 (B-7, resolve P-5) — o prólogo criava o herói num local que
-    `mover` não reconhecia (reproduzido ao vivo: "Ruínas de Gralhoth" e
-    "Ruínas de Acheron", nenhum dos dois no catálogo). O prompt pede um
-    local do catálogo, mas quem garante é a checagem no servidor."""
-
-    def test_local_invalido_do_modelo_e_substituido_pelo_padrao(self, monkeypatch):
-        provedor_principal, _ = llm_client.CADEIA[0]
-        monkeypatch.setattr(
-            llm_client, "clients",
-            {provedor_principal: _ClienteFalso({
-                "local_inicial": "Ruínas de Gralhoth",  # não existe no catálogo
-                "clima_inicial": "Nublado",
-                "nome_missao": "Missão",
-                "objetivo_missao": "Objetivo",
-                "intro_narrativa": "Texto.",
-            })},
-        )
-        roteiro = gerar_prologo_missao(_personagem_criacao())
-        assert roteiro["local_inicial"] == "Vila de Phandalin"
-
-    def test_local_novo_com_descricao_e_aceito(self, monkeypatch):
-        # Rodada de conserto (Parte 2, item J) — "chega de goblins" também
-        # pro ponto de partida: um lugar fora do catálogo é aceito QUANDO
-        # vem com descrição de verdade (mesmo padrão de `mover`, Fase 5).
-        provedor_principal, _ = llm_client.CADEIA[0]
-        monkeypatch.setattr(
-            llm_client, "clients",
-            {provedor_principal: _ClienteFalso({
-                "local_inicial": "Vilarejo de Corvoceu",
-                "local_inicial_descricao": "Um vilarejo de pescadores encravado num penhasco.",
-                "clima_inicial": "Nublado",
-                "nome_missao": "Missão",
-                "objetivo_missao": "Objetivo",
-                "intro_narrativa": "Texto.",
-            })},
-        )
-        roteiro = gerar_prologo_missao(_personagem_criacao())
-        assert roteiro["local_inicial"] == "Vilarejo de Corvoceu"
-        assert "penhasco" in roteiro["local_inicial_descricao"]
-
-    def test_local_novo_sem_descricao_ainda_cai_no_padrao(self, monkeypatch):
-        # A rede de segurança original continua valendo: um nome fora do
-        # catálogo SEM descrição não vira lugar nenhum — cai no padrão.
-        provedor_principal, _ = llm_client.CADEIA[0]
-        monkeypatch.setattr(
-            llm_client, "clients",
-            {provedor_principal: _ClienteFalso({
-                "local_inicial": "Vilarejo de Corvoceu",
-                "clima_inicial": "Nublado",
-                "nome_missao": "Missão",
-                "objetivo_missao": "Objetivo",
-                "intro_narrativa": "Texto.",
-            })},
-        )
-        roteiro = gerar_prologo_missao(_personagem_criacao())
-        assert roteiro["local_inicial"] == "Vila de Phandalin"
-        assert roteiro["local_inicial_descricao"] is None
-
-    def test_local_valido_do_modelo_e_mantido(self, monkeypatch):
-        provedor_principal, _ = llm_client.CADEIA[0]
-        monkeypatch.setattr(
-            llm_client, "clients",
-            {provedor_principal: _ClienteFalso({
-                "local_inicial": "Floresta das Sombras",
-                "clima_inicial": "Nublado",
-                "nome_missao": "Missão",
-                "objetivo_missao": "Objetivo",
-                "intro_narrativa": "Texto.",
-            })},
-        )
-        roteiro = gerar_prologo_missao(_personagem_criacao())
-        assert roteiro["local_inicial"] == "Floresta das Sombras"
-
-    def test_sem_client_cai_no_local_padrao_do_catalogo(self, monkeypatch):
+    def test_sem_ia_tem_local_coerente_e_saida_livre(self, monkeypatch):
         monkeypatch.setattr(llm_client, "clients", {})
-        roteiro = gerar_prologo_missao(_personagem_criacao())
-        assert roteiro["local_inicial"] == "Vila de Phandalin"
+        roteiro = gerar_prologo_missao(_personagem_criacao(), semente=5)
+        cena = roteiro["mundo_inicial"]["cenas"][roteiro["local_inicial"]]
+        assert any(e["tipo"] == "saida" for e in cena["entidades"].values())
+        assert roteiro["atos"] == []
+
+    def test_modelo_pode_criar_outro_mundo_coerente(self, monkeypatch):
+        from app.services.emergent_start import criar_origem
+        corpo = criar_origem(_personagem_criacao(), 9)
+        local_antigo = corpo["local_inicial"]
+        local_novo = "Observatório de Vidro"
+        corpo["local_inicial"] = local_novo
+        corpo["mundo_inicial"]["cenas"][local_novo] = corpo["mundo_inicial"]["cenas"].pop(local_antigo)
+        for pessoa in corpo["mundo_inicial"]["pessoas"].values():
+            pessoa["local"] = local_novo
+        for conflito in corpo["mundo_inicial"]["conflitos"].values():
+            conflito["local"] = local_novo
+        monkeypatch.setattr(llm_client, "clients", {llm_client.CADEIA[0][0]: _ClienteFalso(corpo)})
+        roteiro = gerar_prologo_missao(_personagem_criacao(), semente=5)
+        assert roteiro["local_inicial"] == local_novo
+        assert roteiro["mundo_inicial"]["cenas"][local_novo]
+
+    def test_local_sem_mundo_coerente_cai_na_origem_validada(self, monkeypatch):
+        from app.services.emergent_start import criar_origem
+        corpo = criar_origem(_personagem_criacao(), 9)
+        corpo["local_inicial"] = "Observatório sem registro"
+        monkeypatch.setattr(llm_client, "clients", {llm_client.CADEIA[0][0]: _ClienteFalso(corpo)})
+        roteiro = gerar_prologo_missao(_personagem_criacao(), semente=5)
+        assert roteiro["local_inicial"] in roteiro["mundo_inicial"]["cenas"]
+        assert roteiro["local_inicial"] != "Observatório sem registro"
 
 
 class TestValidarAtos:
@@ -310,7 +264,7 @@ class TestGerarPrologoMissaoAtos:
             })},
         )
         roteiro = gerar_prologo_missao(_personagem_criacao())
-        assert roteiro["atos"] == atos
+        assert roteiro["atos"] == []
 
     def test_atos_malformados_do_modelo_caem_no_padrao(self, monkeypatch):
         provedor_principal, _ = llm_client.CADEIA[0]
@@ -323,12 +277,12 @@ class TestGerarPrologoMissaoAtos:
             })},
         )
         roteiro = gerar_prologo_missao(_personagem_criacao())
-        assert roteiro["atos"] == ATOS_PADRAO
+        assert roteiro["atos"] == []
 
     def test_sem_client_cai_nos_atos_padrao(self, monkeypatch):
         monkeypatch.setattr(llm_client, "clients", {})
         roteiro = gerar_prologo_missao(_personagem_criacao())
-        assert roteiro["atos"] == ATOS_PADRAO
+        assert roteiro["atos"] == []
 
 
 def _heroi_morto() -> Personagem:
