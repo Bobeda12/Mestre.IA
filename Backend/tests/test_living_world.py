@@ -235,3 +235,36 @@ def test_api_clique_e_texto_resolvem_mesma_operacao_e_save(monkeypatch):
     with SessionLocal() as db:
         heroi = db.query(Personagem).filter_by(session_id=sid).one()
         assert heroi.world_state["mundo"]["cenas"][depois["local"]]["entidades"]["registro"]["descoberto"]
+
+
+def test_migrar_mundo_cria_cena_do_local_em_save_antigo(executor):
+    # Fase 0 do plano "jogo completo" — personagem criado antes do Mundo Vivo.
+    from app.domain.state import WorldState
+    from app.services.living_world import migrar_mundo
+
+    w_state = WorldState(local="Vila de Phandalin")
+    assert w_state.mundo.cenas == {} and w_state.versao_mundo == 0
+    assert migrar_mundo(w_state, executor.heroi) is True
+    cena = w_state.mundo.cenas["Vila de Phandalin"]
+    assert cena.descricao
+    assert any(e.tipo == "saida" for e in cena.entidades.values())
+    assert executor.heroi.objetivo in w_state.mundo.objetivos
+    assert w_state.versao_mundo == 1
+    assert migrar_mundo(w_state, executor.heroi) is False  # idempotente
+
+
+def test_registrar_pessoa_com_raca_desconhecida_cai_em_humano(executor):
+    _, valido = agir(
+        executor, "registrar_pessoa",
+        pessoa={"id": "forasteiro", "nome": "Ulm", "local": executor.w_state.local,
+                "raca": "Marciano", "objetivo": "vender mapas"},
+    )
+    assert valido
+    assert executor.w_state.mundo.pessoas["forasteiro"].raca == "Humano"
+    _, valido = agir(
+        executor, "registrar_pessoa",
+        pessoa={"id": "ferreira", "nome": "Dara", "local": executor.w_state.local,
+                "raca": "Anão", "objetivo": "reabrir a forja"},
+    )
+    assert valido
+    assert executor.w_state.mundo.pessoas["ferreira"].raca == "Anão"

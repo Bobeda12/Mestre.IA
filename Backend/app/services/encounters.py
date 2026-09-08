@@ -131,20 +131,20 @@ def painel_cena(c_state: CombatState, w_state: WorldState) -> dict:
             "interacoes": [],
             "rodada": 0,
         }
-    if w_state.local in w_state.mundo.cenas:
-        return {
-            "tipo": "confronto",
-            "nome": w_state.local,
-            "descricao": w_state.mundo.cenas[w_state.local].descricao,
-            "objetivo": "Encontre sua saída: lute, use o ambiente ou tente negociar.",
-            "progresso": 0,
-            "meta": 0,
-            "interacoes": [],
-            "rodada": c_state.rodada,
-        }
     cena = CENARIOS.get(c_state.cenario_id, CENARIOS["duelo"])
+    # Fase 0 do plano "jogo completo" (08/09/2026) — o Mundo Vivo NÃO
+    # substitui o cenário tático: `preparar_encontro` sempre escolhe um, e a
+    # origem emergente sempre registra a cena do local, então um ramo
+    # "local tem cena → painel genérico sem interações" apagaria as
+    # interações de terreno de todo combate novo. A cena persistente só
+    # empresta a descrição do lugar ao painel.
+    descricao_local = w_state.mundo.cenas.get(w_state.local)
+    descricao = cena["descricao"]
+    if descricao_local and descricao_local.descricao:
+        descricao = f"{descricao_local.descricao} {cena['descricao']}"
     return {
         **cena,
+        "descricao": descricao,
         "progresso": c_state.progresso_objetivo,
         "rodada": c_state.rodada,
         "interacoes": [i for i in cena["interacoes"] if i["id"] not in c_state.interacoes_usadas],

@@ -870,10 +870,13 @@ export default function GameChat() {
   // `acaoTaticaEmCurso` juntos evitam que este caminho e `sendAction`
   // corram ao mesmo tempo — os dois disputam o mesmo `turno_esperado`
   // (world_state.turno).
-  const aoAgir = async (acao: AcaoDireta) => {
+  const aoAgir = async (acao: AcaoDireta, rotulo?: string) => {
     if (!sessionId || gameOver || loading || acaoTaticaEmCurso) return;
     setAcaoTaticaEmCurso(true);
     setErroAcao(null);
+    // O botão clicado aparece como fala do jogador (mesmo lugar em que o
+    // texto livre de `sendAction` entra), antes do resultado do juiz.
+    if (rotulo) setMessages(prev => [...prev, { kind: 'texto', id: proximoIdMsg(), role: 'user', content: rotulo }]);
     try {
       const resposta = await api.post<EstadoJogo & { narrativa: string; eventos_estruturados: DadosRolagem[] }>(
         '/game/action',
@@ -889,6 +892,7 @@ export default function GameChat() {
           proposta: acao.proposta,
           marco: acao.marco,
           escolha: acao.escolha,
+          rotulo,
           tipo: 'curto',
         },
       );

@@ -133,3 +133,16 @@ def test_acao_de_outro_usuario_e_rejeitada(monkeypatch):
     assert client.post("/game/action", json={
         "session_id": sid, "acao": "defender", "turno_esperado": 1,
     }).status_code == 403
+
+
+def test_rotulo_do_botao_vira_a_fala_do_jogador_no_historico(monkeypatch):
+    # Fase 0 do plano "jogo completo" — o clique aparece no chat com o texto
+    # humano do botão, não com o id cru da ação.
+    sid = _partida(monkeypatch)
+    payload = {"session_id": sid, "acao": "atacar", "alvo": "Sentinela", "turno_esperado": 1,
+               "rotulo": "Atacar Sentinela"}
+    assert client.post("/game/action", json=payload).status_code == 200
+    with SessionLocal() as db:
+        heroi = db.query(Personagem).filter_by(session_id=sid).one()
+        falas = [m["content"] for m in heroi.historico_chat if m["role"] == "user"]
+    assert falas[-1] == "Atacar Sentinela"

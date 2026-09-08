@@ -7,6 +7,7 @@ from pydantic import ValidationError
 
 from app.domain.eventos import DadosRolagem, EventoRolagem
 from app.domain.living_world import (
+    SAIDA_LIVRE,
     CenaPersistente,
     ConflitoMundo,
     Conhecimento,
@@ -14,6 +15,7 @@ from app.domain.living_world import (
     PessoaMundo,
 )
 from app.domain.state import LocalDescoberto
+from app.infra.data_manager import regras
 from app.services import rules_engine as motor
 
 if TYPE_CHECKING:
@@ -55,6 +57,42 @@ ACOES = {
     "distrair": "Distrair",
     "pegar": "Recolher",
 }
+
+
+def migrar_mundo(w_state, heroi) -> bool:
+    """Backfill para saves anteriores ao Mundo Vivo (Fase 0 do plano "jogo
+    completo", 08/09/2026): um personagem criado antes tem `mundo` vazio e o
+    painel mostraria "observe este lugar" pra sempre se o narrador nunca
+    chamasse `registrar_cena`. Cria a cena do local atual com a descrição
+    do catálogo (ou do local descoberto) e uma saída livre, registra o
+    objetivo do herói e marca `versao_mundo = 1`. Devolve True se mudou
+    algo — quem chama decide se precisa gravar."""
+    if w_state.versao_mundo >= 1:
+        return False
+    mundo = w_state.mundo
+    local = w_state.local
+    if local and local not in mundo.cenas:
+        descoberto = w_state.locais_descobertos.get(local)
+        catalogo = regras.get_location(local) or {}
+        descricao = (descoberto.descricao if descoberto else catalogo.get("descricao", "")) or ""
+        mundo.cenas[local] = CenaPersistente(
+            descricao=descricao[:1200],
+            entidades={
+                "estrada": EntidadeCena(
+                    id="estrada",
+                    nome="Estrada para fora",
+                    tipo="saida",
+                    destino=SAIDA_LIVRE,
+                    descricao="A estrada continua. Você pode partir quando quiser.",
+                )
+            },
+            visitas=1,
+        )
+    objetivo = (getattr(heroi, "objetivo", "") or "").strip()
+    if objetivo and objetivo not in mundo.objetivos:
+        mundo.objetivos.append(objetivo)
+    w_state.versao_mundo = 1
+    return True
 
 
 def registrar_fato(
@@ -110,6 +148,8 @@ def registrar_pessoa(executor: "ToolExecutor", pessoa: dict) -> dict:
     if len(mundo.pessoas) >= 100 or npc.local != executor.w_state.local:
         return {"erro": "Apresente pessoas apenas no local atual; limite de 100 por campanha."}
     # O cadastro cria a pessoa, não resultados de ações ou relações conquistadas.
+    if npc.raca not in regras.get_races_list():
+        npc.raca = "Humano"  # o retrato do painel vem de /assets/races/<raca>.png
     npc.confianca = max(-30, min(30, (executor.heroi.reputacao_npcs or {}).get(npc.nome, 0)))
     npc.segredo_revelado = False
     npc.lembrancas = []

@@ -4,6 +4,7 @@ import random
 import secrets
 
 from app.domain.living_world import SAIDA_LIVRE, CenaPersistente, ConflitoMundo, EntidadeCena, MundoVivo, PessoaMundo
+from app.infra.data_manager import regras
 
 
 def validar_mundo_inicial(dados: dict, local: str) -> dict:
@@ -105,10 +106,12 @@ def criar_origem(char, semente: int | None = None) -> dict:
             ),
         },
     )
+    racas = regras.get_races_list() or ["Humano"]
     npc_a = PessoaMundo(
         id="interlocutora",
         nome=aliada,
         local=lugar,
+        raca=rng.choice(racas),
         descricao=f"{aliada} organiza os pedidos dos moradores.",
         objetivo=f"distribuir {recurso} sem deixar ninguém para trás",
         medo="perder a confiança do grupo",
@@ -120,6 +123,7 @@ def criar_origem(char, semente: int | None = None) -> dict:
         id="responsavel",
         nome=rival,
         local=lugar,
+        raca=rng.choice(racas),
         descricao=f"{rival} acompanha a movimentação junto ao depósito.",
         objetivo=interesse,
         medo="ser responsabilizado por uma decisão que não tomou sozinho",

@@ -32,7 +32,7 @@ from app.services.guardrail import (
     opcoes_padrao,
     validar_narrativa,
 )
-from app.services.living_world import painel_mundo
+from app.services.living_world import migrar_mundo, painel_mundo
 from app.services.memory import contexto_recente
 from app.services.narrator import gerar_epitafio, montar_contexto
 from app.services.progression import migrar_progressao, painel_progressao
@@ -240,6 +240,9 @@ def load_game(
         migrar_progressao(heroi, w_state)
         heroi.world_state = w_state.model_dump()
         db.commit()
+    if migrar_mundo(w_state, heroi):
+        heroi.world_state = w_state.model_dump()
+        db.commit()
 
     # Rodada de conserto (Parte 2, item G) — "Anteriormente…": três fatos do
     # resumo rolante (que já existe, Etapa 5) para o jogador que volta a uma
@@ -288,6 +291,7 @@ def game_action(
         raise HTTPException(status_code=400, detail="Escolha um inimigo vivo como alvo.")
 
     migrar_progressao(heroi, w_state)
+    migrar_mundo(w_state, heroi)
     executor = ToolExecutor(heroi, c_state, w_state, q_state)
     if action.acao == "resistir":
         if heroi.hp_atual > 0:
@@ -337,8 +341,11 @@ def game_action(
 
     w_state.turno += 1
     narrativa = "\n".join(str(e) for e in executor.eventos)
-    rotulo = action.habilidade or action.interacao or action.item or action.acao.replace("_", " ")
-    texto_acao = f"{rotulo}{f' → {action.alvo}' if action.alvo else ''}"
+    if action.rotulo and action.rotulo.strip():
+        texto_acao = action.rotulo.strip()
+    else:
+        rotulo = action.habilidade or action.interacao or action.item or action.acao.replace("_", " ")
+        texto_acao = f"{rotulo}{f' → {action.alvo}' if action.alvo else ''}"
     heroi.historico_chat = [*(heroi.historico_chat or []),
                            {"role": "user", "content": texto_acao},
                            {"role": "assistant", "content": narrativa}]
@@ -401,6 +408,7 @@ async def chat_endpoint(
     # nunca teve.
     turno_mundo_persistido = w_state.turno
     migrar_progressao(heroi, w_state)
+    migrar_mundo(w_state, heroi)
     w_state.turno += 1
     hist = contexto_recente(list(heroi.historico_chat), n=4)
 
@@ -585,6 +593,7 @@ def chat_stream_endpoint(
     # perto do fim; os frames de erro abaixo reportam o valor de antes.
     turno_mundo_persistido = w_state.turno
     migrar_progressao(heroi, w_state)
+    migrar_mundo(w_state, heroi)
     w_state.turno += 1
     hist = contexto_recente(list(heroi.historico_chat), n=4)
 

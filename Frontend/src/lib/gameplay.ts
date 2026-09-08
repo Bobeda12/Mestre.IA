@@ -56,7 +56,7 @@ export interface EntidadeMundo {
   estado: string; destino: string; descoberto: boolean; pista?: string;
 }
 export interface PessoaMundo {
-  id: string; nome: string; descricao: string; disposicao: string; confianca: number;
+  id: string; nome: string; descricao: string; disposicao: string; confianca: number; raca?: string;
   necessidade: string; lembrancas: string[]; promessas: string[]; depoimento?: string;
 }
 export interface MundoPersistente {

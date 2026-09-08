@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { AcaoDireta, MundoPersistente } from '../lib/gameplay';
 import PixelIcon from './PixelIcon';
+import { getLocalImage } from '../lib/utils';
 
 interface Props {
   mundo: MundoPersistente;
@@ -65,7 +66,7 @@ export default function LivingWorld(p: Props) {
     <div className="living-world__entities" aria-label="Pessoas e objetos presentes">
       {p.mundo.pessoas.map(npc => <button type="button" key={`npc:${npc.id}`} disabled={p.ocupado}
         aria-pressed={selecao === npc.id} onClick={() => {setSelecao(npc.id); setOperacao('conversar'); setMeio('');}}>
-        <img src="/assets/races/humano.png" alt="" width={48} height={48}/>
+        <img src={getLocalImage('races', npc.raca || 'Humano')} alt="" width={48} height={48}/>
         <strong>{npc.nome}</strong><small>{npc.disposicao} · confiança {npc.confianca}</small>
       </button>)}
       {p.mundo.entidades.map(e => <button type="button" key={`obj:${e.id}`} disabled={p.ocupado}

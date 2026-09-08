@@ -55,6 +55,7 @@ class PessoaMundo(BaseModel):
     id: str = Field(pattern=r"^[a-z0-9_-]{1,60}$")
     nome: str = Field(min_length=1, max_length=100)
     local: str = Field(min_length=1, max_length=100)
+    raca: str = Field(default="Humano", max_length=40, description="Raça do catálogo do jogo (Humano, Elfo, Anão...)")
     descricao: str = Field(default="", max_length=500)
     objetivo: str = Field(min_length=1, max_length=500)
     medo: str = Field(default="", max_length=400)

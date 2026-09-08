@@ -24,3 +24,8 @@ class GameAction(BaseModel):
     proposta: str = Field(default="", max_length=500)
     marco: Literal["3", "7"] = "3"
     escolha: Literal["explorador", "diplomata", "combatente"] = "explorador"
+    # Fase 0 do plano "jogo completo" (08/09/2026) — texto humano do botão
+    # clicado ("Atacar Goblin", "Examinar Registro"); vira a fala do jogador
+    # no histórico em vez do id cru da ação. Só apresentação: a ação que o
+    # juiz resolve continua sendo `acao` + argumentos.
+    rotulo: str | None = Field(default=None, max_length=80)

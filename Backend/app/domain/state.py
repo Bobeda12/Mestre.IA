@@ -107,6 +107,11 @@ class WorldState(BaseModel):
     local: str = ""
     mundo: MundoVivo = MundoVivo()
     inicio_aventura: str = "emergente"
+    # Fase 0 do plano "jogo completo" — versão do Mundo Vivo dentro do save.
+    # 0 = personagem criado antes do Mundo Vivo (mundo vazio); `living_world.
+    # migrar_mundo` cria a cena do local atual e marca 1. Mesmo padrão de
+    # `versao_progressao`/`progression.migrar_progressao`.
+    versao_mundo: int = 0
     semente_aventura: int = 0
     marcos: list[str] = []
     versao_progressao: int = 0
