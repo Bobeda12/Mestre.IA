@@ -3,9 +3,9 @@
 padrão de `random.Random` com sequência fixa de test_combat.py/
 test_rules_engine.py."""
 
-from app.domain.state import Aliado, Ato, CombatState, Inimigo, LocalDescoberto, QuestLog, WorldState
+from app.domain.state import Aliado, CombatState, Inimigo, LocalDescoberto, QuestLog, WorldState
 from app.infra.db import Personagem
-from app.services.tools import RELOGIO_URGENCIA, ToolExecutor, sincronizar_aliados
+from app.services.tools import ToolExecutor, sincronizar_aliados
 from tests.helpers import RngFixo
 
 ATRIBUTOS_HEROI = {
@@ -524,10 +524,6 @@ class TestDescansar:
         resultado = _executor(w_state=w_state).descansar("longo")
         assert "erro" in resultado
 
-    def test_descanso_longo_incrementa_o_relogio_de_urgencia(self):
-        w_state = WorldState(local="Vila de Phandalin", turno=20)
-        _executor(w_state=w_state).descansar("longo")
-        assert w_state.relogios[RELOGIO_URGENCIA] == 1
 
     def test_gancho_de_acampamento_so_aparece_com_aliado_vivo(self):
         w_state = WorldState(local="Vila de Phandalin", turno=20)
@@ -786,12 +782,6 @@ class TestSincronizarAliados:
 
 
 class TestAtualizarMissao:
-    def _atos(self) -> list[Ato]:
-        return [
-            Ato(titulo="O Chamado", objetivo="Achar o mapa"),
-            Ato(titulo="A Jornada", objetivo="Atravessar a floresta"),
-        ]
-
     def test_atualiza_nome_e_objetivo(self):
         q_state = QuestLog()
         executor = _executor(q_state=q_state)
@@ -800,43 +790,6 @@ class TestAtualizarMissao:
         assert q_state.objetivo_missao == "Encontrar o esconderijo"
         assert resultado == {"missao": "Resgatar o Ferreiro", "objetivo": "Encontrar o esconderijo"}
         assert any("Missão atualizada" in e for e in executor.eventos)
-
-    def test_avancar_ato_sem_esqueleto_nao_faz_nada(self):
-        q_state = QuestLog(atos=[])
-        executor = _executor(q_state=q_state)
-        resultado = executor.atualizar_missao("Nome", "Objetivo", avancar_ato=True)
-        assert q_state.ato_atual == 0
-        assert "ato_atual" not in resultado
-
-    def test_avancar_ato_avanca_o_indice(self):
-        q_state = QuestLog(atos=self._atos(), ato_atual=0)
-        executor = _executor(q_state=q_state)
-        resultado = executor.atualizar_missao("Nome", "Objetivo", avancar_ato=True)
-        assert q_state.ato_atual == 1
-        assert resultado["ato_atual"] == 1
-        assert resultado["ato_titulo"] == "A Jornada"
-        assert any("Novo Ato" in e for e in executor.eventos)
-
-    def test_avancar_ato_no_ultimo_nao_estoura_o_indice(self):
-        q_state = QuestLog(atos=self._atos(), ato_atual=1)  # já no último
-        executor = _executor(q_state=q_state)
-        executor.atualizar_missao("Nome", "Objetivo", avancar_ato=True)
-        assert q_state.ato_atual == 1  # não vira 2 (fora da lista)
-
-    def test_sem_avancar_ato_o_indice_fica_parado(self):
-        q_state = QuestLog(atos=self._atos(), ato_atual=0)
-        executor = _executor(q_state=q_state)
-        executor.atualizar_missao("Nome", "Objetivo")
-        assert q_state.ato_atual == 0
-
-    def test_avancar_ato_reseta_o_relogio_de_urgencia(self):
-        # Fase 6 (revisão de gameplay) — o relógio é do Ato que está
-        # terminando; o novo Ato começa com o dele zerado.
-        q_state = QuestLog(atos=self._atos(), ato_atual=0)
-        w_state = WorldState(relogios={RELOGIO_URGENCIA: 3})
-        executor = _executor(q_state=q_state, w_state=w_state)
-        executor.atualizar_missao("Nome", "Objetivo", avancar_ato=True)
-        assert w_state.relogios[RELOGIO_URGENCIA] == 0
 
 
 class TestConcluirObjetivo:

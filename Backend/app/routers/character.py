@@ -97,7 +97,7 @@ def create_character(
 
     world_state = WorldState(
         local=roteiro["local_inicial"], clima=roteiro["clima_inicial"], turno=1,
-        inicio_aventura=roteiro.get("inicio_aventura", char.inicio_aventura),
+        inicio_aventura=roteiro.get("inicio_aventura", "emergente"),
         semente_aventura=roteiro.get("semente_aventura", 0),
         marcos=roteiro.get("chaves", []), hora_do_dia=roteiro.get("hora_do_dia", 8),
         versao_progressao=1,
@@ -114,12 +114,7 @@ def create_character(
         world_state.locais_descobertos = {
             roteiro["local_inicial"]: LocalDescoberto(descricao=descricao_local_novo, clima=roteiro["clima_inicial"])
         }
-    # Fase 4 da revisão de gameplay — o esqueleto de Atos nasce junto com o
-    # prólogo (mesma chamada ao modelo, `gerar_prologo_missao` já valida o
-    # formato antes de devolver).
-    quest_log = QuestLog(
-        nome_missao=roteiro["nome_missao"], objetivo_missao=roteiro["objetivo_missao"], atos=roteiro["atos"]
-    )
+    quest_log = QuestLog(nome_missao=roteiro["nome_missao"], objetivo_missao=roteiro["objetivo_missao"])
 
     novo = Personagem(
         usuario_id=current_user.id,

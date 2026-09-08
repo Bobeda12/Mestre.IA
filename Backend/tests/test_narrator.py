@@ -8,11 +8,10 @@ import json
 
 from app.domain.character import CharacterCreationRequest
 from app.domain.memoria import ResumoRolante
-from app.domain.state import Ato, CombatState, QuestLog, WorldState
+from app.domain.state import CombatState, QuestLog, WorldState
 from app.infra import llm_client
 from app.infra.db import Personagem
-from app.services.narrator import ATOS_PADRAO, _validar_atos, gerar_epitafio, gerar_prologo_missao, montar_contexto
-from app.services.tools import RELOGIO_MAXIMO, RELOGIO_URGENCIA
+from app.services.narrator import gerar_epitafio, gerar_prologo_missao, montar_contexto
 
 
 def _heroi() -> Personagem:
@@ -86,56 +85,6 @@ class TestMontarContexto:
         assert "[SEÇÃO ÚNICA]" in prompt
         assert "conteúdo filtrado" in prompt
 
-    def test_sem_atos_nenhuma_secao_de_ato_aparece(self):
-        c_state, w_state, q_state = _contexto_base()
-        prompt = montar_contexto(_heroi(), w_state, c_state, q_state)
-        assert "[ATO ATUAL]" not in prompt
-
-    def test_ato_atual_aparece_no_prompt(self):
-        # Fase 4 da revisão de gameplay — só o Ato ATUAL entra, nunca o
-        # esqueleto inteiro (o Ato 2 não deveria aparecer aqui).
-        c_state, w_state, q_state = _contexto_base()
-        q_state.atos = [
-            Ato(titulo="O Chamado", objetivo="Achar o mapa"),
-            Ato(titulo="A Jornada", objetivo="Atravessar a floresta"),
-        ]
-        q_state.ato_atual = 0
-        prompt = montar_contexto(_heroi(), w_state, c_state, q_state)
-        assert "[ATO ATUAL] O Chamado: Achar o mapa" in prompt
-        assert "A Jornada" not in prompt
-
-    def test_indice_de_ato_fora_do_intervalo_e_clampado(self):
-        c_state, w_state, q_state = _contexto_base()
-        q_state.atos = [Ato(titulo="Único Ato", objetivo="Terminar")]
-        q_state.ato_atual = 99  # QuestLog salvo antes desta fase, ou índice nunca revisto
-        prompt = montar_contexto(_heroi(), w_state, c_state, q_state)
-        assert "[ATO ATUAL] Único Ato: Terminar" in prompt
-
-    def test_aviso_de_avancar_ato_so_aparece_quando_ha_proximo_ato(self):
-        c_state, w_state, q_state = _contexto_base()
-        q_state.atos = [Ato(titulo="Único", objetivo="Terminar")]
-        q_state.ato_atual = 0
-        prompt = montar_contexto(_heroi(), w_state, c_state, q_state)
-        assert "avancar_ato" not in prompt  # já é o último Ato, nada pra avançar
-
-    def test_sem_relogio_maximo_nenhum_evento_global_aparece(self):
-        c_state, w_state, q_state = _contexto_base()
-        prompt = montar_contexto(_heroi(), w_state, c_state, q_state)
-        assert "[EVENTO GLOBAL]" not in prompt
-
-    def test_relogio_no_maximo_injeta_evento_global(self):
-        # Fase 6 (revisão de gameplay) — relógio de facção.
-        c_state, w_state, q_state = _contexto_base()
-        w_state.relogios[RELOGIO_URGENCIA] = RELOGIO_MAXIMO
-        prompt = montar_contexto(_heroi(), w_state, c_state, q_state)
-        assert "[EVENTO GLOBAL]" in prompt
-
-    def test_relogio_abaixo_do_maximo_nao_injeta(self):
-        c_state, w_state, q_state = _contexto_base()
-        w_state.relogios[RELOGIO_URGENCIA] = RELOGIO_MAXIMO - 1
-        prompt = montar_contexto(_heroi(), w_state, c_state, q_state)
-        assert "[EVENTO GLOBAL]" not in prompt
-
 
 _ATRIBUTOS_MINIMOS = {
     "forca": 15, "destreza": 14, "constituicao": 13, "inteligencia": 12, "sabedoria": 10, "carisma": 8,
@@ -189,7 +138,7 @@ class TestGerarPrologoMissaoLocalInicial:
         roteiro = gerar_prologo_missao(_personagem_criacao(), semente=5)
         cena = roteiro["mundo_inicial"]["cenas"][roteiro["local_inicial"]]
         assert any(e["tipo"] == "saida" for e in cena["entidades"].values())
-        assert roteiro["atos"] == []
+        assert "atos" not in roteiro  # Fase 0 (ADR-0032): o prólogo não gera roteiro
 
     def test_modelo_pode_criar_outro_mundo_coerente(self, monkeypatch):
         from app.services.emergent_start import criar_origem
@@ -217,72 +166,6 @@ class TestGerarPrologoMissaoLocalInicial:
         assert roteiro["local_inicial"] != "Observatório sem registro"
 
 
-class TestValidarAtos:
-    """Fase 4 da revisão de gameplay — mesma fronteira de confiança do
-    `local_inicial`: pedir com educação não garante o formato."""
-
-    def _corpo(self, n: int) -> list[dict]:
-        return [{"titulo": f"Ato {i}", "objetivo": f"Objetivo {i}"} for i in range(n)]
-
-    def test_lista_valida_de_tres_a_cinco_e_aceita(self):
-        assert _validar_atos(self._corpo(3)) == self._corpo(3)
-        assert _validar_atos(self._corpo(5)) == self._corpo(5)
-
-    def test_lista_curta_ou_longa_demais_cai_no_padrao(self):
-        assert _validar_atos(self._corpo(2)) == ATOS_PADRAO
-        assert _validar_atos(self._corpo(6)) == ATOS_PADRAO
-
-    def test_nao_e_lista_cai_no_padrao(self):
-        assert _validar_atos("não é uma lista") == ATOS_PADRAO
-        assert _validar_atos(None) == ATOS_PADRAO
-
-    def test_item_sem_titulo_ou_objetivo_cai_no_padrao(self):
-        corpo = self._corpo(3)
-        del corpo[1]["objetivo"]
-        assert _validar_atos(corpo) == ATOS_PADRAO
-
-    def test_titulo_vazio_cai_no_padrao(self):
-        corpo = self._corpo(3)
-        corpo[0]["titulo"] = "   "
-        assert _validar_atos(corpo) == ATOS_PADRAO
-
-
-class TestGerarPrologoMissaoAtos:
-    def test_atos_validos_do_modelo_sao_mantidos(self, monkeypatch):
-        provedor_principal, _ = llm_client.CADEIA[0]
-        atos = [
-            {"titulo": "O Chamado", "objetivo": "Achar o mapa"},
-            {"titulo": "A Jornada", "objetivo": "Atravessar a floresta"},
-            {"titulo": "O Confronto", "objetivo": "Derrotar o culto"},
-        ]
-        monkeypatch.setattr(
-            llm_client, "clients",
-            {provedor_principal: _ClienteFalso({
-                "local_inicial": "Vila de Phandalin", "clima_inicial": "Nublado",
-                "nome_missao": "Missão", "objetivo_missao": "Objetivo", "intro_narrativa": "Texto.",
-                "atos": atos,
-            })},
-        )
-        roteiro = gerar_prologo_missao(_personagem_criacao())
-        assert roteiro["atos"] == []
-
-    def test_atos_malformados_do_modelo_caem_no_padrao(self, monkeypatch):
-        provedor_principal, _ = llm_client.CADEIA[0]
-        monkeypatch.setattr(
-            llm_client, "clients",
-            {provedor_principal: _ClienteFalso({
-                "local_inicial": "Vila de Phandalin", "clima_inicial": "Nublado",
-                "nome_missao": "Missão", "objetivo_missao": "Objetivo", "intro_narrativa": "Texto.",
-                "atos": "não é uma lista",
-            })},
-        )
-        roteiro = gerar_prologo_missao(_personagem_criacao())
-        assert roteiro["atos"] == []
-
-    def test_sem_client_cai_nos_atos_padrao(self, monkeypatch):
-        monkeypatch.setattr(llm_client, "clients", {})
-        roteiro = gerar_prologo_missao(_personagem_criacao())
-        assert roteiro["atos"] == []
 
 
 def _heroi_morto() -> Personagem:

@@ -41,13 +41,6 @@ _EFEITOS_ITENS: dict[str, Callable[["ToolExecutor"], dict]] = {
     "Poção de Cura": _efeito_pocao_cura,
 }
 
-# Fase 6 da revisão de gameplay (Etapa 12/13) — relógio de facção único
-# (urgência do Ato atual). Chave de dict, não uma coluna própria — cabe
-# mais de um relógio no futuro sem mudar `WorldState.relogios`.
-RELOGIO_URGENCIA = "urgencia_ato"
-RELOGIO_MAXIMO = 4
-
-
 class ToolExecutor:
     """Um por turno. Mantém referência direta a `c_state`/`w_state` (o mesmo
     objeto que o router vai persistir depois) — ferramentas mutam em vez de
@@ -654,9 +647,9 @@ class ToolExecutor:
                 EventoStatus(tipo="cura", quem="heroi", valor=cura),
             )
         )
-        # Fase 6 — relógio de urgência: descansar demais custa tempo, e o
-        # tempo custa caro pro Ato atual (ver montar_contexto/[EVENTO GLOBAL]).
-        self.w_state.relogios[RELOGIO_URGENCIA] = self.w_state.relogios.get(RELOGIO_URGENCIA, 0) + 1
+        # O relógio de urgência do Ato saiu com os Atos (ADR-0032); o custo
+        # de "descansar demais" agora é o dos conflitos do Mundo Vivo, que
+        # avançam em `executar` -> `avancar_tempo` (480 min no descanso longo).
         resultado = {"tipo": "longo", "cura": cura, "hp_atual": self.heroi.hp_atual}
         # Fase 6 — gancho de roleplay: o descanso longo é o "acampamento"
         # do gameplay_v2.md, o momento de companheiro abrir o jogo — só
@@ -727,26 +720,11 @@ class ToolExecutor:
             self.heroi.hp_atual = max(0, self.heroi.hp_atual - dano_surpresa)
         return {"inimigos": [i.nome for i in self.c_state.inimigos], "dano_surpresa": dano_surpresa}
 
-    def atualizar_missao(self, nome: str, objetivo: str, avancar_ato: bool = False) -> dict:
+    def atualizar_missao(self, nome: str, objetivo: str) -> dict:
         self.q_state.nome_missao = nome
         self.q_state.objetivo_missao = objetivo
         self.eventos.append(f"📜 Missão atualizada: {nome} - {objetivo}")
-        resultado: dict[str, object] = {"missao": nome, "objetivo": objetivo}
-        # Fase 4 da revisão de gameplay — o modelo sinaliza que o Ato
-        # inteiro (não só a missão miúda) terminou; o servidor decide se
-        # há um próximo Ato pra avançar (nunca deixa o índice estourar —
-        # o último Ato fica como "fim de campanha" até a Fase 7 dar um
-        # fechamento de verdade a isso).
-        if avancar_ato and self.q_state.atos and self.q_state.ato_atual < len(self.q_state.atos) - 1:
-            self.q_state.ato_atual += 1
-            novo_ato = self.q_state.atos[self.q_state.ato_atual]
-            self.eventos.append(f"📖 Novo Ato: {novo_ato.titulo}")
-            resultado["ato_atual"] = self.q_state.ato_atual
-            resultado["ato_titulo"] = novo_ato.titulo
-            # Fase 6 — o relógio de urgência é do Ato que está terminando;
-            # o novo Ato começa com o dele próprio zerado.
-            self.w_state.relogios[RELOGIO_URGENCIA] = 0
-        return resultado
+        return {"missao": nome, "objetivo": objetivo}
 
     # Fase 3 da revisão de gameplay (Etapa 12/13, ADR-0027) — estatísticas
     # de combate de um aliado recrutado são fixas, não propostas pelo
@@ -1301,13 +1279,6 @@ TOOLS_SCHEMA: list[dict] = [*WORLD_TOOLS,
                         "description": (
                             "O que o jogador deve fazer agora "
                             "(ex: 'Encontre o esconderijo dos goblins na floresta')."
-                        ),
-                    },
-                    "avancar_ato": {
-                        "type": "boolean",
-                        "description": (
-                            "true SÓ quando o objetivo do ATO ATUAL inteiro (não a missão miúda) "
-                            "acabou de ser cumprido de verdade — avança a campanha pro próximo Ato."
                         ),
                     },
                 },

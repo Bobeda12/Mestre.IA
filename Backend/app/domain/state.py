@@ -106,7 +106,7 @@ class LocalDescoberto(BaseModel):
 class WorldState(BaseModel):
     local: str = ""
     mundo: MundoVivo = MundoVivo()
-    inicio_aventura: str = "surpresa"
+    inicio_aventura: str = "emergente"
     semente_aventura: int = 0
     marcos: list[str] = []
     versao_progressao: int = 0
@@ -120,12 +120,11 @@ class WorldState(BaseModel):
     # da validação estrita antiga, só que o registro agora pode acontecer
     # em tempo de jogo, não só nos arquivos JSON).
     locais_descobertos: dict[str, LocalDescoberto] = {}
-    # Fase 6 da revisão de gameplay (Etapa 12/13) — relógio de facção
-    # (contador de urgência do Ato atual). Só uma chave usada por enquanto
-    # (`services/tools.py.RELOGIO_URGENCIA`); dict pra caber mais de um
-    # relógio no futuro sem mudar o formato salvo. Avança em
-    # `descansar("longo")`, reseta quando o Ato muda
-    # (`atualizar_missao(avancar_ato=True)`).
+    # Relógios genéricos por nome. O único uso (urgência do Ato) saiu com
+    # os Atos (Fase 0 do plano "jogo completo", ADR-0032); o campo fica
+    # pra saves antigos carregarem sem erro e pra um relógio futuro caber
+    # sem mudar o formato salvo. Pressão de tempo hoje = conflitos do
+    # Mundo Vivo (`living_world.avancar_tempo`).
     relogios: dict[str, int] = {}
     # Fase 6 — turno (world_state.turno) do último descanso longo bem
     # sucedido; -999 nunca aconteceu. `descansar` usa isso pra impedir
@@ -140,26 +139,11 @@ class WorldState(BaseModel):
     hora_do_dia: int = 8
 
 
-class Ato(BaseModel):
-    """Fase 4 da revisão de gameplay (Etapa 12/13) — um passo do esqueleto
-    de campanha (3 a 5 Atos), gerado uma vez na criação do personagem
-    (`narrator.gerar_prologo_missao`). Mais estável que `QuestLog.nome_missao`/
-    `objetivo_missao` (que o narrador atualiza livremente turno a turno via
-    `atualizar_missao`) — os Atos são a arquitetura da campanha, a missão
-    atual é o passo miúdo dentro de um Ato."""
-
-    titulo: str
-    objetivo: str
-
-
 class QuestLog(BaseModel):
+    """Missão miúda que o narrador atualiza turno a turno (`atualizar_missao`).
+    O esqueleto de Atos que morava aqui saiu na Fase 0 do plano "jogo
+    completo" (ADR-0032); saves antigos com `atos`/`ato_atual` carregam
+    sem erro porque o Pydantic ignora chaves extras."""
+
     nome_missao: str = ""
     objetivo_missao: str = ""
-    # Fase 4 — o esqueleto inteiro (3 a 5 Atos) fica guardado aqui, mas
-    # `narrator.montar_contexto` só injeta o ATO ATUAL no prompt (mesmo
-    # padrão de "nunca despejar a estrutura inteira" de `[MISSÃO ATUAL]`) —
-    # ver a nota em `services/narrator.py`. Lista vazia é o caso de
-    # personagens criados antes desta fase, ou quando o prólogo roda sem
-    # LLM (`gerar_prologo_missao` sem chave configurada).
-    atos: list[Ato] = []
-    ato_atual: int = 0

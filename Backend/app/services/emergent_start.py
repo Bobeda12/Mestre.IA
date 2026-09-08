@@ -217,7 +217,6 @@ def criar_origem(char, semente: int | None = None) -> dict:
             f"Ouvir {aliada} e {rival}",
             "Seguir meu próprio caminho",
         ],
-        "atos": [],
         "chaves": [],
         "inicio_aventura": "emergente",
         "semente_aventura": semente,

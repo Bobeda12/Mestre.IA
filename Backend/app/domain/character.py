@@ -2,7 +2,6 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from app.services.adventure import INICIOS
 from app.services.geracao_atributos import ler_token_atributos
 from app.services.rules_engine import ATRIBUTOS_VALIDOS, MATRIZ_CLASSICA, validar_atributos_gerados
 
@@ -23,7 +22,6 @@ class CharacterCreationRequest(BaseModel):
     # quando a origem foi escolhida manualmente (narrator.py cai para um
     # corte limpo de historia_texto nesse caso).
     resumo_historia: str = Field(default="", max_length=150)
-    inicio_aventura: str = Field(default="surpresa", max_length=40)
     temperamento_mestre: Literal["Justo", "Épico", "Implacável"] = "Justo"
     dificuldade: Literal["História", "Normal", "Difícil"] = "Normal"
     # Etapa 11 (B-3) — URL da imagem já gerada pelo front (pollinations.ai);
@@ -43,13 +41,6 @@ class CharacterCreationRequest(BaseModel):
     # de fato vieram de uma rolagem do servidor, não do cliente.
     modo_atributos: Literal["classica", "dados"] = "classica"
     token_atributos: str | None = None
-
-    @field_validator("inicio_aventura")
-    @classmethod
-    def valida_inicio_aventura(cls, valor: str) -> str:
-        if valor != "surpresa" and valor not in INICIOS:
-            raise ValueError("inicio_aventura precisa ser uma opção do catálogo de aventuras")
-        return valor
 
     @field_validator("imagem")
     @classmethod

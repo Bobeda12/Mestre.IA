@@ -11,12 +11,10 @@ from app.infra.db import Personagem
 from app.infra.llm_client import ErroMestre
 from app.infra.settings import settings
 from app.services import rules_engine as motor
-from app.services.adventure import contexto_campanha
 from app.services.emergent_start import criar_origem, validar_mundo_inicial
 from app.services.encounters import painel_cena
 from app.services.living_world import painel_mundo
 from app.services.progression import painel_progressao
-from app.services.tools import RELOGIO_MAXIMO, RELOGIO_URGENCIA
 
 __all__ = ["ErroMestre", "chamar_mestre", "gerar_cronica", "gerar_epitafio", "gerar_prologo_missao", "montar_contexto"]
 
@@ -80,36 +78,6 @@ def chamar_mestre(msgs: list[dict], chamar_fn: Callable[..., Any] | None = None)
         raise ErroMestre("O mestre respondeu num formato que não consegui entender.") from e
 
 
-# Fase 4 da revisão de gameplay (Etapa 12/13) — esqueleto de campanha
-# genérico, usado quando o modelo não está disponível OU quando o que ele
-# devolveu não bate no formato esperado (mesmo espírito da checagem de
-# `local_inicial` logo abaixo: pedir com educação não garante o formato).
-ATOS_PADRAO = [
-    {"titulo": "O Chamado", "objetivo": "Descobrir o que está por trás do primeiro incidente."},
-    {"titulo": "A Jornada", "objetivo": "Seguir as pistas até a origem da ameaça."},
-    {"titulo": "O Confronto", "objetivo": "Enfrentar a raiz do problema, custe o que custar."},
-]
-
-
-def _validar_atos(bruto: object, padrao: list[dict] | None = None) -> list[dict]:
-    """`atos` só é aceito se vier no formato exato — uma lista de 3 a 5
-    dicts com `titulo` e `objetivo`, ambos string não-vazia. Qualquer
-    desvio (campo faltando, tipo errado, lista vazia ou gigante) cai pro
-    esqueleto padrão — mesma fronteira de confiança do `local_inicial`."""
-    padrao = ATOS_PADRAO if padrao is None else padrao
-    if not isinstance(bruto, list) or not (3 <= len(bruto) <= 5):
-        return [ato.copy() for ato in padrao]
-    atos = []
-    for item in bruto:
-        if not isinstance(item, dict):
-            return [ato.copy() for ato in padrao]
-        titulo, objetivo = item.get("titulo"), item.get("objetivo")
-        if not isinstance(titulo, str) or not titulo.strip() or not isinstance(objetivo, str) or not objetivo.strip():
-            return [ato.copy() for ato in padrao]
-        atos.append({"titulo": titulo, "objetivo": objetivo})
-    return atos
-
-
 def gerar_prologo_missao(
     char: CharacterCreationRequest, chamar_fn: Callable[..., Any] | None = None, *, semente: int | None = None
 ) -> dict:
@@ -135,7 +103,7 @@ def gerar_prologo_missao(
     {secao_tom_mestre(char.temperamento_mestre)}
     Crie condições iniciais para {char.nome} ({char.raca} {char.classe}).
     Passado: {char.background}. Objetivo: {char.objetivo}. História: {char.historia_texto}.
-    Tema opcional escolhido: {char.inicio_aventura}. Não invente lembranças ou decisões do herói.
+    Não invente lembranças ou decisões do herói.
     Gere uma situação própria para esse personagem: social, exploração, mistério, sobrevivência,
     descoberta, festa interrompida, viagem, dívida ou disputa. Varie o tipo; evite repetir depósitos
     e falta de suprimentos. Não existe missão obrigatória nem sequência de atos ou final predeterminado.
@@ -152,7 +120,7 @@ def gerar_prologo_missao(
     Máximo 8 locais, 8 pessoas, 4 conflitos e 20 entidades por local. Uma cena pequena é suficiente.
     Escreva intro_narrativa em 3 parágrafos: acontecimento, tensão humana, oportunidades concretas.
     Segredos, objetivos privados e pistas não descobertas NÃO aparecem na introdução.
-    As 3 opcoes são sugestões curtas e variadas. atos deve ser []. Nunca decida pelo jogador.
+    As 3 opcoes são sugestões curtas e variadas. Nunca decida pelo jogador.
     """
     try:
         roteiro = chamar_mestre([{"role": "user", "content": prompt}], chamar_fn=chamar_fn)
@@ -190,7 +158,6 @@ def gerar_prologo_missao(
             roteiro["local_inicial_descricao"] = abertura["local_inicial_descricao"]
     else:
         roteiro["local_inicial_descricao"] = None
-    roteiro["atos"] = []
     try:
         roteiro["mundo_inicial"] = validar_mundo_inicial(
             roteiro.get("mundo_inicial", abertura["mundo_inicial"]), roteiro["local_inicial"]
@@ -434,39 +401,6 @@ def montar_contexto(
         else ""
     )
 
-    # Fase 4 da revisão de gameplay (Etapa 12/13) — só o Ato ATUAL entra no
-    # prompt, nunca o esqueleto inteiro (mesmo padrão de "não despejar a
-    # estrutura" do resto do projeto). `ato_atual` é um índice — clampado
-    # aqui porque um `QuestLog` salvo antes desta fase tem `atos=[]`, e
-    # `atualizar_missao(avancar_ato=True)` não impede o índice de estourar
-    # se chamado mais vezes do que há Atos.
-    secao_ato = ""
-    aviso_ato = ""
-    if q_state.atos and not w_state.mundo.cenas:
-        idx = max(0, min(q_state.ato_atual, len(q_state.atos) - 1))
-        ato = q_state.atos[idx]
-        secao_ato = f"\n    [ATO ATUAL] {ato.titulo}: {ato.objetivo}"
-        if idx < len(q_state.atos) - 1:
-            aviso_ato = (
-                ' Quando o objetivo do ATO ATUAL for cumprido de verdade (não a missão miúda, o '
-                'Ato inteiro), chame "atualizar_missao" com avancar_ato=true — é o único jeito de a '
-                "campanha avançar pro próximo Ato."
-            )
-
-    # Fase 6 da revisão de gameplay (Etapa 12/13) — relógio de facção: o
-    # script (não o modelo) decide quando a urgência do Ato estourou —
-    # `descansar("longo")` é quem avança o contador. Fica "ligado" até o
-    # jogador avançar o Ato (`atualizar_missao(avancar_ato=True)` zera),
-    # de propósito: o evento global não é uma linha só, é uma pressão que
-    # continua até a história responder a ela.
-    secao_evento_global = (
-        "\n    [EVENTO GLOBAL] O tempo passou demais parado — o que o herói estava tentando evitar "
-        "no Ato atual avançou sem ele. Deixe as consequências disso aparecerem na cena agora, "
-        "mesmo que o jogador não tenha perguntado."
-        if w_state.relogios.get(RELOGIO_URGENCIA, 0) >= RELOGIO_MAXIMO
-        else ""
-    )
-
     # Rodada de conserto (Parte 2, item H) — antes disto, o narrador recebia
     # só o RÓTULO da raça/classe (heroi.raca/heroi.classe no [HEROI] abaixo)
     # e nunca os traços de verdade de data/races.json e data/classes.json —
@@ -484,7 +418,6 @@ def montar_contexto(
         f"{heroi.classe}: proficiências em {proficiencias_txt}"
     )
 
-    secao_campanha = contexto_campanha(heroi, w_state)
     progressao = painel_progressao(heroi, c_state)
     ficha_tatica = {campo: progressao[campo] for campo in ("estilo", "recurso", "habilidades")}
     cena_tatica = painel_cena(c_state, w_state)
@@ -493,13 +426,12 @@ def montar_contexto(
     {secao_tom_mestre(heroi.temperamento_mestre)}
     {secao_regras}
     {secao_memoria}
-    {secao_campanha}
     [HEROI] {heroi.nome} ({heroi.raca} {heroi.classe}) | HP: {heroi.hp_atual}/{heroi.hp_max} | \
 Ouro: {heroi.ouro}{secao_tracos}
     [PASSADO] Background: {heroi.background} | Objetivo: {heroi.objetivo} | \
 Alinhamento: {heroi.alinhamento}{historia_resumo}
     [INVENTÁRIO] {heroi.inventario}{secao_aliados}
-    [MISSÃO ATUAL] {q_state.nome_missao}: {q_state.objetivo_missao}{secao_ato}{secao_evento_global}
+    [MISSÃO ATUAL] {q_state.nome_missao}: {q_state.objetivo_missao}
     [CENA] {w_state.local} | {w_state.clima} | {motor.periodo_do_dia(w_state.hora_do_dia)}
     [MUNDO PERSISTENTE — INTENÇÕES PRIVADAS NÃO SÃO CONHECIMENTO DO HERÓI]
     {json.dumps(painel_mundo(w_state, heroi.classe, privado=True), ensure_ascii=False)}
@@ -556,7 +488,7 @@ Alinhamento: {heroi.alinhamento}{historia_resumo}
     "concluir_objetivo" — é a única forma de ele ganhar XP fora de combate.
     Se um NPC se junta de verdade à jornada do herói (não uma ajuda de
     passagem), chame "recrutar_aliado" — ele passa a acompanhar e lutar ao
-    lado do herói dali em diante.{aviso_ato} Se o jogador declarar que
+    lado do herói dali em diante. Se o jogador declarar que
     descansa, chame "descansar" (nunca cure PV narrando sozinho). Se o
     jogador usar um item/arma de forma criativa num teste de atributo (ex:
     um machado pesado pra arrombar uma porta), passe "item_usado" pra

@@ -203,7 +203,7 @@ def test_origens_reprodutiveis_sem_atos_obrigatorios(executor):
     a = criar_origem(executor.heroi, 5)
     assert a == criar_origem(executor.heroi, 5)
     assert a != criar_origem(executor.heroi, 6)
-    assert a["atos"] == []
+    assert "atos" not in a  # Fase 0 (ADR-0032): sem esqueleto de Atos
     assert a["objetivo_missao"] == executor.heroi.objetivo
     assert validar_mundo_inicial(a["mundo_inicial"], a["local_inicial"])
     with pytest.raises(ValueError):
