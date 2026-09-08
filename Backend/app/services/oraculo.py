@@ -24,6 +24,16 @@ _SEM_ORACULO = (
     "no servidor (GROQ_API_KEY ou GEMINI_API_KEY), ou tente de novo com sua própria chave."
 )
 
+# Espelha exatamente os 9 `value`s do <select> de Alinhamento em
+# CharacterCreation.tsx (Passo "Identidade") — não existe hoje um catálogo
+# compartilhado como races.json/classes.json para alinhamento, então mudar um
+# lado sem o outro faz a sugestão da IA não bater com nenhuma opção do select.
+_ALINHAMENTOS = [
+    "Neutro", "Leal e Bom", "Neutro e Bom", "Caótico e Bom",
+    "Leal e Neutro", "Caótico e Neutro",
+    "Leal e Mau", "Neutro e Mau", "Caótico e Mau",
+]
+
 
 def _chamar_com_ferramenta(
     prompt: str, schema: dict, nome_ferramenta: str, chamar_fn: Callable[..., Any] | None
@@ -117,8 +127,24 @@ _SCHEMA_ESCREVER_HISTORIA = {
                         "aparecer em todo turno do jogo, precisa caber sozinha sem cortar no meio."
                     ),
                 },
+                "alinhamento": {
+                    "type": "string",
+                    "enum": _ALINHAMENTOS,
+                    "description": (
+                        "O alinhamento moral do herói mais coerente com o conceito e as respostas dele. "
+                        "Escolha só entre os valores desta lista."
+                    ),
+                },
+                "objetivo": {
+                    "type": "string",
+                    "description": (
+                        "Uma frase curta (até ~15 palavras) com o que o herói busca agora, coerente com "
+                        "a história contada — vai para o campo Objetivo de Vida da ficha, que o jogador "
+                        "ainda pode editar depois."
+                    ),
+                },
             },
-            "required": ["historia_texto", "background", "resumo_historia"],
+            "required": ["historia_texto", "background", "resumo_historia", "alinhamento", "objetivo"],
         },
     },
 }
@@ -184,9 +210,17 @@ def escrever_historia(
     resumo = dados.get("resumo_historia")
     if not isinstance(resumo, str) or not resumo.strip():
         resumo = f"{historia[:117].rsplit(' ', 1)[0]}..."
+    alinhamento = dados.get("alinhamento")
+    if alinhamento not in _ALINHAMENTOS:
+        alinhamento = _ALINHAMENTOS[0]
+    objetivo = dados.get("objetivo")
+    if not isinstance(objetivo, str) or not objetivo.strip():
+        objetivo = "encontrar seu próprio caminho"
 
     return {
         "historia_texto": historia.strip()[:4000],
         "background": background.strip()[:500],
         "resumo_historia": resumo.strip()[:150],
+        "alinhamento": alinhamento,
+        "objetivo": objetivo.strip()[:500],
     }

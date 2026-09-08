@@ -34,3 +34,5 @@ class OraculoHistoriaResponse(BaseModel):
     historia_texto: str
     background: str
     resumo_historia: str
+    alinhamento: str
+    objetivo: str

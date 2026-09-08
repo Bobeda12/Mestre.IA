@@ -1440,7 +1440,7 @@ export default function GameChat() {
           com um véu de cor sutil em vez de arte de cenário nova (o jogo
           não tem nenhum fundo por local/bioma hoje — produzir isso é
           escopo de arte, não só de código; ver PLANO_REMASTER_UX.md §5). */}
-      <div className={`flex-1 flex flex-col relative bg-[#050505] ${horaDoDia != null ? `periodo-${periodoDoDia(horaDoDia).replace('ã', 'a')}` : ''}`}>
+      <div className={`flex-1 flex flex-col min-h-0 relative bg-[#050505] ${horaDoDia != null ? `periodo-${periodoDoDia(horaDoDia).replace('ã', 'a')}` : ''}`}>
         {/* Item 1+2 da rodada de polish pós-remaster — a faixa antiga de
             vitais (HP/nível/defesa) virou CabecalhoRegiao.tsx (Local/Clima
             + pílula de HP compacta): HP/XP/Ouro detalhados agora moram na
@@ -1671,30 +1671,32 @@ export default function GameChat() {
             continua vendo o palco, com o botão "Resistir" no lugar de
             "Atacar" (o próprio AdventureStage decide isso via `hp`). */}
         {!gameOver && (
-            <AdventureStage
-                nome={charName}
-                classe={charClass}
-                nivel={nivel}
-                hp={hpAtual}
-                hpMax={hpMax}
-                local={localAtual}
-                clima={climaAtual}
-                hora={horaDoDia}
-                combate={combatActive}
-                ocupado={loading || acaoTaticaEmCurso}
-                encerrado={gameOver}
-                cena={cena}
-                progressao={progressao}
-                marcos={marcos}
-                inimigos={enemies}
-                escondido={heroiEscondido}
-                bonusDefesa={heroiBonusCa}
-                danos={danosFlutuantes}
-                erro={erroAcao}
-                resultado={resultadoAcao}
-                aoAgir={aoAgir}
-                aoInspecionarHeroi={() => setFichaModalAberta(true)}
-            />
+            <div className="shrink-0 overflow-y-auto overscroll-contain max-h-[min(48vh,560px)]">
+                <AdventureStage
+                    nome={charName}
+                    classe={charClass}
+                    nivel={nivel}
+                    hp={hpAtual}
+                    hpMax={hpMax}
+                    local={localAtual}
+                    clima={climaAtual}
+                    hora={horaDoDia}
+                    combate={combatActive}
+                    ocupado={loading || acaoTaticaEmCurso}
+                    encerrado={gameOver}
+                    cena={cena}
+                    progressao={progressao}
+                    marcos={marcos}
+                    inimigos={enemies}
+                    escondido={heroiEscondido}
+                    bonusDefesa={heroiBonusCa}
+                    danos={danosFlutuantes}
+                    erro={erroAcao}
+                    resultado={resultadoAcao}
+                    aoAgir={aoAgir}
+                    aoInspecionarHeroi={() => setFichaModalAberta(true)}
+                />
+            </div>
         )}
 
         {/* Fase 1 (revisão de gameplay) — testes de morte visíveis: o herói
@@ -1894,7 +1896,7 @@ export default function GameChat() {
             de texto ficava acesa e clicável por cima do fundo escurecido
             enquanto a ficha estava aberta. `z-10` fica abaixo do backdrop
             (`z-40`) e da gaveta (`z-50`). */}
-        <div className="p-4 border-t border-gray-800 bg-gray-900 z-10 relative">
+        <div className="shrink-0 p-4 border-t border-gray-800 bg-gray-900 z-10 relative">
             {/* Fase 1 (revisão de gameplay) — sugestões extraídas da tag
                 [OPCOES]: preenchem a caixa, nunca enviam sozinhas. A caixa
                 de texto livre continua sendo o caminho principal — isto é

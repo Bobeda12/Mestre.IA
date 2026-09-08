@@ -215,11 +215,16 @@ def preparar_abertura(char: Any, semente: int | None = None) -> dict:
     ])
     passado = (getattr(char, "background", "") or "viajante").strip()
     objetivo = (getattr(char, "objetivo", "") or "encontrar seu próprio caminho").strip().rstrip(".")
-    historia = (getattr(char, "historia_texto", "") or "").strip()
-    lembranca = f' Você traz consigo esta lembrança: “{historia[:260].rsplit(" ", 1)[0] if len(historia) > 260 else historia}”.' if historia else ""
+    # Rodada de conserto - antes isto embutia um trecho cru de `historia_texto`
+    # entre aspas ("Voce traz consigo esta lembranca: '...'"), e o LLM do
+    # prologo (narrator.gerar_prologo_missao) recebe este dict inteiro como
+    # "abertura canonica" a preservar - o resultado era o modelo copiando a
+    # citacao ao pe da letra em vez de narrar a cena com as proprias palavras.
+    # `historia_texto` completo ja chega ao LLM separadamente, sem aspas, via
+    # `historia_extra` em narrator.py - nao precisa duplicar aqui.
     identidade = (
-        f"Você é {char.nome}, {char.raca} {char.classe}. Seu passado como {passado} trouxe você até aqui; "
-        f'sua busca continua sendo “{objetivo}”. {vinculo}{lembranca}'
+        f"Você é {char.nome}, {char.raca} {char.classe}. Seu passado como {passado} trouxe você até aqui, "
+        f"em busca de {objetivo}. {vinculo}"
     )
     chaves = [
         f"Início da campanha: {inicio['nome']} em {inicio['local']}.", vinculo,

@@ -211,6 +211,24 @@ export default function CharacterCreation({ onCharacterCreated }: CharacterCreat
       return [...new Set(pool)].sort((a, b) => b - a);
   };
 
+  // Visão geral do pool inteiro pro topo do Passo 5 ("Valores Disponíveis") —
+  // um chip por posição do pool (não deduplicado), marcando como "usado"
+  // tantas ocorrências de cada valor quantas já estão em `alocacao`. Mesmo
+  // cuidado com duplicatas de `opcoesParaAtributo`: dois "14" rolados viram
+  // dois chips "14" independentes.
+  const chipsDisponiveis = () => {
+      const usados: Record<number, number> = {};
+      for (const v of Object.values(alocacao)) {
+          if (v === null || v === undefined) continue;
+          usados[v] = (usados[v] ?? 0) + 1;
+      }
+      const contador: Record<number, number> = {};
+      return [...atributosDisponiveis].sort((a, b) => b - a).map((valor, idx) => {
+          contador[valor] = (contador[valor] ?? 0) + 1;
+          return { valor, usado: contador[valor] <= (usados[valor] ?? 0), key: `${valor}-${idx}` };
+      });
+  };
+
   const handleAlocacaoChange = (attr: string, valor: string) => {
       setAlocacao(prev => ({ ...prev, [attr]: valor === '' ? null : Number(valor) }));
   };
@@ -297,6 +315,8 @@ export default function CharacterCreation({ onCharacterCreated }: CharacterCreat
           setBackground(res.data.background);
           setHistory(res.data.historia_texto);
           setResumoHistoria(res.data.resumo_historia);
+          setGoal(res.data.objetivo);
+          setAlignment(res.data.alinhamento);
           setOraculoConfirmado(true);
       } catch {
           setOraculoErro("O Oráculo não conseguiu escrever a história agora. Tente de novo.");
@@ -564,6 +584,21 @@ export default function CharacterCreation({ onCharacterCreated }: CharacterCreat
             {/* PASSO 5: ATRIBUTOS (remaster — Matriz Clássica ou Rolar Dados, sem point-buy) */}
             {step === 5 && (
                 <div className="p-4 space-y-4 animate-fade-in">
+                    {!atributosRolando && (
+                        <div>
+                            <label className="text-rpg-gold font-rpg block mb-1">Valores Disponíveis</label>
+                            <div className="flex flex-wrap gap-2 justify-center bg-gray-900/50 p-2 border-2 border-gray-800">
+                                {chipsDisponiveis().map(c => (
+                                    <div key={c.key}
+                                        className={`w-10 h-10 flex items-center justify-center border-2 font-mono text-lg font-bold transition-colors ${
+                                            c.usado ? 'bg-black/40 border-gray-800 text-gray-600 line-through opacity-50'
+                                                     : 'bg-rpg-gold/10 border-rpg-gold text-rpg-gold'}`}>
+                                        {c.valor}
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
                     <div className="grid grid-cols-2 gap-2">
                         <button onClick={escolherMatrizClassica} className={`p-2 border-2 font-rpg text-sm transition-colors ${modoAtributos === 'classica' ? 'bg-rpg-gold/20 border-rpg-gold text-rpg-gold' : 'bg-black/50 border-gray-700 text-gray-300 hover:border-gray-500'}`}>Matriz Clássica</button>
                         <button onClick={rolarAtributos} disabled={atributosRolando} className={`p-2 border-2 font-rpg text-sm transition-colors flex items-center justify-center gap-1 ${modoAtributos === 'dados' ? 'bg-rpg-gold/20 border-rpg-gold text-rpg-gold' : 'bg-black/50 border-gray-700 text-gray-300 hover:border-gray-500'}`}>
@@ -610,7 +645,10 @@ export default function CharacterCreation({ onCharacterCreated }: CharacterCreat
 
             {/* PASSO 6: RESUMO */}
             {step === 6 && (<div className="p-6 h-full flex flex-col justify-center items-center text-center animate-fade-in"><PixelIcon name="coroa" size={48} className="mb-4 animate-pulse"/><h3 className="text-2xl font-rpg text-white mb-2">Destino Selado</h3><p className="text-gray-400 text-sm mb-8">Confirme os dados da ficha ao lado para iniciar.</p><PixelButton variant="dourado" onClick={handleFinish} disabled={loading} className="w-full py-5 text-lg flex items-center justify-center gap-3 hover:scale-105 mb-4">{loading ? "Iniciando..." : <>JOGAR AGORA <PixelIcon name="seta" /></>}</PixelButton><div className="flex flex-col items-center gap-3">
-                    <button onClick={() => setVariacao(v => v + 1)} className="text-gray-300 hover:text-rpg-gold flex items-center gap-2 text-sm font-rpg border-2 border-gray-700 hover:border-rpg-gold px-3 py-2 transition-colors"><PixelIcon name="dado" size={14}/> Gerar outro retrato</button>
+                    <div className="flex flex-col items-center gap-1">
+                        <button onClick={() => setVariacao(v => v + 1)} className="text-gray-300 hover:text-rpg-gold flex items-center gap-2 text-sm font-rpg border-2 border-gray-700 hover:border-rpg-gold px-3 py-2 transition-colors"><PixelIcon name="dado" size={14}/> Gerar outro retrato</button>
+                        <span className="text-[10px] text-gray-500">Pode levar alguns segundos para carregar</span>
+                    </div>
                     <button onClick={() => setStep(5)} className="text-gray-400 hover:text-rpg-gold flex items-center gap-2 text-sm underline decoration-gray-700 hover:decoration-rpg-gold"><PixelIcon name="seta" size={14} className="rotate-180"/> Editar Atributos</button>
                   </div></div>)}
         </div>
