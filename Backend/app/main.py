@@ -9,7 +9,7 @@ from slowapi.middleware import SlowAPIMiddleware
 
 from app.infra.rate_limit import limiter
 from app.infra.settings import settings
-from app.routers import auth, byok, character, game, options, personagens, regras
+from app.routers import auth, byok, character, game, options, oraculo, personagens, regras
 from app.routers.auth import ErroLogin
 
 # Sem isto, `logger.info(...)`/`logger.error(...)` de qualquer módulo da app
@@ -72,5 +72,6 @@ app.include_router(auth.router)
 app.include_router(byok.router)
 app.include_router(character.router)
 app.include_router(game.router)
+app.include_router(oraculo.router)
 app.include_router(personagens.router)
 app.include_router(regras.router)

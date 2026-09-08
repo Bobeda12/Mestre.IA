@@ -5,15 +5,18 @@ from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Request
 from fastapi.responses import StreamingResponse
+from sqlalchemy import func, update
 from sqlalchemy.orm import Session
 from starlette.background import BackgroundTask
 
+from app.domain.actions import GameAction
 from app.domain.character import LoadRequest, UserAction
+from app.domain.eventos import EventoRolagem
 from app.domain.memoria import ResumoRolante
 from app.domain.state import CombatState, QuestLog, WorldState
 from app.infra.byok import ChaveUsuario
 from app.infra.data_manager import regras
-from app.infra.db import Personagem, SessionLocal, Usuario, get_db
+from app.infra.db import EventoMemoria, Personagem, SessionLocal, Usuario, get_db
 from app.infra.llm_client import ErroMestre, chamar_com_fallback
 from app.infra.rate_limit import limiter
 from app.infra.settings import settings
@@ -21,6 +24,7 @@ from app.infra.tracing import medir, turno_span
 from app.services import combat, memory, rag_regras, rules_engine, telemetria
 from app.services.agent_loop import executar_turno, executar_turno_stream
 from app.services.auth import get_current_user, get_current_verified_user
+from app.services.encounters import painel_cena
 from app.services.guardrail import (
     corrigir_narrativa,
     extrair_opcoes,
@@ -30,6 +34,7 @@ from app.services.guardrail import (
 )
 from app.services.memory import contexto_recente
 from app.services.narrator import gerar_epitafio, montar_contexto
+from app.services.progression import migrar_progressao, painel_progressao
 from app.services.tools import ToolExecutor, sincronizar_aliados
 
 router = APIRouter(tags=["game"])
@@ -117,7 +122,15 @@ def _persistir_memoria_em_segundo_plano(
 
 
 def _resposta(heroi: Personagem, c_state: CombatState, q_state: QuestLog, **extra: object) -> dict:
+    mundo = WorldState.model_validate(heroi.world_state or {})
     return {
+        "progressao": painel_progressao(heroi, c_state),
+        "cena": painel_cena(c_state, mundo),
+        "marcos": mundo.marcos,
+        "local": mundo.local,
+        "clima": mundo.clima,
+        "turno_mundo": mundo.turno,
+        "hora_do_dia": mundo.hora_do_dia,
         "hp_atual": heroi.hp_atual,
         "hp_max": heroi.hp_max,
         "defesa": heroi.defesa,
@@ -221,6 +234,10 @@ def load_game(
     c_state = CombatState.model_validate(heroi.combat_state or {})
     w_state = WorldState.model_validate(heroi.world_state or {})
     q_state = QuestLog.model_validate(heroi.quest_log or {})
+    if w_state.versao_progressao < 1:
+        migrar_progressao(heroi, w_state)
+        heroi.world_state = w_state.model_dump()
+        db.commit()
 
     # Rodada de conserto (Parte 2, item G) — "Anteriormente…": três fatos do
     # resumo rolante (que já existe, Etapa 5) para o jogador que volta a uma
@@ -242,6 +259,102 @@ def load_game(
         # chat: recarregar uma partida deixava o jogador sem botões até
         # jogar uma vez. `opcoes_padrao` não depende de narração nenhuma.
         opcoes=opcoes_padrao(heroi, c_state),
+    )
+
+
+@router.post("/game/action")
+@limiter.limit("60/minute")
+def game_action(
+    request: Request,
+    action: GameAction,
+    current_user: Usuario = Depends(get_current_verified_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Um clique é uma ação resolvida pelo juiz; disponível mesmo sem conexão com o narrador."""
+    heroi = _buscar_personagem(db, current_user, action.session_id, "Sessão não encontrada.")
+    w_state = WorldState.model_validate(heroi.world_state or {})
+    c_state = CombatState.model_validate(heroi.combat_state or {})
+    q_state = QuestLog.model_validate(heroi.quest_log or {})
+    if action.turno_esperado != w_state.turno:
+        raise HTTPException(status_code=409, detail="A rodada mudou. Atualize a partida antes de agir novamente.")
+    if c_state.resultado == "morte":
+        raise HTTPException(status_code=409, detail="Esta jornada terminou.")
+    if heroi.hp_atual <= 0 and action.acao != "resistir":
+        raise HTTPException(status_code=400, detail="Você está caído. Use Resistir para lutar pela vida.")
+    if action.alvo and action.alvo not in {i.nome for i in c_state.inimigos if i.hp > 0}:
+        raise HTTPException(status_code=400, detail="Escolha um inimigo vivo como alvo.")
+
+    migrar_progressao(heroi, w_state)
+    executor = ToolExecutor(heroi, c_state, w_state, q_state)
+    if action.acao == "resistir":
+        if heroi.hp_atual > 0:
+            raise HTTPException(status_code=400, detail="Você está consciente e pode agir normalmente.")
+        eventos, heroi.hp_atual = combat.turno_morte(c_state)
+        executor.eventos.extend(eventos)
+        if c_state.resultado == "morte":
+            # O comando direto não chama a IA para produzir um epitáfio.
+            heroi.morto_em = datetime.now(UTC)
+            heroi.pontuacao_final = (heroi.xp or 0) + w_state.turno + sum(
+                (heroi.monstros_derrotados or {}).values()
+            ) * 10
+            heroi.epitafio = {
+                "retrospectiva": " ".join(w_state.marcos[-3:]) or f"{heroi.nome} lutou por {heroi.objetivo}.",
+                "epitafio_curto": f"Aqui termina a jornada de {heroi.nome}. Suas escolhas permanecem.",
+            }
+    else:
+        argumentos: dict = {}
+        if action.acao in {"atacar", "investir"}:
+            if not action.alvo:
+                raise HTTPException(status_code=400, detail="Selecione quem deseja atacar.")
+            argumentos = {"alvo": action.alvo}
+        elif action.acao == "usar_habilidade":
+            argumentos = {"habilidade": action.habilidade or "", "alvo": action.alvo}
+        elif action.acao == "interagir":
+            argumentos = {"interacao": action.interacao or ""}
+        elif action.acao == "descansar":
+            argumentos = {"tipo": action.tipo}
+        elif action.acao == "usar_item":
+            argumentos = {"item": action.item or ""}
+        resultado, sucesso = executor.executar(action.acao, json.dumps(argumentos, ensure_ascii=False))
+        if not sucesso:
+            db.rollback()
+            raise HTTPException(status_code=400, detail=resultado.get("erro", "A ação não pôde ser concluída."))
+
+    w_state.turno += 1
+    narrativa = "\n".join(str(e) for e in executor.eventos)
+    rotulo = action.habilidade or action.interacao or action.item or action.acao.replace("_", " ")
+    texto_acao = f"{rotulo}{f' → {action.alvo}' if action.alvo else ''}"
+    heroi.historico_chat = [*(heroi.historico_chat or []),
+                           {"role": "user", "content": texto_acao},
+                           {"role": "assistant", "content": narrativa}]
+    sincronizar_aliados(heroi, c_state)
+    heroi.combat_state = c_state.model_dump()
+    heroi.quest_log = q_state.model_dump()
+
+    # Compare-and-swap funciona também em SQLite: um clique repetido jamais resolve duas rodadas.
+    with db.no_autoflush:
+        confirmado = db.execute(
+            update(Personagem).where(
+                Personagem.id == heroi.id,
+                func.coalesce(Personagem.world_state["turno"].as_integer(), 1) == action.turno_esperado,
+            ).values(world_state=w_state.model_dump()).execution_options(synchronize_session=False)
+        )
+        if confirmado.rowcount != 1:  # type: ignore[attr-defined]
+            db.rollback()
+            raise HTTPException(status_code=409, detail="Esta ação já foi resolvida. Atualize a partida.")
+    heroi.world_state = w_state.model_dump()
+    # Fato recuperável por BM25 sem exigir embedding ou cota de IA a cada clique.
+    db.add(EventoMemoria(
+        personagem_id=heroi.id, turno=w_state.turno, tipo="acao_jogo",
+        texto=f"{texto_acao}: {narrativa}"[:2500],
+        personagens_citados=[i.nome for i in c_state.inimigos], embedding=[],
+    ))
+    db.commit()
+    return _resposta(
+        heroi, c_state, q_state, narrativa=narrativa,
+        eventos_estruturados=[e.dados.to_dict() for e in executor.eventos
+                             if isinstance(e, EventoRolagem) and e.dados is not None],
+        opcoes=opcoes_padrao(heroi, c_state), turno_index=len(heroi.historico_chat) - 1,
     )
 
 
@@ -272,6 +385,7 @@ async def chat_endpoint(
     # como `turno_mundo`, fazendo o HUD mostrar uma contagem que o banco
     # nunca teve.
     turno_mundo_persistido = w_state.turno
+    migrar_progressao(heroi, w_state)
     w_state.turno += 1
     hist = contexto_recente(list(heroi.historico_chat), n=4)
 
@@ -455,6 +569,7 @@ def chat_stream_endpoint(
     # Ver a mesma nota em `chat_endpoint` — o incremento só é persistido
     # perto do fim; os frames de erro abaixo reportam o valor de antes.
     turno_mundo_persistido = w_state.turno
+    migrar_progressao(heroi, w_state)
     w_state.turno += 1
     hist = contexto_recente(list(heroi.historico_chat), n=4)
 

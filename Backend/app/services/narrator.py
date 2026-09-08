@@ -11,9 +11,39 @@ from app.infra.db import Personagem
 from app.infra.llm_client import ErroMestre
 from app.infra.settings import settings
 from app.services import rules_engine as motor
+from app.services.adventure import contexto_campanha, preparar_abertura
+from app.services.encounters import painel_cena
+from app.services.progression import painel_progressao
 from app.services.tools import RELOGIO_MAXIMO, RELOGIO_URGENCIA
 
 __all__ = ["ErroMestre", "chamar_mestre", "gerar_cronica", "gerar_epitafio", "gerar_prologo_missao", "montar_contexto"]
+
+
+# Remaster da criação de personagem (Fase 1) — escolha do Passo 0 do wizard.
+# Só muda o ESTILO de escrita aqui; o efeito mecânico da dificuldade (CD
+# efetiva) é decidido pelo servidor em rules_engine.ajustar_cd_por_dificuldade,
+# nunca só pelo prompt (ADR-0006).
+TEMPERAMENTO_INSTRUCAO: dict[str, str] = {
+    "Justo": (
+        "Trate consequências com equilíbrio: nem puna demais, nem poupe o jogador — "
+        "o mundo reage de forma justa às escolhas dele, boas e más."
+    ),
+    "Implacável": (
+        "Não suavize falhas: erros custam caro, o perigo de verdade é real e a morte "
+        "é uma possibilidade concreta, não um susto de mentira. As consequências são "
+        "duras, mas sempre justas às regras — nunca arbitrárias ou cruéis por capricho."
+    ),
+    "Épico": (
+        "Escreva num tom grandioso e dramático: cada ação do herói ganha peso mítico, "
+        "como a lenda que ele está se tornando. Mesmo uma cena pequena merece um "
+        "momento de grandiosidade."
+    ),
+}
+
+
+def secao_tom_mestre(temperamento: str) -> str:
+    instrucao = TEMPERAMENTO_INSTRUCAO.get(temperamento, TEMPERAMENTO_INSTRUCAO["Justo"])
+    return f"[TOM DO MESTRE] {instrucao}"
 
 
 def chamar_mestre(msgs: list[dict], chamar_fn: Callable[..., Any] | None = None) -> dict:
@@ -44,7 +74,7 @@ def chamar_mestre(msgs: list[dict], chamar_fn: Callable[..., Any] | None = None)
 
     try:
         return json.loads(resp.choices[0].message.content)
-    except (json.JSONDecodeError, AttributeError) as e:
+    except (json.JSONDecodeError, AttributeError, TypeError, IndexError) as e:
         raise ErroMestre("O mestre respondeu num formato que não consegui entender.") from e
 
 
@@ -59,47 +89,38 @@ ATOS_PADRAO = [
 ]
 
 
-def _validar_atos(bruto: object) -> list[dict]:
+def _validar_atos(bruto: object, padrao: list[dict] | None = None) -> list[dict]:
     """`atos` só é aceito se vier no formato exato — uma lista de 3 a 5
     dicts com `titulo` e `objetivo`, ambos string não-vazia. Qualquer
     desvio (campo faltando, tipo errado, lista vazia ou gigante) cai pro
     esqueleto padrão — mesma fronteira de confiança do `local_inicial`."""
+    padrao = ATOS_PADRAO if padrao is None else padrao
     if not isinstance(bruto, list) or not (3 <= len(bruto) <= 5):
-        return ATOS_PADRAO
+        return [ato.copy() for ato in padrao]
     atos = []
     for item in bruto:
         if not isinstance(item, dict):
-            return ATOS_PADRAO
+            return [ato.copy() for ato in padrao]
         titulo, objetivo = item.get("titulo"), item.get("objetivo")
         if not isinstance(titulo, str) or not titulo.strip() or not isinstance(objetivo, str) or not objetivo.strip():
-            return ATOS_PADRAO
+            return [ato.copy() for ato in padrao]
         atos.append({"titulo": titulo, "objetivo": objetivo})
     return atos
 
 
-def gerar_prologo_missao(char: CharacterCreationRequest, chamar_fn: Callable[..., Any] | None = None) -> dict:
-    # Etapa 11 (B-7, resolve P-5) — o local sempre vem do catálogo real
-    # (data/locations.json), nunca inventado. `mover` (services/tools.py)
-    # já validava contra esse catálogo; até aqui só o prólogo escapava
-    # dessa regra, porque criava o herói ANTES de qualquer ferramenta
-    # existir. "Vila de Phandalin" é o default determinístico — um vilarejo
-    # é o único tipo de local aqui que faz sentido como ponto de partida
-    # neutro, sem pressupor perigo imediato nem viagem já em andamento.
+def gerar_prologo_missao(
+    char: CharacterCreationRequest, chamar_fn: Callable[..., Any] | None = None, *, semente: int | None = None
+) -> dict:
+    # A abertura já é jogável sem IA. A mesma premissa permanece se uma
+    # chamada falhar; lugares novos só entram no mundo com uma descrição.
     locais_validos = regras.get_locations_list()
-    local_padrao = "Vila de Phandalin" if "Vila de Phandalin" in locais_validos else locais_validos[0]
+    abertura = preparar_abertura(char, semente)
+    local_padrao = abertura["local_inicial"]
 
     # BYOK (rodada de conserto) — com a chave do jogador, `chamar_clients`
     # do servidor pode estar vazio e mesmo assim o prólogo funciona.
     if chamar_fn is None and not llm_client.clients:
-        return {
-            "local_inicial": local_padrao,
-            "local_inicial_descricao": None,
-            "clima_inicial": "Nublado",
-            "nome_missao": "Jornada Inicial",
-            "objetivo_missao": "Chegar à cidade.",
-            "intro_narrativa": f"{char.nome} inicia sua jornada na estrada.",
-            "atos": ATOS_PADRAO,
-        }
+        return abertura
 
     tem_historia = char.historia_texto.strip()
     historia_extra = f"\n    História contada pelo próprio jogador: {char.historia_texto}" if tem_historia else ""
@@ -113,9 +134,20 @@ def gerar_prologo_missao(char: CharacterCreationRequest, chamar_fn: Callable[...
     prompt = f"""
     {regras.get_biblia()}
 
+    {secao_tom_mestre(char.temperamento_mestre)}
+
     Crie o prólogo de {char.nome} ({char.raca} {char.classe}) — a primeira cena que
     ele vive, e a primeira coisa que o jogador vai ler no jogo.
     Passado: {char.background} | Objetivo: {char.objetivo} | Alinhamento: {char.alinhamento}{historia_extra}
+
+    [ABERTURA ESCOLHIDA E CANÔNICA]
+    {json.dumps(abertura, ensure_ascii=False)}
+    Preserve a situação, o local, os nomes, os vínculos e o dilema desta abertura.
+    Enriqueça a prosa e conecte as pistas ao passado declarado, sem reescrever a biografia
+    do jogador. A semente já decidiu as pessoas; não substitua a cena por uma taverna.
+    O campo direcao contém intenções privadas: sugira por comportamento, nunca revele
+    segredos na abertura. Não presuma que o jogador aceitou uma missão ou fez uma escolha.
+    As três opções devem expressar abordagens diferentes, sem fechar a entrada livre.
 
     O prólogo começa 'in media res' (já na ação), conectado ao passado dele{conexao}.
     Siga [A VOZ DO MESTRE] da bíblia acima, mas trate isto como um [MOMENTO DE ALTO
@@ -131,6 +163,10 @@ def gerar_prologo_missao(char: CharacterCreationRequest, chamar_fn: Callable[...
     lista, só o Ato atual, um de cada vez). Cada Ato é um passo maior que
     "nome_missao"/"objetivo_missao" (ex: Ato 1 pode conter várias missões
     miúdas dentro dele). Ligue os Atos ao objetivo e ao passado do herói.
+    Os Atos são perguntas dramáticas abertas: contenha disputas de interesses,
+    vínculos que mudam por escolhas e consequências, não uma sequência de vitórias
+    obrigatórias. Resolver por negociação, resgate, exposição ou fuga deve abrir uma
+    continuação válida. Nunca exija matar um NPC para a história prosseguir.
 
     Responda APENAS JSON:
     {{
@@ -140,6 +176,7 @@ def gerar_prologo_missao(char: CharacterCreationRequest, chamar_fn: Callable[...
         "nome_missao": "Título da Missão Atual",
         "objetivo_missao": "O que ele deve fazer agora (curto)",
         "intro_narrativa": "Texto narrativo de 3 parágrafos imersivos.",
+        "opcoes": ["Ação concreta 1", "Ação concreta 2", "Ação concreta 3"],
         "atos": [
             {{"titulo": "Nome curto do Ato 1", "objetivo": "O que precisa acontecer para ele terminar"}},
             {{"titulo": "Nome curto do Ato 2", "objetivo": "..."}},
@@ -151,15 +188,14 @@ def gerar_prologo_missao(char: CharacterCreationRequest, chamar_fn: Callable[...
         roteiro = chamar_mestre([{"role": "user", "content": prompt}], chamar_fn=chamar_fn)
     except ErroMestre as e:
         print("ERRO NO PRÓLOGO:", e.mensagem)
-        return {
-            "local_inicial": local_padrao,
-            "local_inicial_descricao": None,
-            "clima_inicial": "Chuvoso",
-            "nome_missao": "Desconhecido",
-            "objetivo_missao": "Sobreviver",
-            "intro_narrativa": "Você acorda...",
-            "atos": ATOS_PADRAO,
-        }
+        return abertura
+
+    if not isinstance(roteiro, dict):
+        return abertura
+    # Uma resposta truncada nunca produz campanha com título/local/texto ausentes.
+    campos_texto = ("local_inicial", "clima_inicial", "nome_missao", "objetivo_missao", "intro_narrativa")
+    if any(not isinstance(roteiro.get(campo), str) or not roteiro[campo].strip() for campo in campos_texto):
+        return abertura
 
     # A instrução acima é a primeira linha (ADR-0002); esta checagem é a
     # que vale — pedir com educação não impede o modelo de inventar um
@@ -181,10 +217,19 @@ def gerar_prologo_missao(char: CharacterCreationRequest, chamar_fn: Callable[...
             roteiro["local_inicial_descricao"] = descricao_local_novo.strip()
         else:
             roteiro["local_inicial"] = local_padrao
-            roteiro["local_inicial_descricao"] = None
+            roteiro["local_inicial_descricao"] = abertura["local_inicial_descricao"]
     else:
         roteiro["local_inicial_descricao"] = None
-    roteiro["atos"] = _validar_atos(roteiro.get("atos"))
+    roteiro["atos"] = _validar_atos(roteiro.get("atos"), abertura["atos"])
+    opcoes = roteiro.get("opcoes")
+    if not isinstance(opcoes, list) or len(opcoes) != 3 or any(
+        not isinstance(opcao, str) or not opcao.strip() or len(opcao) > 160 for opcao in opcoes
+    ):
+        roteiro["opcoes"] = abertura["opcoes"]
+    # Identidade/seed são do servidor; não aceite uma campanha diferente vinda do modelo.
+    for campo in ("inicio_aventura", "semente_aventura", "hora_do_dia", "chaves", "direcao"):
+        roteiro[campo] = abertura[campo]
+    roteiro["chaves"][0] = f"Início da campanha: {abertura['nome_missao']} em {roteiro['local_inicial']}."
     return roteiro
 
 
@@ -389,7 +434,17 @@ def montar_contexto(
     O servidor confirma que os nomes existem antes de criar o combate.
     [DESAFIO SUGERIDO] Para o nível do herói, prefira: {json.dumps(monstros_sugeridos, ensure_ascii=False)}."""
 
-    historia_resumo = f" | História: {heroi.historia_texto[:150]}..." if heroi.historia_texto else ""
+    # Remaster da criação de personagem (Fase 2/4) — antes disto, cortava
+    # historia_texto nos primeiros 150 caracteres, no meio de uma frase
+    # qualquer, todo turno. `resumo_historia` é uma frase-gancho pensada
+    # pra isso (gerada pelo Oráculo, services/oraculo.py); sem ela, cai
+    # para um corte limpo por palavra, não por caractere cru.
+    if heroi.resumo_historia:
+        historia_resumo = f" | História: {heroi.resumo_historia}"
+    elif heroi.historia_texto:
+        historia_resumo = f" | História: {heroi.historia_texto[:150].rsplit(' ', 1)[0]}..."
+    else:
+        historia_resumo = ""
 
     # Fase 3 da revisão de gameplay (Etapa 12/13, ADR-0027) — companheiros
     # recrutados são parte da cena o tempo todo, não só em combate: o
@@ -453,9 +508,16 @@ def montar_contexto(
         f"{heroi.classe}: proficiências em {proficiencias_txt}"
     )
 
+    secao_campanha = contexto_campanha(heroi, w_state)
+    progressao = painel_progressao(heroi, c_state)
+    ficha_tatica = {campo: progressao[campo] for campo in ("estilo", "recurso", "habilidades")}
+    cena_tatica = painel_cena(c_state, w_state)
+
     return f"""
+    {secao_tom_mestre(heroi.temperamento_mestre)}
     {secao_regras}
     {secao_memoria}
+    {secao_campanha}
     [HEROI] {heroi.nome} ({heroi.raca} {heroi.classe}) | HP: {heroi.hp_atual}/{heroi.hp_max} | \
 Ouro: {heroi.ouro}{secao_tracos}
     [PASSADO] Background: {heroi.background} | Objetivo: {heroi.objetivo} | \
@@ -464,6 +526,35 @@ Alinhamento: {heroi.alinhamento}{historia_resumo}
     [MISSÃO ATUAL] {q_state.nome_missao}: {q_state.objetivo_missao}{secao_ato}{secao_evento_global}
     [CENA] {w_state.local} | {w_state.clima} | {motor.periodo_do_dia(w_state.hora_do_dia)}
     {secao_combate}
+
+    [TÉCNICAS DA CLASSE] {json.dumps(ficha_tatica, ensure_ascii=False)}
+    [CENÁRIO INTERATIVO] {json.dumps(cena_tatica, ensure_ascii=False)}
+    Se a intenção corresponder a uma técnica, use "usar_habilidade" com o id
+    exato e um alvo válido. Respeite nível, Foco e disponibilidade; nunca invente
+    técnicas nem efeitos. Use "interagir_cenario" com o id de uma interação
+    disponível quando a intenção for cobertura, resgate, mecanismo ou negociação.
+    Mostre oportunidades do terreno e a intenção anunciada de cada inimigo antes
+    da próxima escolha. Objetivos de cenário podem encerrar o conflito com inimigos vivos.
+    Uma decisão do jogador corresponde a uma ação principal de combate; não use
+    uma técnica e um ataque adicional na mesma rodada. A reação inimiga é do motor.
+
+    [ESCOLHAS E CONSEQUÊNCIAS]
+    O herói decide intenções e valores; nunca narre que ele aceita, perdoa, mata ou
+    sente algo que o jogador não escolheu. As opções são sugestões; acolha ações livres.
+    Diferencie falha de bloqueio: uma falha pode custar tempo, posição, confiança ou
+    recursos e abrir outra pista. Não repita o mesmo teste até o jogador conseguir.
+    Ofereça pistas essenciais por pelo menos dois caminhos plausíveis; uma porta
+    trancada nunca deve paralisar toda a história. Antecipe riscos perceptíveis antes
+    da decisão e use somente as ferramentas para aplicar custos mecânicos reais.
+    Consulte memórias, reputação e promessas: um NPC lembra de quem o ajudou ou feriu,
+    negocia conforme sua agenda e pode discordar sem virar inimigo. Não revele seus
+    segredos antes que ações ou evidências justifiquem a descoberta. Um aliado pode
+    recusar um pedido sem trair o herói. Fatos e escolhas registrados vencem o roteiro.
+    Varie cenas entre descoberta, vínculo, dilema, tensão, resgate e confronto; não
+    transforme toda pista em emboscada. Um combate pode proteger, interromper, fugir
+    ou convencer: matar todos nunca é a única condição narrativa de resolução.
+    Respeite a decisão de poupar e a rendição quando fizerem sentido. Nunca invente
+    recompensa, combate, item, inimigo ou habilidade fora das ferramentas disponíveis.
 
     Você tem ferramentas para agir no mundo (dano, item, ouro, movimento,
     teste de atributo, consulta de regra, atualizar missão, concluir objetivo,

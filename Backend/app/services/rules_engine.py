@@ -28,14 +28,17 @@ PONTOS_DISPONIVEIS = 27
 # bônus de proficiência correspondente. A campanha é curta (o bestiário só
 # tem monstros de nível 1 e um chefe) e enxuta (decisão de escopo "D&D 5e
 # enxuto", PLANO_MESTRE.md §9): fica em 1–5, não os 20 níveis do livro.
-XP_POR_NIVEL: dict[int, int] = {1: 0, 2: 300, 3: 900, 4: 2700, 5: 6500}
+XP_POR_NIVEL: dict[int, int] = {
+    1: 0, 2: 100, 3: 240, 4: 420, 5: 650,
+    6: 930, 7: 1260, 8: 1640, 9: 2070, 10: 2550,
+}
 NIVEL_MAXIMO = max(XP_POR_NIVEL)
 
 
 def bonus_proficiencia(nivel: int) -> int:
     """SRD 5e: +2 do nível 1 ao 4, +3 a partir do 5 (a tabela real vai até
     +6 no nível 17; truncada aqui porque `NIVEL_MAXIMO` já para no 5)."""
-    return 3 if nivel >= 5 else 2
+    return 2 + (max(1, min(nivel, NIVEL_MAXIMO)) - 1) // 4
 
 _PADRAO_DADO = _re.compile(r"^(\d+)d(\d+)([+-]\d+)?$")
 _PADRAO_ATAQUE_MONSTRO = _re.compile(r"^(.*?)\s*\(([+-]\d+)\s*para acertar,\s*([^)]+?)\s*dano\)$")
@@ -261,6 +264,11 @@ BANDA_POR_NIVEL: dict[int, list[str]] = {
     3: ["Nivel_2", "Nivel_3"],
     4: ["Nivel_3", "Nivel_4"],
     5: ["Nivel_4", "Chefe"],
+    6: ["Nivel_4", "Chefe"],
+    7: ["Nivel_4", "Chefe"],
+    8: ["Chefe"],
+    9: ["Chefe"],
+    10: ["Chefe"],
 }
 
 
@@ -296,3 +304,53 @@ def validar_point_buy(valores: dict[str, int]) -> None:
         custo_total += CUSTO_PONTOS[valor]
     if custo_total > PONTOS_DISPONIVEIS:
         raise ValueError(f"point-buy gastaria {custo_total} pontos; o limite é {PONTOS_DISPONIVEIS}")
+
+
+# Remaster da criação de personagem — o point-buy matemático saiu; o
+# jogador agora aloca ou a Matriz Clássica (fixa) ou um conjunto rolado no
+# servidor (services/geracao_atributos.py garante que o rolado realmente
+# veio daqui, via token assinado). Aqui só valida a FORMA: as seis chaves
+# certas, e o multiset de valores batendo com um dos dois conjuntos
+# permitidos — nunca confiar no cliente para dizer "os valores são esses".
+MATRIZ_CLASSICA = [15, 14, 13, 12, 10, 8]
+
+
+def rolar_atributos_4d6(rng: random.Random | None = None) -> list[int]:
+    """Um atributo: rola 4d6, descarta o menor dado. Chamado 6× por
+    `gerar_atributos_dados` — mantido separado porque é a unidade que os
+    testes/evals mais precisam conferir isoladamente."""
+    dado = rng or random
+    quatro = sorted(dado.randint(1, 6) for _ in range(4))
+    return sum(quatro[1:])
+
+
+def gerar_atributos_dados(rng: random.Random | None = None) -> list[int]:
+    """Os seis valores da rolagem (Fase 3 do remaster) — ordem não importa,
+    quem chama decide como oferecer para o jogador alocar."""
+    return [rolar_atributos_4d6(rng) for _ in range(6)]
+
+
+def validar_atributos_gerados(valores: dict[str, int], conjunto_permitido: list[int]) -> None:
+    """Levanta ValueError se `valores` não é as seis chaves certas com uma
+    permutação exata de `conjunto_permitido` (a Matriz Clássica ou os
+    valores do token assinado, dependendo do modo — ver
+    domain/character.py)."""
+    if set(valores.keys()) != ATRIBUTOS_VALIDOS:
+        raise ValueError(f"atributos precisa ter exatamente as chaves {sorted(ATRIBUTOS_VALIDOS)}")
+    if sorted(valores.values()) != sorted(conjunto_permitido):
+        raise ValueError(
+            f"os valores {sorted(valores.values())} não são uma realocação de {sorted(conjunto_permitido)}"
+        )
+
+
+# Remaster da criação de personagem — Passo 0 do wizard escolhe uma
+# "dificuldade" (Normal/Difícil) que precisa mexer em número de verdade, não
+# só no tom do prompt (isso o narrador.py já faz sozinho). O ajuste vive
+# aqui, não em tools.py, pelo mesmo motivo de `desafio_sugerido`: é o juiz
+# que decide o número, o modelo só propõe a CD "base" (ADR-0006).
+AJUSTE_CD_DIFICIL = 2
+
+
+def ajustar_cd_por_dificuldade(cd: int, dificuldade: str) -> int:
+    ajuste = AJUSTE_CD_DIFICIL if dificuldade == "Difícil" else (-2 if dificuldade == "História" else 0)
+    return max(3, min(30, cd + ajuste))

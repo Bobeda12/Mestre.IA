@@ -99,9 +99,15 @@ export default function FichaModal({
               <p className="text-sm text-rpg-dark leading-relaxed"><span className="font-bold">Objetivo:</span> {objetivo}</p>
             )}
             {historia && (
-              <div className="border-t-2 border-rpg-dark/20 pt-3">
+              <div className="border-t-2 border-rpg-dark/20 pt-3 space-y-2">
                 <h3 className="text-[10px] uppercase tracking-widest text-rpg-dark/60 font-rpg mb-1">História</h3>
-                <p className="text-sm text-rpg-dark/80 italic leading-relaxed">{historia}</p>
+                {/* Remaster da criação (Fase 4) — o documento do Oráculo vem
+                    em parágrafos (\n\n), não como um bloco só; texto manual
+                    (sem Oráculo) continua funcionando igual, vira um
+                    parágrafo único. */}
+                {historia.split(/\n{2,}/).map((paragrafo, i) => (
+                  <p key={i} className="text-sm text-rpg-dark/80 italic leading-relaxed">{paragrafo}</p>
+                ))}
               </div>
             )}
           </div>

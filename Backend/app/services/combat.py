@@ -14,6 +14,7 @@ from app.domain.eventos import DadosRolagem, EventoRolagem, EventoStatus
 from app.domain.state import Aliado, CombatState, Inimigo
 from app.infra.data_manager import regras
 from app.services import rules_engine as motor
+from app.services.class_abilities import CONJURADORES, limite_foco, perfil_classe
 
 NOME_ARMA_DESARMADA = "Ataque Desarmado"
 _ARMA_DESARMADA = {"dano": "1d1", "propriedades": []}
@@ -62,6 +63,8 @@ def _criar_inimigo(nome: str, nome_exibicao: str | None = None) -> Inimigo | Non
     nome_ataque, bonus, dano_dado = motor.parse_ataque_monstro(dados["ataque"])
     return Inimigo(
         nome=nome_exibicao or nome,
+        arquetipo=nome,
+        xp=dados.get("xp", 0),
         hp=dados["hp"],
         max_hp=dados["hp"],
         ca=dados["ac"],
@@ -101,14 +104,21 @@ def iniciar_combate(
     # iniciativa abaixo precisa da destreza do arquétipo de verdade, não
     # de um nome inventado que não existe em data/monsters.json.
     pares: list[tuple[Inimigo, str]] = []
-    for nome_proposto in nomes_propostos:
-        if regras.get_monster(nome_proposto):
+    bandas = motor.desafio_sugerido(nivel_heroi)
+    candidatos = [c for banda in bandas for c in regras.get_monstros_por_banda(banda)]
+    # Encontros solo curtos: orçamento impede tropas inteiras ou chefes
+    # fora da faixa, mesmo quando o narrador propõe um nome válido.
+    limite = min(3, 1 + nivel_heroi // 3)
+    orcamento = 75 + nivel_heroi * 100
+    for nome_proposto in nomes_propostos[:limite]:
+        nome_proposto = str(nome_proposto).strip()[:80]
+        if not nome_proposto:
+            continue
+        if regras.get_monster(nome_proposto) and nome_proposto in candidatos:
             inimigo = _criar_inimigo(nome_proposto)
             if inimigo:
                 pares.append((inimigo, nome_proposto))
             continue
-        bandas = motor.desafio_sugerido(nivel_heroi)
-        candidatos = [c for banda in bandas for c in regras.get_monstros_por_banda(banda)]
         if not candidatos:
             continue
         arquetipo = dado.choice(candidatos)
@@ -124,8 +134,28 @@ def iniciar_combate(
             if escolhido:
                 pares = [(escolhido, escolhido_nome)]
 
+    selecionados = []
+    custo = 0
+    for inimigo, arquetipo in pares:
+        if selecionados and custo + inimigo.xp > orcamento:
+            continue
+        custo += inimigo.xp
+        selecionados.append((inimigo, arquetipo))
+    pares = selecionados
+    contagens: dict[str, int] = {}
+    for inimigo, _ in pares:
+        contagens[inimigo.nome] = contagens.get(inimigo.nome, 0) + 1
+        if contagens[inimigo.nome] > 1:
+            inimigo.nome += f" {contagens[inimigo.nome]}"
+        # O bestiário termina no nível 5; elites escalam até 10 sem perder a identidade.
+        escala = max(0, nivel_heroi - 5)
+        inimigo.hp += escala * 5
+        inimigo.max_hp = inimigo.hp
+        inimigo.bonus_ataque += escala // 2
+        inimigo.intencao = intencao_inimiga(inimigo, 1)
     inimigos = [i for i, _ in pares]
-    c_state = CombatState(ativo=True, inimigos=inimigos)
+    foco = limite_foco(nivel_heroi)
+    c_state = CombatState(ativo=bool(inimigos), inimigos=inimigos, foco=foco, foco_max=foco)
     if not inimigos:
         return c_state, ["A cena não tinha um monstro reconhecível no bestiário — combate não iniciado."], 0
 
@@ -182,6 +212,7 @@ def turno_jogador(
     nivel: int = 1,
     vantagem: bool | None = None,
     investida: bool = False,
+    classe: str | None = None,
 ) -> list[str]:
     """Resolve o ataque do jogador contra um inimigo vivo, mutando
     `c_state.inimigos` in place (mesmo padrão de reatribuição de coluna JSON
@@ -198,13 +229,25 @@ def turno_jogador(
     alvo = next((i for i in vivos if i.nome == alvo_proposto), vivos[0])
     nome_arma, dados_arma = escolher_arma(inventario, arma_proposta)
     mod_atributo, attr_usado = _mod_para_arma(atributos_heroi, dados_arma.get("propriedades", []))
+    if classe in CONJURADORES and arma_proposta is None:
+        attr_usado = perfil_classe(classe)["atributo"]
+        mod_atributo = motor.calcular_modificador(atributos_heroi.get(attr_usado, 10))
+        nome_arma, dados_arma = "Pulso " + ("sagrado" if classe == "Clérigo" else "mágico"), {"dano": "1d6"}
+    elif classe == "Monge" and arma_proposta is None:
+        attr_usado = "destreza"
+        mod_atributo = motor.calcular_modificador(atributos_heroi.get(attr_usado, 10))
+        nome_arma, dados_arma = "Artes marciais", {"dano": "1d6"}
+    if c_state.efeitos_heroi.get("precisao", 0):
+        vantagem = _combinar_vantagem(vantagem, True)
+        c_state.efeitos_heroi.pop("precisao", None)
     prof = motor.bonus_proficiencia(nivel)
     bonus_ataque = prof + mod_atributo + (-2 if investida else 0)
 
-    resultado = motor.resolver_ataque(bonus_ataque, alvo.ca, rng, vantagem=vantagem)
+    ca_alvo = alvo.ca - (2 if alvo.efeitos.get("vulneravel", 0) else 0)
+    resultado = motor.resolver_ataque(bonus_ataque, ca_alvo, rng, vantagem=vantagem)
     linha = (
         f"🎲 Você {'investe contra' if investida else 'ataca'} {alvo.nome} com {nome_arma}: "
-        f"d20({resultado.rolagem})+{bonus_ataque}={resultado.total} vs CA {alvo.ca} → "
+        f"d20({resultado.rolagem})+{bonus_ataque}={resultado.total} vs CA {ca_alvo} → "
     )
     partes_bonus = [
         {"rotulo": motor.ATRIBUTO_LABEL[attr_usado], "valor": mod_atributo},
@@ -214,7 +257,7 @@ def turno_jogador(
         partes_bonus.append({"rotulo": "Investida", "valor": -2})
     dados = DadosRolagem(
         tipo="ataque", quem="heroi", alvo=alvo.nome, d20=resultado.rolagem, bonus=bonus_ataque,
-        total=resultado.total, ca=alvo.ca, sucesso=resultado.acerto, critico=resultado.critico,
+        total=resultado.total, ca=ca_alvo, sucesso=resultado.acerto, critico=resultado.critico,
         falha_critica=resultado.falha_critica, atributo=attr_usado, arma=nome_arma,
         partes_bonus=partes_bonus,
         d20_extra=resultado.d20_extra, vantagem=resultado.vantagem,
@@ -228,6 +271,13 @@ def turno_jogador(
     # embutido no texto de data/monsters.json (parse_ataque_monstro), por
     # isso turno_inimigos() não repete essa soma.
     dano = motor.calcular_dano(dados_arma["dano"], resultado.critico, rng) + mod_atributo
+    if classe:
+        dano += nivel // 2
+        if nivel >= 5:
+            dano += motor.calcular_dano("2d6" if nivel >= 10 else "1d6", resultado.critico, rng)
+    dano += 3 if alvo.efeitos.get("marcado", 0) else 0
+    dano += 2 if c_state.efeitos_heroi.get("furia", 0) else 0
+    dano = max(1, dano)
     if investida:
         dano = dano * 3 // 2
     alvo.hp = max(0, alvo.hp - dano)
@@ -322,6 +372,32 @@ def _escolher_alvo(c_state: CombatState, rng: random.Random | None) -> tuple[str
     return dado.choice(candidatos)
 
 
+def intencao_inimiga(inimigo: Inimigo, rodada: int) -> str:
+    """Intenção pública e previsível: o jogador pode responder antes do golpe."""
+    if inimigo.efeitos.get("atordoado", 0):
+        return "atordoado"
+    texto = inimigo.comportamento.lower()
+    if "regenera" in texto and rodada % 3 == 0:
+        return "regenerar"
+    if any(p in texto for p in ("brut", "agressiv", "territorial", "porrete")):
+        return "golpe pesado" if rodada % 2 == 0 else "preparar golpe"
+    if any(p in texto for p in ("etéreo", "emboscada", "calculista")) and rodada % 3 == 0:
+        return "ataque preciso"
+    return "atacar"
+
+
+def _avancar_efeitos(efeitos: dict[str, int]) -> dict[str, int]:
+    return {nome: duracao - 1 for nome, duracao in efeitos.items() if duracao > 1}
+
+
+def finalizar_rodada(c_state: CombatState) -> None:
+    c_state.rodada += 1
+    c_state.efeitos_heroi = _avancar_efeitos(c_state.efeitos_heroi)
+    for inimigo in c_state.inimigos:
+        inimigo.efeitos = _avancar_efeitos(inimigo.efeitos)
+        inimigo.intencao = intencao_inimiga(inimigo, c_state.rodada)
+
+
 def turno_inimigos(
     c_state: CombatState, ca_heroi: int, rng: random.Random | None = None, vantagem: bool | None = None
 ) -> tuple[list[str], int]:
@@ -349,11 +425,36 @@ def turno_inimigos(
         inimigo = c_state.inimigos[idx]
         if inimigo.hp <= 0:
             continue
+        if inimigo.efeitos.get("queimando", 0):
+            inimigo.hp = max(0, inimigo.hp - 2)
+            eventos.append(EventoRolagem(
+                f"🔥 {inimigo.nome} sofre 2 de queimadura.",
+                DadosRolagem(tipo="dano", quem="heroi", alvo=inimigo.nome, dano=2),
+            ))
+            if inimigo.hp <= 0:
+                eventos.append(EventoRolagem(
+                    f"💀 {inimigo.nome} cai.", EventoStatus(tipo="morte_inimigo", quem=inimigo.nome)
+                ))
+                continue
+        if inimigo.efeitos.get("atordoado", 0):
+            eventos.append(f"💫 {inimigo.nome} está atordoado e perde a ação.")
+            continue
+        if inimigo.intencao == "preparar golpe":
+            eventos.append(f"⚠️ {inimigo.nome} prepara um golpe pesado. Defenda-se ou interrompa!")
+            continue
+        if inimigo.intencao == "regenerar":
+            cura = min(5, inimigo.max_hp - inimigo.hp)
+            inimigo.hp += cura
+            eventos.append(f"💚 {inimigo.nome} regenera {cura} PV em vez de atacar.")
+            continue
         c_state.turno_atual = turno_idx
         outros_vivos = sum(1 for j, i in enumerate(c_state.inimigos) if j != idx and i.hp > 0)
         pula, vantagem_comportamento = _comportamento_inimigo(inimigo, outros_vivos)
         if pula:
-            eventos.append(f"🏃 {inimigo.nome} recua em vez de atacar.")
+            # Recuar encerra a ameaça; não cria um inimigo imóvel que só
+            # pode ser perseguido e morto para liberar a cena.
+            inimigo.hp = 0
+            eventos.append(f"🏃 {inimigo.nome} foge e deixa de ameaçar o grupo.")
             continue
 
         tipo_alvo, idx_aliado = _escolher_alvo(c_state, rng)
@@ -370,7 +471,10 @@ def turno_inimigos(
             vantagem_efetiva = _combinar_vantagem(vantagem, vantagem_comportamento)
             linha = f"🎲 {inimigo.nome} ataca com {inimigo.nome_ataque}: "
 
-        resultado = motor.resolver_ataque(inimigo.bonus_ataque, ca_alvo, rng, vantagem=vantagem_efetiva)
+        bonus_intencao = 2 if inimigo.intencao == "ataque preciso" else 0
+        resultado = motor.resolver_ataque(
+            inimigo.bonus_ataque + bonus_intencao, ca_alvo, rng, vantagem=vantagem_efetiva
+        )
         linha += f"d20({resultado.rolagem})+{resultado.bonus}={resultado.total} vs CA {ca_alvo} → "
         dados = DadosRolagem(
             tipo="ataque", quem=inimigo.nome, alvo=nome_alvo, d20=resultado.rolagem, bonus=resultado.bonus,
@@ -383,6 +487,14 @@ def turno_inimigos(
             continue
 
         dano = motor.calcular_dano(inimigo.dano_dado, resultado.critico, rng)
+        if inimigo.intencao == "golpe pesado":
+            dano += 3
+        if inimigo.efeitos.get("enfraquecido", 0):
+            dano = max(0, dano - 3)
+        if tipo_alvo == "heroi" and (
+            c_state.efeitos_heroi.get("furia", 0) or c_state.efeitos_heroi.get("protecao", 0)
+        ):
+            dano = max(0, dano - 2)
         dados.dano = dano
         texto = linha + f"ACERTO{' CRÍTICO' if resultado.critico else ''}! {dano} de dano."
         eventos.append(EventoRolagem(texto, dados))
@@ -395,6 +507,7 @@ def turno_inimigos(
         else:
             dano_heroi += dano
     c_state.turno_atual = 0  # a rodada de inimigos acabou; a próxima começa no herói de novo
+    finalizar_rodada(c_state)
     return eventos, dano_heroi
 
 

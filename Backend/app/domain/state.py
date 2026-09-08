@@ -25,6 +25,10 @@ class Inimigo(BaseModel):
     # a IA de inimigo (Fase 1) passa a usar este campo para recuar, ganhar
     # vantagem em matilha etc., em vez de só bater sempre.
     comportamento: str = ""
+    arquetipo: str = ""
+    xp: int = 0
+    intencao: str = "atacar"
+    efeitos: dict[str, int] = {}
 
 
 class Aliado(BaseModel):
@@ -46,6 +50,15 @@ class Aliado(BaseModel):
 
 class CombatState(BaseModel):
     ativo: bool = False
+    foco: int = 3
+    foco_max: int = 3
+    rodada: int = 1
+    efeitos_heroi: dict[str, int] = {}
+    acao_resolvida: bool = False
+    cenario_id: str = ""
+    progresso_objetivo: int = 0
+    objetivo_concluido: bool = False
+    interacoes_usadas: list[str] = []
     inimigos: list[Inimigo] = []
     # Fase 2 — ver `Aliado`. `combat.turno_inimigos` escolhe entre o herói
     # e os aliados vivos como alvo de cada ataque inimigo; ADR-0027 revisa
@@ -88,6 +101,11 @@ class LocalDescoberto(BaseModel):
 
 class WorldState(BaseModel):
     local: str = ""
+    inicio_aventura: str = "surpresa"
+    semente_aventura: int = 0
+    marcos: list[str] = []
+    versao_progressao: int = 0
+    objetivos_concluidos: list[str] = []
     clima: str = ""
     turno: int = 1
     # Fase 5 — locais que `mover()` registrou porque o narrador propôs uma

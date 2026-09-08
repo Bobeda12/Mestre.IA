@@ -85,6 +85,16 @@ class Personagem(Base):
     # gravado: existia por uma chamada ao modelo e depois sumia. Agora é a
     # fonte da tela de abertura, e o primeiro EventoMemoria do personagem.
     historia_texto: Mapped[str | None] = mapped_column(default=None)
+    # Remaster da criação de personagem — frase-gancho curta (~120 chars),
+    # pensada para caber em todo turno do prompt (narrator.py:montar_contexto)
+    # sem cortar historia_texto no meio de uma frase. Gerada pelo Oráculo
+    # (services/oraculo.py); None em personagens antigos ou sem Oráculo.
+    resumo_historia: Mapped[str | None] = mapped_column(default=None)
+    # Escolhidos no Passo 0 do wizard: afetam o estilo de escrita do
+    # narrador (narrator.py, seção [TOM DO MESTRE]) e a CD efetiva dos
+    # testes de atributo (rules_engine.ajustar_cd_por_dificuldade).
+    temperamento_mestre: Mapped[str] = mapped_column(default="Justo", server_default="Justo")
+    dificuldade: Mapped[str] = mapped_column(default="Normal", server_default="Normal")
 
     hp_atual: Mapped[int]
     hp_max: Mapped[int]

@@ -18,6 +18,7 @@ from app.infra.data_manager import regras
 from app.infra.db import Personagem
 from app.services import combat
 from app.services import rules_engine as motor
+from app.services.class_abilities import limite_foco, perfil_classe
 
 
 def _efeito_pocao_cura(executor: "ToolExecutor") -> dict:
@@ -65,6 +66,8 @@ class ToolExecutor:
         self.q_state = q_state
         self.rng = rng
         self.eventos: list[str] = []
+        self._acao_gasta = False
+        self._aliados_acionados: set[str] = set()
 
     @property
     def eventos_estruturados(self) -> list[dict]:
@@ -88,6 +91,11 @@ class ToolExecutor:
     def rolar_teste(self, atributo: str, cd: int, item_usado: str | None = None, motivo: str | None = None) -> dict:
         if atributo not in motor.ATRIBUTOS_VALIDOS:
             return {"erro": f"'{atributo}' não é um atributo válido: {sorted(motor.ATRIBUTOS_VALIDOS)}"}
+        # Remaster da criação de personagem — o modelo propõe a CD "base"
+        # (5=trivial...25=muito difícil, ver TOOLS_SCHEMA); o servidor
+        # decide o número final, somando o ajuste de `dificuldade` do
+        # herói. Mesmo espírito de `vantagem_por_traco` logo abaixo.
+        cd = motor.ajustar_cd_por_dificuldade(cd, self.heroi.dificuldade)
         mod = motor.calcular_modificador(self.heroi.atributos.get(atributo, 10))
         partes_bonus = [{"rotulo": motor.ATRIBUTO_LABEL[atributo], "valor": mod}]
         mod_total = mod
@@ -121,9 +129,11 @@ class ToolExecutor:
         if not self.c_state.ativo:
             return {"erro": "não há combate ativo — chame iniciar_combate antes de atacar"}
         eventos = combat.turno_jogador(
-            self.c_state, self.heroi.atributos, self.heroi.inventario, arma, alvo, self.rng, self._nivel()
+            self.c_state, self.heroi.atributos, self.heroi.inventario, arma, alvo, self.rng, self._nivel(),
+            classe=self.heroi.classe,
         )
         self.eventos.extend(eventos)
+        self._recuperar_foco(1)
 
         if all(i.hp <= 0 for i in self.c_state.inimigos):
             self.c_state.ativo = False
@@ -132,18 +142,114 @@ class ToolExecutor:
             resultado_xp = self._conceder_xp(self.c_state.inimigos)
             return {"resultado": "vitoria", **resultado_xp}
 
-        eventos_inimigos, dano = combat.turno_inimigos(self.c_state, self.heroi.defesa, self.rng)
-        self.eventos.extend(eventos_inimigos)
-        self.heroi.hp_atual = max(0, self.heroi.hp_atual - dano)
-        if self.heroi.hp_atual == 0 and dano > 0:
-            self.eventos.append("🩸 Você caiu! Nos próximos turnos, role para não morrer.")
-        return {"dano_recebido": dano, "hp_atual": self.heroi.hp_atual}
+        return self._resolver_reacao_inimiga()
+
+    def _recuperar_foco(self, quantidade: int) -> None:
+        self.c_state.foco_max = limite_foco(self._nivel())
+        antes = self.c_state.foco
+        self.c_state.foco = min(self.c_state.foco_max, antes + quantidade)
+        if self.c_state.foco > antes:
+            self.eventos.append(f"🔹 Recupera {self.c_state.foco - antes} Foco.")
+
+    def _verificar_vitoria(self) -> dict:
+        if self.c_state.ativo and all(i.hp <= 0 for i in self.c_state.inimigos):
+            self.c_state.ativo = False
+            self.c_state.resultado = "vitoria"
+            self.eventos.append("🏆 Combate vencido!")
+            return {"resultado": "vitoria", **self._conceder_xp(self.c_state.inimigos)}
+        return {}
+
+    def usar_habilidade(self, habilidade: str, alvo: str | None = None) -> dict:
+        if not self.c_state.ativo or self.heroi.hp_atual <= 0:
+            return {"erro": "habilidades exigem combate ativo e herói consciente"}
+        perfil = perfil_classe(self.heroi.classe)
+        tecnica = next((h for h in perfil["habilidades"] if habilidade in (h["id"], h["nome"])), None)
+        if tecnica is None:
+            return {"erro": "essa habilidade não pertence à sua classe"}
+        if self._nivel() < tecnica["nivel"]:
+            return {"erro": f"habilidade desbloqueada no nível {tecnica['nivel']}"}
+        if self.c_state.foco < tecnica["custo"]:
+            return {"erro": "Foco insuficiente: ataque básico recupera 1; defender recupera 2"}
+        vivos = [i for i in self.c_state.inimigos if i.hp > 0]
+        if tecnica["alvo"] == "inimigo":
+            escolhido = next((i for i in vivos if i.nome == alvo), None)
+            if escolhido is None:
+                return {"erro": "escolha um inimigo vivo pelo nome exato"}
+            alvos = [escolhido]
+        else:
+            alvos = vivos if tecnica["alvo"] == "todos" else []
+        self.c_state.foco -= tecnica["custo"]
+        self.eventos.append(f"✦ {tecnica['nome']}! Custa {tecnica['custo']} Foco.")
+        for efeito in ("furia", "protecao", "guarda", "esquiva", "precisao"):
+            if tecnica.get(efeito):
+                self.c_state.efeitos_heroi[efeito] = tecnica[efeito]
+        atributo = perfil["atributo"]
+        mod = max(0, motor.calcular_modificador(self.heroi.atributos.get(atributo, 10)))
+        dano_total = 0
+        for inimigo in alvos:
+            dano = motor.calcular_dano(tecnica["dano"], rng=self.rng) + mod + self._nivel() // 2
+            if tecnica.get("oportunista") and (inimigo.hp < inimigo.max_hp or inimigo.efeitos):
+                dano += motor.calcular_dano("1d6", rng=self.rng)
+            if tecnica.get("executar") and inimigo.hp * 2 < inimigo.max_hp:
+                dano += motor.calcular_dano("2d6", rng=self.rng)
+            dano += 3 if inimigo.efeitos.get("marcado", 0) else 0
+            dano += 2 if self.c_state.efeitos_heroi.get("furia", 0) else 0
+            dano = max(1, dano)
+            dano_real = min(inimigo.hp, dano)
+            inimigo.hp = max(0, inimigo.hp - dano)
+            dano_total += dano_real
+            self.eventos.append(EventoRolagem(
+                f"✦ {tecnica['nome']} atinge {inimigo.nome}: {dano} de dano ({inimigo.hp}/{inimigo.max_hp} PV).",
+                DadosRolagem(tipo="dano", quem="heroi", alvo=inimigo.nome, dano=dano,
+                             atributo=atributo, arma=tecnica["nome"], sucesso=True),
+            ))
+            for efeito in ("atordoado", "queimando", "enfraquecido", "vulneravel", "marcado"):
+                if tecnica.get(efeito):
+                    inimigo.efeitos[efeito] = tecnica[efeito]
+            if inimigo.hp == 0:
+                self.eventos.append(EventoRolagem(
+                    f"💀 {inimigo.nome} cai.", EventoStatus(tipo="morte_inimigo", quem=inimigo.nome)
+                ))
+        cura = tecnica.get("cura_fixa", 0)
+        if tecnica.get("cura"):
+            cura += motor.calcular_dano(tecnica["cura"], rng=self.rng) + mod
+        if tecnica.get("dreno"):
+            cura += dano_total // 2
+        if cura:
+            recuperado = min(cura, self.heroi.hp_max - self.heroi.hp_atual)
+            self.heroi.hp_atual += recuperado
+            self.eventos.append(EventoRolagem(
+                f"💚 Recupera {recuperado} PV.", EventoStatus(tipo="cura", quem="heroi", valor=recuperado)
+            ))
+            if tecnica.get("grupo"):
+                for aliado in self.c_state.aliados:
+                    if aliado.hp > 0:
+                        recuperado_aliado = min(cura, aliado.max_hp - aliado.hp)
+                        aliado.hp += recuperado_aliado
+                        self.eventos.append(EventoRolagem(
+                            f"💚 {aliado.nome} recupera {recuperado_aliado} PV.",
+                            EventoStatus(tipo="cura", quem=aliado.nome, valor=recuperado_aliado),
+                        ))
+        if tecnica.get("sumir"):
+            self.c_state.heroi_escondido = True
+        vitoria = self._verificar_vitoria()
+        return {"habilidade": tecnica["id"], "foco": self.c_state.foco,
+                **(vitoria or self._resolver_reacao_inimiga())}
+
+    def interagir(self, interacao: str) -> dict:
+        from app.services.encounters import interagir_cenario
+
+        return interagir_cenario(self, interacao)
 
     # Fase 1 da revisão de gameplay (Etapa 12/13) — CD das ações táticas
     # que envolvem teste (esconder_se, fugir). Valor de primeira passada,
     # igual ao XP_OBJETIVO_NAO_COMBATE acima: ajustar depois com
     # `evals/simulador.py`, não chutar de novo.
     CD_ACAO_TATICA = 12
+
+    @property
+    def _cd_acao_tatica(self) -> int:
+        return motor.ajustar_cd_por_dificuldade(self.CD_ACAO_TATICA, self.heroi.dificuldade)
 
     def _resolver_reacao_inimiga(self) -> dict:
         """Depois de uma ação estruturada do herói que NÃO é `atacar`
@@ -158,12 +264,18 @@ class ToolExecutor:
         if not self.c_state.ativo or all(i.hp <= 0 for i in self.c_state.inimigos):
             return {}
         ca_efetiva = self.heroi.defesa + self.c_state.heroi_bonus_ca
+        if self.c_state.efeitos_heroi.get("guarda", 0):
+            ca_efetiva += 2
+        vantagem = self.c_state.heroi_vantagem_inimiga
+        if self.c_state.efeitos_heroi.get("esquiva", 0):
+            vantagem = combat._combinar_vantagem(vantagem, False)
         if self.c_state.heroi_escondido:
             self.eventos.append("👤 Os inimigos vasculham o local, sem te encontrar.")
             dano = 0
+            combat.finalizar_rodada(self.c_state)
         else:
             eventos_inimigos, dano = combat.turno_inimigos(
-                self.c_state, ca_efetiva, self.rng, vantagem=self.c_state.heroi_vantagem_inimiga
+                self.c_state, ca_efetiva, self.rng, vantagem=vantagem
             )
             self.eventos.extend(eventos_inimigos)
         self.heroi.hp_atual = max(0, self.heroi.hp_atual - dano)
@@ -172,7 +284,7 @@ class ToolExecutor:
         self.c_state.heroi_vantagem_inimiga = None
         self.c_state.heroi_bonus_ca = 0
         self.c_state.heroi_escondido = False
-        return {"dano_recebido": dano, "hp_atual": self.heroi.hp_atual}
+        return {"dano_recebido": dano, "hp_atual": self.heroi.hp_atual, **self._verificar_vitoria()}
 
     def esquivar(self) -> dict:
         if not self.c_state.ativo:
@@ -185,6 +297,7 @@ class ToolExecutor:
         if not self.c_state.ativo:
             return {"erro": "não há combate ativo — chame iniciar_combate antes de defender"}
         self.c_state.heroi_bonus_ca = 2
+        self._recuperar_foco(2)
         self.eventos.append("🛡️ Você assume postura defensiva (+2 na CA).")
         return {"acao": "defender", **self._resolver_reacao_inimiga()}
 
@@ -194,6 +307,7 @@ class ToolExecutor:
         eventos = combat.turno_jogador(
             self.c_state, self.heroi.atributos, self.heroi.inventario, arma, alvo, self.rng, self._nivel(),
             investida=True,
+            classe=self.heroi.classe,
         )
         self.eventos.extend(eventos)
         if all(i.hp <= 0 for i in self.c_state.inimigos):
@@ -210,23 +324,24 @@ class ToolExecutor:
     def esconder_se(self) -> dict:
         if not self.c_state.ativo:
             return {"erro": "não há combate ativo — chame iniciar_combate antes de esconder_se"}
+        cd = self._cd_acao_tatica
         mod_destreza = motor.calcular_modificador(self.heroi.atributos.get("destreza", 10))
-        resultado = motor.resolver_teste_atributo(mod_destreza, self.CD_ACAO_TATICA, self.rng)
+        resultado = motor.resolver_teste_atributo(mod_destreza, cd, self.rng)
         dados = DadosRolagem(
             tipo="teste", quem="heroi", d20=resultado.rolagem, bonus=mod_destreza, total=resultado.total,
-            cd=self.CD_ACAO_TATICA, sucesso=resultado.sucesso, atributo="destreza",
+            cd=cd, sucesso=resultado.sucesso, atributo="destreza",
             partes_bonus=[{"rotulo": "Destreza", "valor": mod_destreza}],
         )
         if resultado.sucesso:
             self.c_state.heroi_escondido = True
             texto = (
                 f"🎲 Você se esconde: d20({resultado.rolagem})+{mod_destreza}={resultado.total} "
-                f"vs CD {self.CD_ACAO_TATICA} → SUCESSO. Eles perdem seu rastro."
+                f"vs CD {cd} → SUCESSO. Eles perdem seu rastro."
             )
         else:
             texto = (
                 f"🎲 Você tenta se esconder: d20({resultado.rolagem})+{mod_destreza}={resultado.total} "
-                f"vs CD {self.CD_ACAO_TATICA} → FALHA."
+                f"vs CD {cd} → FALHA."
             )
         self.eventos.append(EventoRolagem(texto, dados))
         return {"acao": "esconder_se", "escondido": resultado.sucesso, **self._resolver_reacao_inimiga()}
@@ -234,24 +349,25 @@ class ToolExecutor:
     def fugir(self) -> dict:
         if not self.c_state.ativo:
             return {"erro": "não há combate ativo — chame iniciar_combate antes de fugir"}
+        cd = self._cd_acao_tatica
         mod_destreza = motor.calcular_modificador(self.heroi.atributos.get("destreza", 10))
-        resultado = motor.resolver_teste_atributo(mod_destreza, self.CD_ACAO_TATICA, self.rng)
+        resultado = motor.resolver_teste_atributo(mod_destreza, cd, self.rng)
         dados = DadosRolagem(
             tipo="teste", quem="heroi", d20=resultado.rolagem, bonus=mod_destreza, total=resultado.total,
-            cd=self.CD_ACAO_TATICA, sucesso=resultado.sucesso, atributo="destreza",
+            cd=cd, sucesso=resultado.sucesso, atributo="destreza",
             partes_bonus=[{"rotulo": "Destreza", "valor": mod_destreza}],
         )
         if resultado.sucesso:
             self.c_state.ativo = False
             texto = (
                 f"🎲 Você foge: d20({resultado.rolagem})+{mod_destreza}={resultado.total} "
-                f"vs CD {self.CD_ACAO_TATICA} → SUCESSO. Você escapa do combate."
+                f"vs CD {cd} → SUCESSO. Você escapa do combate."
             )
             self.eventos.append(EventoRolagem(texto, dados))
             return {"acao": "fugir", "fugiu": True}
         texto = (
             f"🎲 Você tenta fugir: d20({resultado.rolagem})+{mod_destreza}={resultado.total} "
-            f"vs CD {self.CD_ACAO_TATICA} → FALHA. Eles reagem antes que você escape."
+            f"vs CD {cd} → FALHA. Eles reagem antes que você escape."
         )
         self.eventos.append(EventoRolagem(texto, dados))
         # falha custa uma rodada de ataque livre de cada inimigo vivo —
@@ -273,7 +389,10 @@ class ToolExecutor:
         `routers/game.py` (ADR-0006: o LLM propõe a cena, nunca decide o
         número). Sobe nível em loop porque uma vitória grande pode cruzar
         mais de um limiar de `rules_engine.XP_POR_NIVEL` de uma vez."""
-        xp_ganho = sum((regras.get_monster(i.nome) or {}).get("xp", 0) for i in inimigos_derrotados)
+        xp_ganho = sum(
+            i.xp or (regras.get_monster(i.arquetipo or i.nome) or {}).get("xp", 0)
+            for i in inimigos_derrotados
+        )
         # Pendência do remaster UX (PLANO_REMASTER_UX.md, item 3) —
         # bestiário persistente: `_conceder_xp` é chamado exatamente uma
         # vez por vitória, com a lista definitiva de inimigos derrotados
@@ -285,7 +404,8 @@ class ToolExecutor:
         if inimigos_derrotados:
             abates = dict(self.heroi.monstros_derrotados or {})
             for inimigo in inimigos_derrotados:
-                abates[inimigo.nome] = abates.get(inimigo.nome, 0) + 1
+                chave = inimigo.arquetipo or inimigo.nome
+                abates[chave] = abates.get(chave, 0) + 1
             self.heroi.monstros_derrotados = abates
         if xp_ganho <= 0:
             return {}
@@ -312,6 +432,10 @@ class ToolExecutor:
             self.eventos.append(
                 f"🎉 Subiu para o nível {resultado.nivel_novo}! (+{resultado.hp_ganho} PV máximo)"
             )
+            for habilidade in perfil_classe(self.heroi.classe)["habilidades"]:
+                if habilidade["nivel"] == resultado.nivel_novo:
+                    self.eventos.append(f"✦ Nova técnica: {habilidade['nome']} — {habilidade['descricao']}")
+        self.c_state.foco_max = limite_foco(self._nivel())
         return {"xp_ganho": xp_ganho, "xp_total": self.heroi.xp, "nivel": self.heroi.nivel}
 
     # Fase 0 da revisão de gameplay (Etapa 12/13) — XP não-combate: sem isso
@@ -323,11 +447,22 @@ class ToolExecutor:
     XP_OBJETIVO_NAO_COMBATE = 50
 
     def concluir_objetivo(self, objetivo: str) -> dict:
+        chave = " ".join(objetivo.casefold().split())
+        if not chave or chave in self.w_state.objetivos_concluidos:
+            return {"erro": "objetivo vazio ou já recompensado"}
+        if self.c_state.ativo:
+            return {"erro": "conclua o encontro antes de recompensar um objetivo narrativo"}
+        self.w_state.objetivos_concluidos.append(chave)
         resultado = self._aplicar_xp(self.XP_OBJETIVO_NAO_COMBATE)
         return {"objetivo": objetivo, **resultado}
 
     def aplicar_dano(self, alvo: str, dado_dano: str, motivo: str = "") -> dict:
-        dano = motor.calcular_dano(dado_dano, rng=self.rng)
+        if self.c_state.ativo and alvo not in {"heroi", "herói", "você", "voce", self.heroi.nome}:
+            return {"erro": "em combate, use usar_habilidade ou interagir para dano ao inimigo"}
+        qtd, faces, modificador = motor._parse_dado(dado_dano)
+        if not (1 <= qtd <= 4 and 1 <= faces <= 12 and -10 <= modificador <= 10):
+            return {"erro": "dano ambiental deve usar até 4 dados de no máximo 12 faces, modificador até 10"}
+        dano = max(0, motor.calcular_dano(dado_dano, rng=self.rng))
         nomes_heroi = {"heroi", "herói", "você", "voce", self.heroi.nome.lower()}
         if alvo.lower() in nomes_heroi:
             self.heroi.hp_atual = max(0, self.heroi.hp_atual - dano)
@@ -426,7 +561,9 @@ class ToolExecutor:
             resultado = {"usado": True, "efeito": "sem efeito mecânico definido — narre livremente o uso"}
         else:
             resultado = efeito(self)
-            self.heroi.inventario = [i for i in self.heroi.inventario if i != item]
+            inventario = list(self.heroi.inventario)
+            inventario.remove(item)
+            self.heroi.inventario = inventario
         # Fase 1 da revisão de gameplay — usar um item em combate gasta a
         # ação do herói como qualquer outra: antes disso os inimigos nunca
         # reagiam a um turno "de item" (self._resolver_reacao_inimiga() é
@@ -536,19 +673,17 @@ class ToolExecutor:
         self.eventos.append(f"🤝 Reputação com {npc}: {atual:+d} → {novo:+d} ({motivo or 'sem motivo informado'}).")
         return {"npc": npc, "reputacao": novo}
 
-    def iniciar_combate(self, inimigos: list[str]) -> dict:
+    def iniciar_combate(self, inimigos: list[str], cenario: str | None = None) -> dict:
         if self.c_state.ativo:
             return {"erro": "já há um combate ativo"}
         novo, eventos, dano_surpresa = combat.iniciar_combate(
             inimigos, self.heroi.atributos, self.heroi.defesa, self.rng, nivel_heroi=self._nivel()
         )
-        self.c_state.ativo = novo.ativo
-        self.c_state.inimigos = novo.inimigos
-        self.c_state.sucessos_morte = novo.sucessos_morte
-        self.c_state.falhas_morte = novo.falhas_morte
-        self.c_state.resultado = novo.resultado
-        self.c_state.ordem_iniciativa = novo.ordem_iniciativa
-        self.c_state.turno_atual = novo.turno_atual
+        from app.services.encounters import preparar_encontro
+
+        preparar_encontro(novo, self.w_state, cenario)
+        for campo in type(novo).model_fields:
+            setattr(self.c_state, campo, getattr(novo, campo))
         # Fase 3 da revisão de gameplay — companheiros já recrutados
         # (roster persistente, `self.heroi.aliados`) entram em toda luta
         # nova, com o HP que trouxeram da última — um que morreu (hp 0)
@@ -659,18 +794,38 @@ class ToolExecutor:
             args = json.loads(args_json) if args_json else {}
         except json.JSONDecodeError:
             return {"erro": f"argumentos de '{nome}' não são um JSON válido"}, False
+        if not isinstance(args, dict):
+            return {"erro": "argumentos precisam ser um objeto JSON"}, False
+        acoes = {"atacar", "investir", "esquivar", "defender", "esconder_se", "fugir",
+                 "usar_habilidade", "interagir", "usar_item"}
+        em_combate = self.c_state.ativo
+        if nome in acoes and em_combate:
+            if self._acao_gasta:
+                return {"erro": "a ação deste turno já foi resolvida; narre o resultado e aguarde o jogador"}, False
+            if self.heroi.hp_atual <= 0:
+                return {"erro": "herói inconsciente: aguarde o teste de morte"}, False
+        if nome == "atacar_com_aliado" and args.get("aliado") in self._aliados_acionados:
+            return {"erro": "esse aliado já agiu neste turno"}, False
         try:
             resultado = metodo(self, **args)
         except TypeError as e:
             return {"erro": f"argumentos inválidos para '{nome}': {e}"}, False
         except Exception as e:  # ferramenta com bug não pode derrubar o turno
             return {"erro": f"'{nome}' falhou ao executar: {e}"}, False
+        if "erro" not in resultado:
+            if nome in acoes and em_combate:
+                self._acao_gasta = True
+                self.c_state.acao_resolvida = True
+            if nome == "atacar_com_aliado":
+                self._aliados_acionados.add(args.get("aliado", ""))
         return resultado, "erro" not in resultado
 
 
 ToolExecutor._DESPACHO = {
     "rolar_teste": ToolExecutor.rolar_teste,
     "atacar": ToolExecutor.atacar,
+    "usar_habilidade": ToolExecutor.usar_habilidade,
+    "interagir": ToolExecutor.interagir,
     "aplicar_dano": ToolExecutor.aplicar_dano,
     "mover": ToolExecutor.mover,
     "consultar_regra": ToolExecutor.consultar_regra,
@@ -1076,6 +1231,10 @@ TOOLS_SCHEMA: list[dict] = [
                             "do nome inventado; a mecânica nunca muda, só o rótulo que o jogador vê."
                         ),
                     },
+                    "cenario": {
+                        "type": "string", "enum": ["duelo", "emboscada", "ritual", "resgate", "cerco", "cacada"],
+                        "description": "Tipo coerente com a cena; ritual e resgate só quando já existem na história.",
+                    },
                 },
                 "required": ["inimigos"],
             },
@@ -1137,3 +1296,29 @@ TOOLS_SCHEMA: list[dict] = [
         },
     },
 ]
+
+TOOLS_SCHEMA.extend([
+    {
+        "type": "function", "function": {
+            "name": "usar_habilidade",
+            "description": (
+                "Usa uma técnica da classe presente no painel de progressão. O servidor valida nível, "
+                "Foco e alvo, resolve dano/efeitos e reação inimiga. Técnicas são certeiras e gastam Foco. "
+                "Uma ação por turno; não use aplicar_dano para simular magias."
+            ),
+            "parameters": {"type": "object", "properties": {
+                "habilidade": {"type": "string", "description": "ID exato da habilidade da classe."},
+                "alvo": {"type": "string", "description": "Nome exato do inimigo; omita para área ou apoio."},
+            }, "required": ["habilidade"]},
+        },
+    },
+    {
+        "type": "function", "function": {
+            "name": "interagir",
+            "description": "Usa uma interação do cenário listada no estado; custa a ação e causa reação inimiga.",
+            "parameters": {"type": "object", "properties": {
+                "interacao": {"type": "string", "description": "ID exato da interação disponível no cenário."},
+            }, "required": ["interacao"]},
+        },
+    },
+])

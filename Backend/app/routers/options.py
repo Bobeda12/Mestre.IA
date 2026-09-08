@@ -1,8 +1,14 @@
 from fastapi import APIRouter
 
 from app.infra.data_manager import regras
+from app.services.adventure import catalogo_aventura
 
 router = APIRouter(prefix="/options", tags=["options"])
+
+
+@router.get("/aventura")
+def get_aventura() -> dict:
+    return catalogo_aventura()
 
 
 @router.get("/races")
