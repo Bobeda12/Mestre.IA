@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { isAxiosError } from 'axios';
 import { api, API_URL } from '../lib/api';
 import { prefereMovimentoReduzido } from '../lib/acessibilidade';
@@ -23,7 +23,7 @@ import PainelRegrasModal from './PainelRegrasModal';
 import ConfirmeEmail from './ConfirmeEmail';
 import PixelActionCard from './PixelActionCard';
 import SistemaFeedbackToast, { type ToastItem } from './SistemaFeedbackToast';
-import FloatingCombatText, { type FlutuanteHeroi } from './FloatingCombatText';
+import { type FlutuanteHeroi } from './FloatingCombatText';
 import LootRevealOverlay, { type LootAtivo } from './LootRevealOverlay';
 import FichaModal from './FichaModal';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip';
@@ -32,6 +32,8 @@ import CabecalhoRegiao from './CabecalhoRegiao';
 import PixelTooltip from './PixelTooltip';
 import DetalheMonstroModal from './DetalheMonstroModal';
 import GuiaAventureiro from './GuiaAventureiro';
+import AdventureStage from './AdventureStage';
+import type { AcaoDireta, Cena, InimigoVisual, Progressao } from '../lib/gameplay';
 
 // Etapa 14 (revisão) — a ficha virou menu de abas estilo JRPG. Antes tudo
 // (retrato, barras, atributos, missão, inventário) era uma pilha só numa
@@ -109,19 +111,9 @@ type Message =
   // `tool_event` que ataque/teste, só com um `dados.tipo` diferente.
   | { kind: 'rolagem'; id: number; dados: DadosRolagem | EventoStatus };
 
-// Espelha domain/state.py:Inimigo (só os campos que o HUD lê).
-interface Inimigo {
-  nome: string;
-  hp: number;
-  max_hp: number;
-  ca: number;
-  // Rodada de conserto (Parte 2, item I) — já vinha do backend
-  // (`domain/state.py:Inimigo`, preenchido a partir de `data/monsters.json`
-  // desde a Fase 0 da revisão de gameplay) sem nenhum consumidor na tela.
-  // Descreve o ESTILO de luta do inimigo (ex: "Covarde. Ataca e foge"), não
-  // a próxima ação exata — é o dado que já existe, não uma previsão nova.
-  comportamento?: string;
-}
+// `InimigoVisual` (lib/gameplay.ts) espelha domain/state.py:Inimigo —
+// mesmo tipo usado por AdventureStage.tsx, pra não ter duas formas
+// incompatíveis do mesmo inimigo dentro do mesmo componente.
 
 // O frame SSE final "state" (Etapa 7) — mesmo shape de `_resposta()` no
 // backend (Backend/app/routers/game.py) — e também o corpo de `/load_game`
@@ -153,8 +145,14 @@ interface EstadoJogo {
   reputacao_npcs?: Record<string, number>;
   inventory?: string[];
   combat_active: boolean;
-  inimigos?: Inimigo[];
+  inimigos?: InimigoVisual[];
   missao?: unknown;
+  // Sistema de progressão/encontros táticos (AdventureStage.tsx) — o
+  // backend já manda estes três em todo `_resposta()` (routers/game.py),
+  // sem consumidor no frontend até aqui.
+  progressao?: Progressao;
+  cena?: Cena;
+  marcos?: string[];
   turno_index?: number;
   // Etapa 11 (B-6) — turno do MUNDO (world_state.turno), não o turno da
   // rodada de combate (`turno_atual`, que reseta a cada luta): é o que a
@@ -280,10 +278,15 @@ export default function GameChat() {
   // Pendência do remaster UX — item 4: Hall da Fama.
   const [mortoEm, setMortoEm] = useState<string | null>(null);
   const [pontuacaoFinal, setPontuacaoFinal] = useState<number | null>(null);
+  // Sistema de progressão/encontros táticos (AdventureStage.tsx) — painéis
+  // de habilidades/foco e da cena atual, sem consumidor até esta integração.
+  const [progressao, setProgressao] = useState<Progressao | null>(null);
+  const [cena, setCena] = useState<Cena | null>(null);
+  const [marcos, setMarcos] = useState<string[]>([]);
 
   // COMBATE
   const [combatActive, setCombatActive] = useState(false);
-  const [enemies, setEnemies] = useState<Inimigo[]>([]);
+  const [enemies, setEnemies] = useState<InimigoVisual[]>([]);
   useEffect(() => {
     if (enemies.length === 0) return;
     setMonstrosAvistados(prev => {
@@ -294,10 +297,16 @@ export default function GameChat() {
       return copia;
     });
   }, [enemies]);
-  const [ordemIniciativa, setOrdemIniciativa] = useState<number[]>([]);
-  const [turnoAtual, setTurnoAtual] = useState(0);
   const [turnoMundo, setTurnoMundo] = useState(0);
   const [gameOver, setGameOver] = useState(false);
+  // Ações táticas (AdventureStage.tsx → POST /game/action) — caminho
+  // determinístico, separado de `loading` (que é especificamente "o
+  // narrador está gerando texto"): os dois nunca devem rodar ao mesmo
+  // tempo (ambos disputam o mesmo `turno_esperado`/world_state.turno), mas
+  // são flags de UI com significados diferentes.
+  const [acaoTaticaEmCurso, setAcaoTaticaEmCurso] = useState(false);
+  const [erroAcao, setErroAcao] = useState<string | null>(null);
+  const [resultadoAcao, setResultadoAcao] = useState<string | null>(null);
   // Fase 1 da revisão de gameplay — o momento mais tenso do jogo (herói a
   // 0 PV, três falhas = morte) já era calculado no backend e nunca chegava
   // à tela; agora vem em todo frame "state" (routers/game.py:_resposta).
@@ -479,6 +488,112 @@ export default function GameChat() {
     dispensarConvite();
   };
 
+  const queryClient = useQueryClient();
+
+  // Único lugar que copia o payload do backend (mesmo shape de `_resposta()`
+  // em routers/game.py) pros estados locais — reaproveitado pelos três
+  // pontos que recebem esse payload: carregamento inicial (`cargaJogo`),
+  // frame SSE "state" de /chat/stream, e a resposta síncrona de
+  // POST /game/action. Antes da integração do sistema de progressão/
+  // encontros táticos isto existia em duas cópias quase idênticas; um
+  // terceiro consumidor tornaria a divergência praticamente garantida.
+  //
+  // `ehCarregamentoInicial` só desliga os efeitos de "diff contra o valor
+  // anterior" (números flutuantes de dano/cura/XP, toast de ouro, fila de
+  // loot) — no primeiro load não existe um "antes" que faça sentido
+  // comparar. Fora isso, os três chamadores usam a mesma lógica: todo
+  // campo listado abaixo é sempre mandado por `_resposta()` (nunca
+  // omitido), então os checks `!== undefined`/`||`/`??` são só defesa,
+  // não uma distinção real entre "carregou" e "chegou um turno".
+  const aplicarEstadoJogo = (d: EstadoJogo, opts?: { ehCarregamentoInicial?: boolean }) => {
+    const inicial = opts?.ehCarregamentoInicial ?? false;
+
+    if (!inicial && d.hp_atual !== undefined && d.hp_atual < hpAtual) {
+        setWasDamaged(true); setShakeScreen(true);
+        setTimeout(() => { setWasDamaged(false); setShakeScreen(false); }, 500);
+        spawnFlutuanteHeroi('hp', `-${hpAtual - d.hp_atual}`, 'text-red-400');
+        sfx.tocar('golpe');
+    } else if (!inicial && d.hp_atual !== undefined && d.hp_atual > hpAtual) {
+        spawnFlutuanteHeroi('hp', `+${d.hp_atual - hpAtual}`, 'text-emerald-400');
+    }
+    setHpAtual(d.hp_atual); setHpMax(d.hp_max || hpMax);
+    if (d.defesa !== undefined) setDefesa(d.defesa);
+    if (d.ouro !== undefined) {
+      if (!inicial && d.ouro !== ouro) {
+        const delta = d.ouro - ouro;
+        pushToast('moeda', `${delta > 0 ? '+' : ''}${delta} Ouro`, delta > 0 ? 'positivo' : 'negativo');
+      }
+      setOuro(d.ouro);
+    }
+    if (d.nivel !== undefined) setNivel(d.nivel);
+    if (d.xp !== undefined) {
+      if (!inicial && d.nivel === nivel && d.xp > xp) {
+        spawnFlutuanteHeroi('xp', `+${d.xp - xp}`, 'text-rpg-gold');
+      }
+      setXp(d.xp);
+    }
+    if (d.xp_proximo_nivel !== undefined) setXpProximoNivel(d.xp_proximo_nivel);
+    if (!inicial && d.inventory) {
+      const itensNovos = d.inventory.filter(item => !inventory.includes(item));
+      if (itensNovos.length > 0) {
+        setLootQueue(prev => [...prev, ...itensNovos]);
+        sfx.tocar('item');
+      }
+    }
+    setInventory(d.inventory || []);
+    setCombatActive(d.combat_active);
+
+    const novosInimigos = d.inimigos || [];
+    if (!inicial) {
+      const novasFlutuantes = novosInimigos
+        .map((novo, idx) => ({ novo, idx, antigo: enemies[idx] }))
+        .filter(({ novo, antigo }) => antigo && novo.hp < antigo.hp)
+        .map(({ novo, idx, antigo }) => ({ id: Date.now() + idx, valor: antigo.hp - novo.hp, idx }));
+      if (novasFlutuantes.length > 0) {
+        setDanosFlutuantes(prev => [...prev, ...novasFlutuantes]);
+        novasFlutuantes.forEach(f => {
+          setTimeout(() => setDanosFlutuantes(prev => prev.filter(x => x.id !== f.id)), 1200);
+        });
+      }
+    }
+    setEnemies(novosInimigos);
+    setSucessosMorte(d.sucessos_morte ?? 0);
+    setFalhasMorte(d.falhas_morte ?? 0);
+    if (d.epitafio) setEpitafio(d.epitafio);
+    if (d.reputacao_npcs) setReputacoes(d.reputacao_npcs);
+    setOpcoes(d.opcoes || []);
+    if (d.turno_mundo !== undefined) setTurnoMundo(d.turno_mundo);
+    if (d.missao) setQuest(d.missao);
+    if (d.local !== undefined) setLocalAtual(d.local);
+    if (d.clima !== undefined) setClimaAtual(d.clima ?? '');
+    if (d.hora_do_dia !== undefined) setHoraDoDia(d.hora_do_dia);
+    if (d.heroi_escondido !== undefined) setHeroiEscondido(d.heroi_escondido);
+    if (d.heroi_bonus_ca !== undefined) setHeroiBonusCa(d.heroi_bonus_ca);
+    if (d.heroi_vantagem_inimiga !== undefined) setHeroiVantagemInimiga(d.heroi_vantagem_inimiga);
+    if (d.monstros_derrotados) setMonstrosDerrotados(d.monstros_derrotados);
+    if (d.morto_em !== undefined) setMortoEm(d.morto_em);
+    if (d.pontuacao_final !== undefined) setPontuacaoFinal(d.pontuacao_final);
+    if (d.progressao !== undefined) setProgressao(d.progressao);
+    if (d.cena !== undefined) setCena(d.cena);
+    if (d.marcos !== undefined) setMarcos(d.marcos);
+    if (d.resultado_combate === 'morte') setGameOver(true);
+
+    if (!inicial && d.turno_index !== undefined) {
+      const turnoIndex = d.turno_index;
+      setMessages(prev => {
+        const copia = [...prev];
+        for (let i = copia.length - 1; i >= 0; i--) {
+          const m = copia[i];
+          if (m.kind === 'texto' && m.role === 'assistant') {
+            copia[i] = { ...m, turnoIndex };
+            break;
+          }
+        }
+        return copia;
+      });
+    }
+  };
+
   // Etapa 7, ADR-0013: TanStack Query no lugar do `useEffect` +
   // `try/catch` + `setNotFound` escritos à mão — a troca real não é
   // estética, é ganhar de graça o cache por `sessionId` (voltar duas telas
@@ -504,11 +619,6 @@ export default function GameChat() {
     // chega mais rápido, mas recarregar a página usa o que o servidor
     // guardou em vez de cair direto no retrato genérico da classe.
     if (!charImageFromNav) setCharImage(cargaJogo.imagem || getLocalImage('classes', cargaJogo.classe));
-    setHpAtual(cargaJogo.hp_atual);
-    setHpMax(cargaJogo.hp_max ?? 10);
-    setDefesa(cargaJogo.defesa ?? null);
-    setOuro(cargaJogo.ouro ?? 0);
-    setNivel(cargaJogo.nivel ?? 1);
     // Fase 2 do remaster UX — sem isto, carregar um personagem que já
     // estava acima do nível 1 disparava o glow (e agora o som) de "subiu de
     // nível" no load: `nivelAnteriorRef` nascia em 1 (valor inicial do
@@ -516,35 +626,16 @@ export default function GameChat() {
     // aqui, no mesmo lugar que carrega o nível, evita o falso positivo sem
     // acoplar o efeito de level up à lógica de carregamento.
     nivelAnteriorRef.current = cargaJogo.nivel ?? 1;
-    setXp(cargaJogo.xp ?? 0);
-    setXpProximoNivel(cargaJogo.xp_proximo_nivel ?? null);
-    setSucessosMorte(cargaJogo.sucessos_morte ?? 0);
-    setFalhasMorte(cargaJogo.falhas_morte ?? 0);
-    setEpitafio(cargaJogo.epitafio ?? null);
-    setReputacoes(cargaJogo.reputacao_npcs || {});
-    setInventory(cargaJogo.inventory || []);
     setAttributes(cargaJogo.atributos || {});
-    setQuest(cargaJogo.missao);
-    setLocalAtual(cargaJogo.local ?? '');
-    setClimaAtual(cargaJogo.clima ?? '');
     setResumoJornada(cargaJogo.anteriormente ?? null);
-    setMonstrosDerrotados(cargaJogo.monstros_derrotados ?? {});
-    setHeroiEscondido(cargaJogo.heroi_escondido ?? false);
-    setHeroiBonusCa(cargaJogo.heroi_bonus_ca ?? 0);
-    setHeroiVantagemInimiga(cargaJogo.heroi_vantagem_inimiga ?? null);
-    if (cargaJogo.hora_do_dia !== undefined) setHoraDoDia(cargaJogo.hora_do_dia);
-    setMortoEm(cargaJogo.morto_em ?? null);
-    setPontuacaoFinal(cargaJogo.pontuacao_final ?? null);
     setOrigemAtual(cargaJogo.background ?? null);
     setObjetivoAtual(cargaJogo.objetivo ?? null);
     setHistoriaAtual(cargaJogo.historia_texto ?? null);
-    setCombatActive(cargaJogo.combat_active);
-    setEnemies(cargaJogo.inimigos || []);
-    setOrdemIniciativa(cargaJogo.ordem_iniciativa || []);
-    setTurnoAtual(cargaJogo.turno_atual ?? 0);
-    setTurnoMundo(cargaJogo.turno_mundo ?? 0);
-
-    if (cargaJogo.resultado_combate === 'morte') setGameOver(true);
+    // Todo o resto do payload (HP, combate, progressão, cena...) é o mesmo
+    // shape de `_resposta()` que também chega no frame SSE "state" e na
+    // resposta de /game/action — aplicarEstadoJogo é a fonte única dessa
+    // cópia (ver definição acima).
+    aplicarEstadoJogo(cargaJogo, { ehCarregamentoInicial: true });
 
     // Rodada de conserto (Parte 2, item G) — antes disto, recarregar uma
     // partida em andamento jogava fora a conversa inteira e mostrava só
@@ -694,98 +785,7 @@ export default function GameChat() {
             setModalEmergenciaAberto(true);
           }
         } else if (evt.event === 'state') {
-          const d = evt.data as EstadoJogo;
-          if (d.hp_atual !== undefined && d.hp_atual < hpAtual) {
-              setWasDamaged(true); setShakeScreen(true);
-              setTimeout(() => { setWasDamaged(false); setShakeScreen(false); }, 500);
-              spawnFlutuanteHeroi('hp', `-${hpAtual - d.hp_atual}`, 'text-red-400');
-              sfx.tocar('golpe');
-          } else if (d.hp_atual !== undefined && d.hp_atual > hpAtual) {
-              spawnFlutuanteHeroi('hp', `+${d.hp_atual - hpAtual}`, 'text-emerald-400');
-          }
-          setHpAtual(d.hp_atual); setHpMax(d.hp_max || hpMax);
-          if (d.defesa !== undefined) setDefesa(d.defesa);
-          if (d.ouro !== undefined) {
-            if (d.ouro !== ouro) {
-              const delta = d.ouro - ouro;
-              pushToast('moeda', `${delta > 0 ? '+' : ''}${delta} Ouro`, delta > 0 ? 'positivo' : 'negativo');
-            }
-            setOuro(d.ouro);
-          }
-          if (d.nivel !== undefined) setNivel(d.nivel);
-          // XP some (reseta) quando sobe de nível — nesse turno o "delta"
-          // seria negativo e sem sentido pro jogador (o glow da barra já
-          // celebra o level up sozinho, não precisa de número aqui).
-          if (d.xp !== undefined) {
-            if (d.nivel === nivel && d.xp > xp) {
-              spawnFlutuanteHeroi('xp', `+${d.xp - xp}`, 'text-rpg-gold');
-            }
-            setXp(d.xp);
-          }
-          if (d.xp_proximo_nivel !== undefined) setXpProximoNivel(d.xp_proximo_nivel);
-          if (d.inventory) {
-            // Fase 3 do remaster UX — item novo ganhou a animação de loot
-            // (LootRevealOverlay) no lugar do toast simples da Fase 1; ouro
-            // continua no toast (não é um objeto com ícone próprio pra
-            // justificar a cena inteira).
-            const itensNovos = d.inventory.filter(item => !inventory.includes(item));
-            if (itensNovos.length > 0) {
-              setLootQueue(prev => [...prev, ...itensNovos]);
-              sfx.tocar('item');
-            }
-          }
-          setInventory(d.inventory || []);
-          setCombatActive(d.combat_active);
-
-          const novosInimigos = d.inimigos || [];
-          const novasFlutuantes = novosInimigos
-            .map((novo, idx) => ({ novo, idx, antigo: enemies[idx] }))
-            .filter(({ novo, antigo }) => antigo && novo.hp < antigo.hp)
-            .map(({ novo, idx, antigo }) => ({ id: Date.now() + idx, valor: antigo.hp - novo.hp, idx }));
-          if (novasFlutuantes.length > 0) {
-            setDanosFlutuantes(prev => [...prev, ...novasFlutuantes]);
-            novasFlutuantes.forEach(f => {
-              setTimeout(() => setDanosFlutuantes(prev => prev.filter(x => x.id !== f.id)), 1200);
-            });
-          }
-          setEnemies(novosInimigos);
-          setOrdemIniciativa(d.ordem_iniciativa || []);
-          setTurnoAtual(d.turno_atual ?? 0);
-          setSucessosMorte(d.sucessos_morte ?? 0);
-          setFalhasMorte(d.falhas_morte ?? 0);
-          if (d.epitafio) setEpitafio(d.epitafio);
-          if (d.reputacao_npcs) setReputacoes(d.reputacao_npcs);
-          setOpcoes(d.opcoes || []);
-          if (d.turno_mundo !== undefined) setTurnoMundo(d.turno_mundo);
-          if (d.missao) setQuest(d.missao);
-          // Pendências do remaster UX — o backend agora manda estes campos
-          // em todo frame `state` (antes só no load), então local/clima/
-          // hora do dia já não ficam presos no valor do início da sessão.
-          if (d.local !== undefined) setLocalAtual(d.local);
-          if (d.clima !== undefined) setClimaAtual(d.clima ?? '');
-          if (d.hora_do_dia !== undefined) setHoraDoDia(d.hora_do_dia);
-          if (d.heroi_escondido !== undefined) setHeroiEscondido(d.heroi_escondido);
-          if (d.heroi_bonus_ca !== undefined) setHeroiBonusCa(d.heroi_bonus_ca);
-          if (d.heroi_vantagem_inimiga !== undefined) setHeroiVantagemInimiga(d.heroi_vantagem_inimiga);
-          if (d.monstros_derrotados) setMonstrosDerrotados(d.monstros_derrotados);
-          if (d.morto_em !== undefined) setMortoEm(d.morto_em);
-          if (d.pontuacao_final !== undefined) setPontuacaoFinal(d.pontuacao_final);
-          if (d.resultado_combate === 'morte') setGameOver(true);
-
-          if (d.turno_index !== undefined) {
-            const turnoIndex = d.turno_index;
-            setMessages(prev => {
-              const copia = [...prev];
-              for (let i = copia.length - 1; i >= 0; i--) {
-                const m = copia[i];
-                if (m.kind === 'texto' && m.role === 'assistant') {
-                  copia[i] = { ...m, turnoIndex };
-                  break;
-                }
-              }
-              return copia;
-            });
-          }
+          aplicarEstadoJogo(evt.data as EstadoJogo);
         }
       }
     } catch (err) {
@@ -858,6 +858,64 @@ export default function GameChat() {
   // tem o campo aberto.
   const [comentarioAbertoIdx, setComentarioAbertoIdx] = useState<number | null>(null);
   const [comentarioTexto, setComentarioTexto] = useState('');
+
+  // Botões de AdventureStage.tsx — ação mecânica resolvida na hora por
+  // POST /game/action (services/tools.py:ToolExecutor), sem passar pelo
+  // narrador (ADR-0006 continua valendo só pro texto livre; isto é o outro
+  // lado da tese "juiz × narrador" ganhando UI própria). `loading` e
+  // `acaoTaticaEmCurso` juntos evitam que este caminho e `sendAction`
+  // corram ao mesmo tempo — os dois disputam o mesmo `turno_esperado`
+  // (world_state.turno).
+  const aoAgir = async (acao: AcaoDireta) => {
+    if (!sessionId || gameOver || loading || acaoTaticaEmCurso) return;
+    setAcaoTaticaEmCurso(true);
+    setErroAcao(null);
+    try {
+      const resposta = await api.post<EstadoJogo & { narrativa: string; eventos_estruturados: DadosRolagem[] }>(
+        '/game/action',
+        {
+          session_id: sessionId,
+          acao: acao.acao,
+          turno_esperado: turnoMundo,
+          alvo: acao.alvo,
+          habilidade: acao.habilidade,
+          interacao: acao.interacao,
+          tipo: 'curto',
+        },
+      );
+      const d = resposta.data;
+      aplicarEstadoJogo(d);
+      // Mesmo tratamento do frame `tool_event` do streaming — cards de
+      // rolagem primeiro, narração (texto puro do juiz, não do LLM) depois.
+      if (d.eventos_estruturados.length > 0) {
+        setMessages(prev => [
+          ...prev,
+          ...d.eventos_estruturados.map(dados => ({ kind: 'rolagem' as const, id: proximoIdMsg(), dados })),
+        ]);
+      }
+      if (d.narrativa) {
+        setResultadoAcao(d.narrativa);
+        setMessages(prev => [...prev, {
+          kind: 'texto', id: proximoIdMsg(), role: 'assistant',
+          content: limparMarkdownLeve(esconderTagOpcoes(d.narrativa)),
+        }]);
+      }
+    } catch (err) {
+      const ehErroAxios = isAxiosError<{ detail?: string }>(err);
+      const status = ehErroAxios ? err.response?.status : undefined;
+      const mensagem = (ehErroAxios ? err.response?.data?.detail : undefined) ?? 'Não consegui resolver essa ação. Tente de novo.';
+      setErroAcao(mensagem);
+      acrescentarTexto(`*(${mensagem})*`, true);
+      // 409 = a rodada mudou (turno_esperado desatualizado) ou a partida já
+      // terminou — o estado local está desatualizado; refaz o /load_game em
+      // vez de deixar o jogador clicando contra um `turno_esperado` errado.
+      if (status === 409) {
+        queryClient.invalidateQueries({ queryKey: ['load_game', sessionId] });
+      }
+    } finally {
+      setAcaoTaticaEmCurso(false);
+    }
+  };
 
   const handleSendMessage = () => { if (!input.trim()) return; sendAction(input); setInput(""); };
   const handleKeyDown = (e: React.KeyboardEvent) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendMessage(); } };
@@ -1602,71 +1660,41 @@ export default function GameChat() {
             </div>
         )}
 
-        {/* HUD Inimigos — ordem de iniciativa real (Etapa 7, Fase 1): a
-            posição vem de `ordemIniciativa` (índices em `enemies`, -1 é o
-            herói), calculada uma vez por `combat.iniciar_combate`. Clicar
-            num inimigo sugere o alvo na próxima ação — quem decide o alvo
-            de verdade continua sendo o texto interpretado pelo modelo
-            (ADR-0006), isto só evita digitar o nome à mão.
-
-            Rodada de conserto — antes era `absolute top-0 z-30`, empilhado
-            por cima da faixa de vitais (mesmo pai `relative`) e cobrindo o
-            botão de abrir a ficha inteiro: em combate, com a ficha
-            fechada, não sobrava gesto nenhum pra reabri-la. Agora é uma
-            faixa normal no fluxo, abaixo dos vitais — não cobre nada. */}
-        {combatActive && enemies.length > 0 && !gameOver && (
-            <div className="shrink-0 w-full bg-gradient-to-b from-red-950/90 to-black/40 border-b-2 border-red-900/40 px-2 py-2 flex items-center gap-3 animate-fade-in shadow-lg overflow-x-auto">
-                <span className="shrink-0 text-red-500 font-rpg text-xs animate-pulse flex items-center gap-1"><PixelIcon name="espada" size={14}/> COMBATE</span>
-                {enemies.map((en, i) => {
-                    const posicao = ordemIniciativa.indexOf(i);
-                    const suaVez = posicao !== -1 && ordemIniciativa[turnoAtual] === i;
-                    const morto = en.hp <= 0;
-                    // Item 10 da rodada de polish pós-remaster — o `title=`
-                    // nativo (rodada de conserto, Parte 2, item I) virava
-                    // uma caixa branca padrão do navegador, fora do tema;
-                    // troca por PixelTooltip quando há `comportamento` pra
-                    // mostrar, sem perder o botão nu quando não há.
-                    const cardBotao = (
-                        <button
-                            type="button"
-                            onClick={() => !morto && setInput(`Eu ataco ${en.nome}`)}
-                            disabled={morto}
-                            aria-label={morto ? `${en.nome} (derrotado)` : `Atacar ${en.nome}`}
-                            className={`relative min-w-[100px] bg-black/80 p-2 border-2 backdrop-blur-sm text-left transition-colors
-                                focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rpg-gold
-                                ${morto ? 'border-gray-800 opacity-40 cursor-default' : 'border-red-900/50 hover:border-rpg-gold cursor-pointer'}
-                                ${suaVez && !morto ? 'ring-1 ring-rpg-gold' : ''}`}
-                        >
-                            <FloatingCombatText
-                                itens={danosFlutuantes.filter(f => f.idx === i).map(f => ({ id: f.id, texto: `-${f.valor}`, cor: 'text-red-400' }))}
-                            />
-                            <div className="flex justify-between items-center mb-1 gap-1">
-                                {posicao !== -1 && (
-                                    <span className={`text-[9px] font-mono px-1 shrink-0 ${suaVez ? 'bg-rpg-gold text-black' : 'bg-gray-800 text-gray-400'}`}>
-                                        {posicao + 1}
-                                    </span>
-                                )}
-                                {/* Etapa 11 (B-1) — sprite do monstro pelo nome; bestiário
-                                    fora do catálogo simplesmente não mostra imagem
-                                    (onError some com o ícone em vez de quebrar o layout). */}
-                                <img
-                                    src={getLocalImage('monstros', en.nome)}
-                                    alt=""
-                                    className="w-4 h-4 shrink-0"
-                                    onError={(e) => { e.currentTarget.style.display = 'none'; }}
-                                />
-                                <span className="text-[10px] font-bold text-red-100 truncate">{en.nome}</span>
-                            </div>
-                            <PixelBar value={en.hp} max={en.max_hp} segments={8} colorClass="bg-red-600" />
-                        </button>
-                    );
-                    return en.comportamento ? (
-                        <PixelTooltip key={i} content={en.comportamento}>{cardBotao}</PixelTooltip>
-                    ) : (
-                        <div key={i}>{cardBotao}</div>
-                    );
-                })}
-            </div>
+        {/* Sistema de progressão/encontros táticos — substitui a antiga
+            faixa "HUD Inimigos" (só combate, só `setInput` com o nome do
+            alvo) pelo componente pronto de AdventureStage.tsx: cobre
+            exploração (interações de cena, descansar) e combate (alvo,
+            habilidades, táticas), com POST /game/action resolvendo cada
+            clique sem gastar tokens de LLM (ver `aoAgir` acima). Só
+            desliga quando a jornada terminou de verdade (`gameOver`) — o
+            herói caído a 0 PV (mas ainda recuperável via teste de morte)
+            continua vendo o palco, com o botão "Resistir" no lugar de
+            "Atacar" (o próprio AdventureStage decide isso via `hp`). */}
+        {!gameOver && (
+            <AdventureStage
+                nome={charName}
+                classe={charClass}
+                nivel={nivel}
+                hp={hpAtual}
+                hpMax={hpMax}
+                local={localAtual}
+                clima={climaAtual}
+                hora={horaDoDia}
+                combate={combatActive}
+                ocupado={loading || acaoTaticaEmCurso}
+                encerrado={gameOver}
+                cena={cena}
+                progressao={progressao}
+                marcos={marcos}
+                inimigos={enemies}
+                escondido={heroiEscondido}
+                bonusDefesa={heroiBonusCa}
+                danos={danosFlutuantes}
+                erro={erroAcao}
+                resultado={resultadoAcao}
+                aoAgir={aoAgir}
+                aoInspecionarHeroi={() => setFichaModalAberta(true)}
+            />
         )}
 
         {/* Fase 1 (revisão de gameplay) — testes de morte visíveis: o herói
@@ -1892,12 +1920,12 @@ export default function GameChat() {
                     onKeyDown={handleKeyDown}
                     placeholder={combatActive ? "Ameaça iminente! (Ex: 'Ataco o inimigo', 'Fujo')" : "Sua ação..."}
                     aria-label="Sua ação"
-                    disabled={gameOver}
+                    disabled={gameOver || acaoTaticaEmCurso}
                     className="flex-1 bg-transparent text-gray-200 p-3 outline-none resize-none h-12 max-h-32 custom-scrollbar font-serif text-sm placeholder-gray-500 disabled:opacity-50"
                 />
                 <button
                     onClick={handleSendMessage}
-                    disabled={loading || !input.trim() || gameOver}
+                    disabled={loading || !input.trim() || gameOver || acaoTaticaEmCurso}
                     aria-label="Enviar ação"
                     className="h-10 w-10 bg-gray-800 hover:bg-gray-700 text-rpg-gold flex items-center justify-center transition-all mt-1 mr-1 border border-gray-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rpg-gold disabled:opacity-40"
                 >
