@@ -11,6 +11,8 @@ interface Props {
   combate: boolean;
   aoAgir: (acao: AcaoDireta, rotulo: string) => void;
   aoIdeia: (texto: string) => void;
+  /** Fase 6 — o balcão virou modal (jogo/BalcaoMercador.tsx). */
+  aoAbrirBalcao: (id: string) => void;
   /** Fase 1 (ADR-0033) — ficha dos itens do herói (preço de venda) e ouro atual, para o balcão do mercador. */
   catalogo?: Record<string, ItemInfo>;
   ouro?: number;
@@ -33,14 +35,9 @@ export default function LivingWorld(p: Props) {
   const [meio, setMeio] = useState('');
   const [proposta, setProposta] = useState('');
   const [ideia, setIdeia] = useState('');
-  const [objetivo, setObjetivo] = useState('');
-  const [conflitoSelecionado, setConflito] = useState('');
-  const [abordagem, setAbordagem] = useState('atrasar');
   const entidade = p.mundo.entidades.find(e => e.id === selecao);
   const pessoa = p.mundo.pessoas.find(n => n.id === selecao);
   const alvo = entidade ?? pessoa;
-  const conflitos = p.mundo.conflitos.filter(c => c.estado === 'ativo');
-  const conflito = conflitos.find(c => c.id === conflitoSelecionado) ?? conflitos[0];
   const sociais = ['negociar', 'ajudar', 'intimidar', 'distrair', 'acalmar'];
   const opcoes = pessoa ? ['examinar', 'conversar', ...sociais] : entidade ? [
     'examinar', 'investigar',
@@ -102,79 +99,13 @@ export default function LivingWorld(p: Props) {
       </button>
       {pessoa && pessoa.lembrancas.length > 0 && <details><summary>O que aconteceu entre vocês</summary>
         {pessoa.lembrancas.slice(-4).map((m, i) => <p key={i}>{m}</p>)}</details>}
-      {pessoa && (pessoa.vitrine?.length ?? 0) > 0 && <div className="living-world__shop" aria-label={`Balcão de ${pessoa.nome}`}>
-        <strong>Balcão de {pessoa.nome}</strong><small>Preços do mercado, ajustados pela confiança. Você tem {p.ouro ?? 0} de ouro.</small>
-        <div className="living-world__shop-grid">
-          {pessoa.vitrine!.map(v => <button type="button" key={`c:${v.item}`} disabled={p.ocupado || p.combate || (p.ouro ?? 0) < v.preco}
-            onClick={() => p.aoAgir({acao: 'comerciar', alvo: pessoa.id, operacao: 'comprar', item: v.item}, `Comprar ${v.item} de ${pessoa.nome}`)}>
-            Comprar {v.item}<small>{v.preco} ouro</small>
-          </button>)}
-        </div>
-        {p.inventario.length > 0 && <>
-          <small>Vender do seu inventário (metade do valor):</small>
-          <div className="living-world__shop-grid">
-            {p.inventario.map((item, i) => <button type="button" key={`v:${item}:${i}`} disabled={p.ocupado || p.combate}
-              onClick={() => p.aoAgir({acao: 'comerciar', alvo: pessoa.id, operacao: 'vender', item}, `Vender ${item} a ${pessoa.nome}`)}>
-              Vender {item}<small>{p.catalogo?.[item]?.preco_venda ?? 1} ouro</small>
-            </button>)}
-          </div>
-        </>}
-      </div>}
+      {pessoa && (pessoa.vitrine?.length ?? 0) > 0 && <button type="button" className="living-world__primary" disabled={p.ocupado || p.combate}
+        onClick={() => p.aoAbrirBalcao(pessoa.id)}>Ver o balcão de {pessoa.nome}</button>}
     </div>}
     <form className="living-world__free" onSubmit={e => {e.preventDefault(); if (ideia.trim()) {p.aoIdeia(ideia); setIdeia('');}}}>
       <label>Outra ideia?<input value={ideia} maxLength={1800} onChange={e => setIdeia(e.target.value)}
         placeholder="Descreva sua intenção. Os controles são só sugestões."/></label>
       <button type="submit" disabled={p.ocupado || !ideia.trim()}>Tentar com o Mestre</button>
     </form>
-    {p.arco?.ativo && <div className="living-world__arc" aria-label="Arco atual">
-      <strong>Capítulo atual: {p.arco.titulo}</strong>
-      {p.arco.premissa && <p>{p.arco.premissa}</p>}
-      <small>Conflito central: {p.arco.conflito} ({p.arco.estado_conflito}) · {p.arco.turnos} turnos · {p.arco.marcos} fatos registrados</small>
-      <small>{p.arco.pode_encerrar ? 'O servidor confirma: este capítulo pode fechar.' : `Para fechar: ${p.arco.motivo_bloqueio}`}</small>
-      <div className="living-world__paths">
-        <button type="button" className="living-world__primary" disabled={p.ocupado || p.combate || !p.arco.pode_encerrar}
-          onClick={() => p.aoAgir({acao: 'encerrar_arco', operacao: 'encerrar'}, `Encerrar o capítulo: ${p.arco?.titulo}`)}>Encerrar capítulo</button>
-        <button type="button" disabled={p.ocupado || p.combate}
-          onClick={() => { if (window.confirm('Abandonar este capítulo? Sem recompensa; o mundo segue.')) p.aoAgir({acao: 'encerrar_arco', operacao: 'abandonar'}, `Abandonar o capítulo: ${p.arco?.titulo}`); }}>Abandonar</button>
-      </div>
-    </div>}
-    <details><summary>O mundo continua</summary>
-      {p.mundo.conflitos.length === 0 && <p>Nenhum conflito conhecido neste local.</p>}
-      {p.mundo.conflitos.map(c => <article key={c.id} className="living-world__conflict">
-        <strong>{c.nome}</strong><p>{c.estado === 'ativo' ? c.sinal : c.desfecho}</p>
-        {c.estado === 'ativo' && <><progress max={c.etapas} value={c.progresso}/><span>{c.progresso}/{c.etapas} · próximo avanço em {c.minutos_restantes} min de jogo</span></>}
-      </article>)}
-      {conflito && <div className="living-world__interaction">
-        <label>Em qual conflito?<select value={conflito.id} onChange={e => setConflito(e.target.value)}>
-          {conflitos.map(c => <option value={c.id} key={c.id}>{c.nome}</option>)}
-        </select></label>
-        <label>Como intervir<select value={abordagem} onChange={e => setAbordagem(e.target.value)}>
-          <option value="atrasar">Ganhar tempo</option><option value="apoiar">Apoiar a iniciativa</option><option value="resolver">Construir um acordo</option>
-        </select></label>
-        <label>Proposta concreta<input value={proposta} maxLength={500} onChange={e => setProposta(e.target.value)}/></label>
-        <small>Um acordo exige cooperação do responsável e duas intervenções bem-sucedidas.</small>
-        <button type="button" disabled={p.ocupado || !proposta.trim()} onClick={() => p.aoAgir({acao:'intervir_conflito',
-          alvo:conflito.id, operacao:abordagem, proposta}, `${abordagem}: ${conflito.nome}`)}>Intervir</button>
-      </div>}
-    </details>
-    <details><summary>Meu caminho e minhas descobertas</summary>
-      <p>{p.mundo.aptidao.nome}: +{p.mundo.aptidao.bonus} em {p.mundo.aptidao.acoes.map(a => ACOES[a] ?? a).join(', ')}.</p>
-      <form onSubmit={e => {e.preventDefault(); if (objetivo.trim()) {p.aoAgir({acao:'definir_objetivo', proposta:objetivo}, `Meu objetivo: ${objetivo}`); setObjetivo('');}}}>
-        <label>O que você quer fazer agora?<input maxLength={500} value={objetivo} onChange={e => setObjetivo(e.target.value)} placeholder="Você pode mudar de rumo."/></label>
-        <button type="submit" disabled={p.ocupado || !objetivo.trim()}>Seguir este objetivo</button>
-      </form>
-      {(['3','7'] as const).map(marco => <div className="living-world__paths" key={marco}>
-        <strong>Nível {marco} · {p.mundo.especializacoes[marco] ?? 'Escolha opcional'}</strong>
-        {(['explorador','diplomata','combatente'] as const).map(caminho => <button type="button" key={caminho}
-          disabled={p.ocupado || p.combate || p.nivel < Number(marco)} aria-pressed={p.mundo.especializacoes[marco] === caminho}
-          onClick={() => p.aoAgir({acao:'escolher_especializacao', marco, escolha:caminho}, `Especializar: ${caminho}`)}>
-          {caminho}<small>{caminho === 'combatente' ? '+1 dano' : caminho === 'diplomata' ? '+1 testes sociais' : '+1 testes de exploração'}</small>
-        </button>)}
-        <small>Pode trocar entre encontros.</small>
-      </div>)}
-      {p.mundo.conhecimento.slice(-12).reverse().map((f, i) => <p className="living-world__fact" key={`${f.turno}:${i}`}>
-        <strong>{f.natureza}</strong> · {f.texto}<small>Fonte: {f.fonte}</small>
-      </p>)}
-    </details>
   </section>;
 }

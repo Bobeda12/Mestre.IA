@@ -5,13 +5,13 @@ import { isAxiosError } from 'axios';
 import { api, API_URL } from '../lib/api';
 import { prefereMovimentoReduzido } from '../lib/acessibilidade';
 import { ErroSse, postSse } from '../lib/sse';
-import { esconderTagOpcoes, getLocalImage, limparMarkdownLeve, renderizarNarrativa } from '../lib/utils';
+import { esconderTagOpcoes, getLocalImage, limparMarkdownLeve } from '../lib/utils';
 import { useAuth } from '../lib/auth';
 import { useTrilha, calcularTema } from '../lib/trilha';
 import { useSfx } from '../lib/sfx';
-import RollCard, { DURACAO_ANIMACAO_DADO_MS, type DadosRolagem } from './RollCard';
-import StatusCard, { type EventoStatus } from './StatusCard';
-import PixelBar from './PixelBar';
+import { DURACAO_ANIMACAO_DADO_MS, type DadosRolagem } from './RollCard';
+import { type EventoStatus } from './StatusCard';
+import LogNarrativa, { type Message } from './jogo/LogNarrativa';
 import Prologo from './Prologo';
 import PixelIcon, { type PixelIconName } from './PixelIcon';
 import PanelFrame from './PanelFrame';
@@ -36,6 +36,9 @@ import DetalheMonstroModal from './DetalheMonstroModal';
 import GuiaAventureiro from './GuiaAventureiro';
 import AdventureStage from './AdventureStage';
 import LivingWorld from './LivingWorld';
+import AbaJornada from './jogo/AbaJornada';
+import AbaRelacoes from './jogo/AbaRelacoes';
+import BalcaoMercador from './jogo/BalcaoMercador';
 import type { AliadoVisual, ArcoAtual, ArcoEncerrado, AcaoDireta, Cena, InimigoVisual, Progressao, MundoPersistente, Equipamento, ItemInfo } from '../lib/gameplay';
 
 // Etapa 14 (revisão) — a ficha virou menu de abas estilo JRPG. Antes tudo
@@ -45,7 +48,7 @@ import type { AliadoVisual, ArcoAtual, ArcoEncerrado, AcaoDireta, Cena, InimigoV
 const ABAS = [
   { id: 'status', rotulo: 'STATUS', icone: 'coracao' },
   { id: 'itens', rotulo: 'ITENS', icone: 'mochila' },
-  { id: 'missao', rotulo: 'MISSÃO', icone: 'pergaminho' },
+  { id: 'missao', rotulo: 'JORNADA', icone: 'pergaminho' },
   { id: 'relacoes', rotulo: 'RELAÇÕES', icone: 'rosto' },
   // Fase 3 do remaster UX (PLANO_REMASTER_UX.md) — "Bestiário": só os
   // monstros encontrados NESTA sessão (o backend não guarda um histórico
@@ -92,27 +95,7 @@ const ATRIBUTOS_INFO: Record<(typeof ATRIBUTOS)[number][0], { nome: string; uso:
   carisma: { nome: 'Carisma', uso: 'Persuasão, intimidação e magias de Bardo/Feiticeiro.' },
 };
 
-type Message =
-  // `turnoIndex` (Etapa 9) chega no frame SSE "state", junto do resto do
-  // HUD — é a posição desta narração em `historico_chat` no servidor
-  // (Personagem.historico_chat), o que o botão 👍/👎 manda pra
-  // POST /personagens/:id/feedback. `feedback` é só o que ESTE navegador já
-  // votou, pra não deixar votar duas vezes na mesma aba.
-  // `raw` (Fase 1, revisão de gameplay) só existe em bolhas de assistente
-  // em streaming: o texto CRU acumulado, nunca limpo/truncado — precisa
-  // viver no estado (não numa ref) porque o updater de `setMessages` roda
-  // puro a partir de `prev`; uma ref mutada dentro do updater duplica
-  // texto sob o StrictMode do React (chama o updater duas vezes).
-  // `id` (rodada de conserto) — chave estável pro `key` do React, em vez
-  // do índice do array. Hoje o log só cresce por trás (nunca reordena nem
-  // remove do meio), então `key={idx}` funcionava; mas o reenvio em modo
-  // de emergência (ver `tentarComChaveDoServidor`) passou a poder cortar
-  // mensagens do fim da lista, e qualquer feature futura que remova do
-  // meio reiniciaria a animação de todo card vizinho sem isto.
-  | { kind: 'texto'; id: number; role: 'user' | 'assistant' | 'system'; content: string; raw?: string; isError?: boolean; turnoIndex?: number; feedback?: 1 | -1 }
-  // Etapa 10 (A-7): cura e morte de inimigo chegam pelo mesmo frame
-  // `tool_event` que ataque/teste, só com um `dados.tipo` diferente.
-  | { kind: 'rolagem'; id: number; dados: DadosRolagem | EventoStatus };
+// `Message` mora em jogo/LogNarrativa.tsx (Fase 6).
 
 // `InimigoVisual` (lib/gameplay.ts) espelha domain/state.py:Inimigo —
 // mesmo tipo usado por AdventureStage.tsx, pra não ter duas formas
@@ -228,7 +211,6 @@ export default function GameChat() {
   // `null` quando fechado.
   const [monstroDetalheAberto, setMonstroDetalheAberto] = useState<string | null>(null);
   const [atributoInspecionado, setAtributoInspecionado] = useState<(typeof ATRIBUTOS)[number][0] | null>(null);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // FICHA — sempre a verdade que vem do backend (load_game / chat)
   const [charName, setCharName] = useState("");
@@ -326,6 +308,8 @@ export default function GameChat() {
   const [arcoAtual, setArcoAtual] = useState<ArcoAtual | null>(null);
   const [arcoEncerrado, setArcoEncerrado] = useState<ArcoEncerrado | null>(null);
   const [arcoVisto, setArcoVisto] = useState<string | null>(null);
+  // Fase 6 (ADR-0036) — id do NPC cujo balcão está aberto; fecha se ele some.
+  const [balcaoAberto, setBalcaoAberto] = useState<string | null>(null);
   const [catalogoItens, setCatalogoItens] = useState<Record<string, ItemInfo>>({});
   const [erroAcao, setErroAcao] = useState<string | null>(null);
   const [resultadoAcao, setResultadoAcao] = useState<string | null>(null);
@@ -712,8 +696,6 @@ export default function GameChat() {
     }
   }, [cargaJogo, charImageFromNav]);
 
-  const scrollToBottom = () => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); };
-  useEffect(() => { scrollToBottom(); }, [messages]);
 
   // Adiciona texto à ÚLTIMA mensagem se ela for uma bolha de assistente
   // aberta (`aberta=true`), ou cria uma nova — é o que dá o efeito de
@@ -1308,95 +1290,30 @@ export default function GameChat() {
                 </div>
               )}
 
-              {/* Fase 2 do remaster UX (PLANO_REMASTER_UX.md) — "Diário de
-                  Bordo": a missão vira card de pergaminho (PanelFrame já
-                  usado na narração da Fase 1), e o resumo rolante que o
-                  próprio backend já gera pra memória do LLM (`anteriormente`,
-                  antes só virava uma bolha de sistema) ganha um segundo uso
-                  aqui como accordion — reler o que já aconteceu sem rolar o
-                  chat inteiro pra cima. */}
               {abaAtiva === 'missao' && (
-                <div className="animate-fade-in space-y-3">
-                  {quest ? (
-                      <PanelFrame borderWidth={8} className="bg-black/50 p-3">
-                          <h3 className="text-[10px] text-blue-300 uppercase font-rpg mb-2 tracking-widest flex items-center gap-1">
-                              <PixelIcon name="pergaminho" size={11} /> Missão atual
-                          </h3>
-                          <p className="text-base text-blue-100 font-rpg leading-tight mb-2">{quest.nome_missao}</p>
-                          <p className="text-xs text-gray-200 leading-relaxed">{quest.objetivo_missao}</p>
-                      </PanelFrame>
-                  ) : (
-                      <p className="text-sm text-gray-400 font-rpg text-center py-8">Nenhuma missão em andamento.</p>
-                  )}
-
-                  {resumoJornada && (
-                      <div className="border-2 border-gray-700 bg-black/40">
-                          <button
-                              type="button"
-                              onClick={() => setJornadaAberta(a => !a)}
-                              aria-expanded={jornadaAberta}
-                              aria-controls="jornada-ate-aqui"
-                              className="w-full flex items-center justify-between gap-2 px-2.5 py-2 text-[10px] uppercase tracking-widest font-rpg text-gray-300 hover:text-rpg-gold transition-colors"
-                          >
-                              <span>A Jornada Até Aqui</span>
-                              <PixelIcon name="seta" size={10} className={`transition-transform ${jornadaAberta ? 'rotate-90' : ''}`} />
-                          </button>
-                          {jornadaAberta && (
-                              <p id="jornada-ate-aqui" className="px-2.5 pb-2.5 text-xs text-gray-400 leading-relaxed italic animate-fade-in">
-                                  {resumoJornada}
-                              </p>
-                          )}
-                      </div>
-                  )}
-                </div>
+                <AbaJornada
+                  quest={quest}
+                  resumoJornada={resumoJornada}
+                  jornadaAberta={jornadaAberta}
+                  setJornadaAberta={setJornadaAberta}
+                  arco={arcoAtual}
+                  mundo={mundoPersistente}
+                  progressao={progressao}
+                  marcos={marcos}
+                  nivel={nivel}
+                  ocupado={loading || acaoTaticaEmCurso || gameOver}
+                  combate={combatActive}
+                  aoAgir={aoAgir}
+                />
               )}
 
-              {/* Fase 8 (revisão de gameplay) — cards de atitude de NPC.
-                  A ferramenta `ajustar_reputacao_npc` (Etapa 5) já existia
-                  e já entrava no contexto do narrador; até aqui não tinha
-                  nenhum consumidor no frontend. -100 (Inimigo) a +100
-                  (Aliado); a barra reaproveita PixelBar deslocando o
-                  intervalo pra 0..200. */}
               {/* Fase 2 do remaster UX — cards de NPC ganham "juice" de
                   hover (levantam 2px, como o documento de design pede) e um
                   tooltip com a leitura por extenso da reputação, no lugar
                   de só o número — reaproveita o Tooltip que RollCard e a
                   faixa de vitais já usam. */}
               {abaAtiva === 'relacoes' && (
-                <TooltipProvider delayDuration={150}>
-                  <div className="space-y-2 animate-fade-in">
-                    {Object.keys(reputacoes).length > 0 ? (
-                      Object.entries(reputacoes).map(([npc, valor]) => {
-                        const cor = valor > 15 ? 'bg-emerald-600' : valor < -15 ? 'bg-red-600' : 'bg-gray-500';
-                        const leitura = valor > 50 ? `${npc} confia profundamente em você.`
-                          : valor > 15 ? `${npc} confia em você.`
-                          : valor < -50 ? `${npc} é seu inimigo declarado.`
-                          : valor < -15 ? `${npc} desconfia de você.`
-                          : `${npc} ainda não formou opinião sobre você.`;
-                        return (
-                          <Tooltip key={npc}>
-                            <TooltipTrigger asChild>
-                              <div tabIndex={0} className="bg-black/50 border-2 border-gray-700 p-2 transition-transform hover:-translate-y-0.5 hover:border-gray-500 cursor-help focus-visible:outline-none focus-visible:border-rpg-gold">
-                                <div className="flex items-center justify-between mb-1">
-                                  <span className="text-xs text-gray-200 font-rpg truncate">{npc}</span>
-                                  <span className="text-[10px] text-gray-400 font-rpg shrink-0">{valor > 0 ? `+${valor}` : valor}</span>
-                                </div>
-                                <PixelBar value={valor + 100} max={200} segments={10} colorClass={cor} />
-                                <div className="flex justify-between mt-0.5 text-[8px] text-gray-600 uppercase tracking-widest">
-                                  <span>Inimigo</span>
-                                  <span>Aliado</span>
-                                </div>
-                              </div>
-                            </TooltipTrigger>
-                            <TooltipContent>{leitura}</TooltipContent>
-                          </Tooltip>
-                        );
-                      })
-                    ) : (
-                      <p className="text-sm text-gray-400 font-rpg text-center py-8">Nenhum NPC conhecido ainda.</p>
-                    )}
-                  </div>
-                </TooltipProvider>
+                <AbaRelacoes reputacoes={reputacoes} pessoas={mundoPersistente?.pessoas ?? []} />
               )}
               {/* Fase 3 do remaster UX — grid de cards de monstro, sprites
                   reais de `/assets/monstros/` (mesmos usados no card de
@@ -1468,6 +1385,12 @@ export default function GameChat() {
             aoEscolher={aoAgir} aoAdiar={() => setLevelUpAdiado(pendente.nivel)} />
         );
       })()}
+        {(() => {
+          const mercador = balcaoAberto ? mundoPersistente?.pessoas.find(x => x.id === balcaoAberto) : undefined;
+          if (!mercador) return null;
+          return <BalcaoMercador pessoa={mercador} inventario={inventory} catalogo={catalogoItens} ouro={ouro}
+            ocupado={loading || acaoTaticaEmCurso || gameOver} combate={combatActive} aoAgir={aoAgir} aoFechar={() => setBalcaoAberto(null)} />;
+        })()}
       <FichaModal
           aberto={fichaModalAberta}
           onFechar={() => setFichaModalAberta(false)}
@@ -1763,7 +1686,7 @@ export default function GameChat() {
                 {mundoPersistente && <LivingWorld
                     mundo={mundoPersistente} nivel={nivel} inventario={inventory} catalogo={catalogoItens} ouro={ouro} arco={arcoAtual}
                     ocupado={loading || acaoTaticaEmCurso || hpAtual <= 0} combate={combatActive}
-                    aoAgir={aoAgir} aoIdeia={texto => sendAction(texto)}
+                    aoAgir={aoAgir} aoIdeia={texto => sendAction(texto)} aoAbrirBalcao={setBalcaoAberto}
                 />}
             </div>
         )}
@@ -1803,161 +1726,15 @@ export default function GameChat() {
             real, já que cada pedacinho de texto é uma mudança no live
             region; mitigar isso de verdade (debounce por frase) ficou
             para depois. */}
-        <div className="flex-1 overflow-y-auto p-4 md:p-8 space-y-6 custom-scrollbar scroll-smooth" role="log" aria-live="polite" aria-atomic="false">
-            {/* Rodada de conserto — este espaçador compensava a altura do
-                HUD de combate quando ele era `absolute` e cobria o topo do
-                log; agora que o HUD está no fluxo normal, ele só abriria
-                um buraco vazio. */}
-            {messages.map((msg, idx) => {
-                if (msg.kind === 'rolagem') {
-                    // Etapa 10 (A-7): cura/morte de inimigo usam o card de
-                    // status; o resto (ataque, teste, dano, morte do herói)
-                    // continua no RollCard de sempre.
-                    if (msg.dados.tipo === 'cura' || msg.dados.tipo === 'morte_inimigo' || msg.dados.tipo === 'morte_aliado') {
-                        return <StatusCard key={msg.id} dados={msg.dados} />;
-                    }
-                    return <RollCard key={msg.id} dados={msg.dados as DadosRolagem} />;
-                }
-
-                const isUser = msg.role === 'user';
-                const isSystem = msg.role === 'system';
-
-                if (isSystem) {
-                    return (
-                        <div key={msg.id} className="flex justify-center my-2 animate-fade-in">
-                            <div className="bg-yellow-900/20 border border-yellow-700/30 text-yellow-500 px-4 py-2 text-xs font-mono flex items-center gap-2">
-                                <PixelIcon name="dado" size={12}/> {msg.content}
-                            </div>
-                        </div>
-                    );
-                }
-
-                // Fase 1 do remaster UX (PLANO_REMASTER_UX.md) — a narração
-                // deixa de ser bolha de chat (avatar + balão lado a lado,
-                // cara de app de mensagem) e vira parágrafo dentro de uma
-                // moldura de pergaminho (PanelFrame, 9-slice já usado na
-                // sidebar/modais); a fala do jogador vira só uma linha de
-                // "ação" alinhada à direita, como o comando digitado, sem
-                // balão próprio — a narração do Mestre é a protagonista
-                // visual da tela, não uma troca de mensagens equivalente.
-                if (isUser) {
-                    return (
-                        <div key={msg.id} className="flex justify-end animate-fade-in">
-                            <div className="max-w-[80%] md:max-w-[70%] text-right border-r-2 border-rpg-gold/30 pr-3">
-                                <span className="block font-pixel-title text-[8px] tracking-widest text-rpg-gold/70 mb-1">VOCÊ</span>
-                                <p className="whitespace-pre-wrap break-words font-rpg text-sm md:text-base italic text-gray-300 leading-relaxed">
-                                    {msg.content}
-                                </p>
-                            </div>
-                        </div>
-                    );
-                }
-
-                return (
-                    <div key={msg.id} className="animate-fade-in">
-                        {/* Item 8 da rodada de polish pós-remaster — fundo
-                            escuro/marrom mais presente que o `bg-gray-900/50`
-                            genérico de antes (reaproveita os tokens
-                            `rpg-dark`/`rpg-leather` já existentes, em vez de
-                            inventar cor nova), pra separar a caixa do Mestre
-                            do fundo geral da página. */}
-                        <PanelFrame
-                            borderWidth={10}
-                            className={`relative max-w-[820px] mx-auto p-4 md:p-6 ${msg.isError ? 'bg-amber-950/20' : 'bg-[#1a140d]/85'} backdrop-blur-sm`}
-                        >
-                            <span className={`absolute -top-3 left-3 px-2 py-0.5 font-pixel-title text-[8px] tracking-widest ${msg.isError ? 'bg-amber-800 text-amber-100' : 'bg-rpg-leather text-rpg-gold'}`}>
-                                {msg.isError ? 'AVISO' : 'MESTRE'}
-                            </span>
-                            {/* Item 8 — `leading-relaxed` (1.625) virou
-                                `leading-loose` (2): a fonte pixelada (VT323)
-                                lê melhor com mais respiro entre linhas.
-                                Item 9 — `renderizarNarrativa` troca texto
-                                puro por nós React, pra `**negrito**`
-                                (`limparMarkdownLeve` não apaga mais, ver
-                                lib/utils.tsx) virar destaque dourado com
-                                glow em vez de sumir. */}
-                            <p className={`whitespace-pre-wrap break-words font-rpg text-base md:text-lg leading-loose ${msg.isError ? 'text-amber-200 italic' : 'text-gray-300'}`}>
-                                {msg.isError ? msg.content : renderizarNarrativa(msg.content)}
-                            </p>
-                            {!msg.isError && msg.turnoIndex !== undefined && (
-                                comentarioAbertoIdx === idx ? (
-                                    <div className="mt-2 -mb-1 flex flex-col gap-1.5">
-                                        <input
-                                            type="text"
-                                            autoFocus
-                                            value={comentarioTexto}
-                                            onChange={(e) => setComentarioTexto(e.target.value)}
-                                            onKeyDown={(e) => {
-                                                if (e.key === 'Enter') {
-                                                    enviarFeedback(idx, msg.turnoIndex!, -1, comentarioTexto.trim() || undefined);
-                                                    setComentarioAbertoIdx(null);
-                                                    setComentarioTexto('');
-                                                }
-                                            }}
-                                            maxLength={500}
-                                            placeholder="O que ficou estranho? (opcional)"
-                                            aria-label="O que ficou estranho? Opcional."
-                                            className="bg-black/40 border border-gray-700 px-2 py-1 text-xs text-gray-200 outline-none focus:border-red-700 w-full max-w-xs"
-                                        />
-                                        <div className="flex gap-2">
-                                            <button
-                                                type="button"
-                                                onClick={() => {
-                                                    enviarFeedback(idx, msg.turnoIndex!, -1, comentarioTexto.trim() || undefined);
-                                                    setComentarioAbertoIdx(null);
-                                                    setComentarioTexto('');
-                                                }}
-                                                className="text-[11px] font-bold text-red-400 hover:text-red-300"
-                                            >Enviar</button>
-                                            <button
-                                                type="button"
-                                                onClick={() => { setComentarioAbertoIdx(null); setComentarioTexto(''); }}
-                                                className="text-[11px] text-gray-500 hover:text-gray-300"
-                                            >Cancelar</button>
-                                        </div>
-                                    </div>
-                                ) : (
-                                    // Item 5 da rodada de polish pós-remaster — área de clique
-                                    // maior (`p-1`→`p-2.5`) e feedback tátil (`active:scale-95`).
-                                    // `PixelIcon` é um `<img>` de PNG com cor própria, então
-                                    // `text-emerald-500`/`text-red-500` no botão nunca recolorem
-                                    // o ícone (achado ao ler PixelIcon.tsx) — a "cor viva
-                                    // permanente + brilho" vira o FUNDO do botão (chip), não o
-                                    // ícone em si.
-                                    <div className="flex gap-2 mt-2 -mb-1">
-                                        <button
-                                            type="button"
-                                            onClick={() => enviarFeedback(idx, msg.turnoIndex!, 1)}
-                                            disabled={msg.feedback !== undefined}
-                                            aria-label="Gostei desta narração"
-                                            className={`p-2.5 border-2 transition-all active:scale-95 ${
-                                                msg.feedback === 1
-                                                    ? 'border-emerald-500 bg-emerald-600/90 shadow-[0_0_8px_rgba(16,185,129,0.7)]'
-                                                    : 'border-transparent text-gray-600 hover:text-emerald-500 hover:border-gray-700 disabled:hover:text-gray-600 disabled:hover:border-transparent'
-                                            }`}
-                                        ><PixelIcon name="polegar-cima" size={16}/></button>
-                                        <button
-                                            type="button"
-                                            onClick={() => { if (msg.feedback === undefined) setComentarioAbertoIdx(idx); }}
-                                            disabled={msg.feedback !== undefined}
-                                            aria-label="Não gostei desta narração"
-                                            className={`p-2.5 border-2 transition-all active:scale-95 ${
-                                                msg.feedback === -1
-                                                    ? 'border-red-500 bg-red-600/90 shadow-[0_0_8px_rgba(239,68,68,0.7)]'
-                                                    : 'border-transparent text-gray-600 hover:text-red-500 hover:border-gray-700 disabled:hover:text-gray-600 disabled:hover:border-transparent'
-                                            }`}
-                                        ><PixelIcon name="polegar-baixo" size={16}/></button>
-                                    </div>
-                                )
-                            )}
-                        </PanelFrame>
-                    </div>
-                );
-            })}
-
-            {loading && <div className="text-center py-4 text-xs text-gray-600 animate-pulse italic">O mestre está narrando...</div>}
-            <div ref={messagesEndRef} className="h-4" />
-        </div>
+        <LogNarrativa
+            messages={messages}
+            loading={loading}
+            comentarioAbertoIdx={comentarioAbertoIdx}
+            setComentarioAbertoIdx={setComentarioAbertoIdx}
+            comentarioTexto={comentarioTexto}
+            setComentarioTexto={setComentarioTexto}
+            enviarFeedback={enviarFeedback}
+        />
 
         {/* INPUT AREA */}
         {/* Rodada de conserto — `z-40` empatava com o backdrop da gaveta
