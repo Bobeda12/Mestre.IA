@@ -38,6 +38,7 @@ Template: [`0000-template.md`](0000-template.md) · Sistema completo: [`../READM
 | [0033](0033-catalogo-de-itens-com-tags-fechadas.md) | Catálogo de itens com números validado no boot; item inventado pelo narrador só com tags fechadas; slots equipados, saque por banda e mercador com preço do servidor | Plano "jogo completo" (Fase 1) | ✅ aceito | 08/09/2026 |
 | [0034](0034-progressao-com-escolha-do-jogador.md) | Cada nível deixa uma escolha do jogador (atributo, talento ou especialização) pela interface; talentos são números em canais do motor, nunca ferramenta do narrador | Plano "jogo completo" (Fase 3) | ✅ aceito | 08/09/2026 |
 | [0035](0035-arcos-verificaveis-pelo-servidor.md) | Arcos com final: o servidor decide quando um capítulo pode fechar (turnos, fatos, conflito central); recompensa determinística; desfecho por IA gerado uma vez e gravado como capítulo da Crônica | Plano "jogo completo" (Fase 4) | ✅ aceito | 08/09/2026 |
+| [0036](0036-uma-tela-um-palco-um-dock.md) | Uma tela sem rolagem de página: Mundo Vivo dentro do palco (seleção única), um dock de ações contextual substitui três lugares de comando, Alegreya no lugar de Geist/VT323 | Plano "jogo completo" (Fase 6) | ✅ aceito | 09/09/2026 |
 
 **Legenda:** 🕓 previsto · ✅ aceito · ⛔ substituído
 
