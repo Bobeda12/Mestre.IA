@@ -37,6 +37,7 @@ Template: [`0000-template.md`](0000-template.md) · Sistema completo: [`../READM
 | [0032](0032-mundo-emergente-puro.md) | Mundo emergente puro: o esqueleto de Atos e as 8 aberturas roteirizadas saem; a campanha nasce de uma origem determinística e cresce pelas ferramentas do Mundo Vivo | Plano "jogo completo" (Fase 0) | ✅ aceito | 08/09/2026 |
 | [0033](0033-catalogo-de-itens-com-tags-fechadas.md) | Catálogo de itens com números validado no boot; item inventado pelo narrador só com tags fechadas; slots equipados, saque por banda e mercador com preço do servidor | Plano "jogo completo" (Fase 1) | ✅ aceito | 08/09/2026 |
 | [0034](0034-progressao-com-escolha-do-jogador.md) | Cada nível deixa uma escolha do jogador (atributo, talento ou especialização) pela interface; talentos são números em canais do motor, nunca ferramenta do narrador | Plano "jogo completo" (Fase 3) | ✅ aceito | 08/09/2026 |
+| [0035](0035-arcos-verificaveis-pelo-servidor.md) | Arcos com final: o servidor decide quando um capítulo pode fechar (turnos, fatos, conflito central); recompensa determinística; desfecho por IA gerado uma vez e gravado como capítulo da Crônica | Plano "jogo completo" (Fase 4) | ✅ aceito | 08/09/2026 |
 
 **Legenda:** 🕓 previsto · ✅ aceito · ⛔ substituído
 

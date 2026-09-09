@@ -664,6 +664,8 @@ def painel_mundo(w_state, classe: str, privado: bool = False) -> dict:
         pessoas.append(dados)
     conflitos = []
     for conflito in mundo.conflitos.values():
+        if privado and conflito.estado != "ativo" and conflito.local != w_state.local:
+            continue  # Fase 4: conflito fechado longe daqui não precisa ocupar o prompt
         if conflito.local == w_state.local or privado:
             dados = (
                 conflito.model_dump()
@@ -679,7 +681,9 @@ def painel_mundo(w_state, classe: str, privado: bool = False) -> dict:
         "entidades": entidades,
         "pessoas": pessoas,
         "conflitos": conflitos,
-        "conhecimento": [c.model_dump() for c in mundo.conhecimento if c.publico or privado][-50:],
+        # Fase 0/4 do plano "jogo completo": o prompt leva só os 6 fatos mais
+        # recentes (teto de tokens); o painel do jogador leva 12. O save guarda 150.
+        "conhecimento": [c.model_dump() for c in mundo.conhecimento if c.publico or privado][-6 if privado else -12:],
         "objetivos": mundo.objetivos,
         "especializacoes": mundo.especializacoes,
         "aptidao": {"nome": aptidao[0], "acoes": aptidao[1], "bonus": 2},

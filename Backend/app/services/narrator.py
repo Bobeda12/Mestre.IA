@@ -330,10 +330,10 @@ def _compacto(obj):
         return {k: _compacto(v) for k, v in obj.items() if v not in ("", [], {}, None)}
     if isinstance(obj, list):
         return [_compacto(v) for v in obj]
-    if isinstance(obj, str) and len(obj) > 220:
+    if isinstance(obj, str) and len(obj) > 160:
         # Descrições longas do modelo ficam inteiras no save; no prompt,
-        # 220 caracteres bastam para o narrador lembrar do que se trata.
-        return obj[:217].rstrip() + "..."
+        # 160 caracteres bastam para o narrador lembrar do que se trata.
+        return obj[:157].rstrip() + "..."
     return obj
 
 
