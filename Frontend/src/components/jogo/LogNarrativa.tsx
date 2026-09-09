@@ -67,7 +67,10 @@ export default function LogNarrativa(p: Props) {
           return (
             <div key={msg.id} className="flex justify-end animate-fade-in">
               <div className="max-w-[80%] md:max-w-[70%] text-right border-r-2 border-rpg-gold/30 pr-3">
-                <span className="block font-pixel-title text-[8px] tracking-widest text-rpg-gold/70 mb-1">VOCÊ</span>
+                {/* "VOCE" sem acento de propósito — Press Start 2P não tem
+                    glifo pra "Ê" (mesma regra de GameChat.tsx sobre abas
+                    acentuadas: rótulo com acento não pode ser pixel-title). */}
+                <span className="block font-pixel-title text-[8px] tracking-widest text-rpg-gold/70 mb-1">VOCE</span>
                 <p className="whitespace-pre-wrap break-words font-rpg text-sm md:text-base italic text-gray-300 leading-relaxed">{msg.content}</p>
               </div>
             </div>

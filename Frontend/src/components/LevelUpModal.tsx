@@ -26,7 +26,7 @@ export default function LevelUpModal(p: Props) {
     <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/80 p-4 animate-fade-in" role="dialog" aria-modal="true" aria-labelledby="levelup-titulo">
       <PanelFrame className="w-full max-w-2xl bg-[#0b0e0a] p-4 max-h-full overflow-y-auto">
         <div className="flex items-center justify-between gap-2 mb-3">
-          <h2 id="levelup-titulo" className="font-pixel-title text-rpg-gold text-sm flex items-center gap-2"><PixelIcon name="estrela" size={16} /> NÍVEL {p.nivel}</h2>
+          <h2 id="levelup-titulo" className="font-pixel-title text-rpg-gold text-sm flex items-center gap-2"><PixelIcon name="estrela" size={16} /> NIVEL {p.nivel}</h2>
           <button type="button" onClick={p.aoAdiar} className="text-[10px] font-rpg text-gray-400 hover:text-gray-200 uppercase tracking-widest">Decidir depois</button>
         </div>
         <p className="font-rpg text-gray-300 text-sm mb-3">Uma escolha por nível. Números do servidor; o narrador só lembra, nunca decide.</p>
@@ -35,7 +35,7 @@ export default function LevelUpModal(p: Props) {
           if (!itens.length) return null;
           return (
             <section key={g.tipo} className="mb-3">
-              <h3 className="font-pixel-title text-[9px] text-gray-400 tracking-widest mb-1.5">{g.titulo}</h3>
+              <h3 className="font-rpg text-xs text-gray-400 tracking-widest uppercase mb-1.5">{g.titulo}</h3>
               <div className="grid grid-cols-2 md:grid-cols-3 gap-1.5">
                 {itens.map(o => (
                   <button type="button" key={`${o.tipo}:${o.id}`} disabled={p.ocupado}

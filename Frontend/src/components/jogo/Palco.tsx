@@ -92,7 +92,7 @@ export default function Palco(p: Props) {
         <div className="palco__group">
           <button type="button" className={`adventure-actor adventure-actor--hero ${caido ? 'adventure-actor--dead' : ''}`}
             onClick={p.aoInspecionarHeroi} aria-label={`Inspecionar ${p.nome}, ${p.hp} de ${p.hpMax} pontos de vida`}>
-            <span className="adventure-actor__tag font-pixel-title">{p.escondido ? 'OCULTO' : p.bonusDefesa > 0 ? `DEFESA +${p.bonusDefesa}` : p.classe}</span>
+            <span className="adventure-actor__tag font-rpg uppercase tracking-wide">{p.escondido ? 'OCULTO' : p.bonusDefesa > 0 ? `DEFESA +${p.bonusDefesa}` : p.classe}</span>
             <img className="adventure-actor__sprite" src={getLocalImage('classes', p.classe || 'Guerreiro')} alt="" draggable={false} />
             <span className="adventure-actor__shadow" aria-hidden="true" />
             <span className="adventure-actor__name font-rpg">{p.nome || 'Herói'}</span>
@@ -103,7 +103,7 @@ export default function Palco(p: Props) {
           {p.aliados.map(aliado => (
             <div key={`aliado:${aliado.nome}`} className={`adventure-actor adventure-actor--ally ${aliado.hp <= 0 ? 'adventure-actor--dead' : ''}`}
               aria-label={`${aliado.nome}, aliado, ${aliado.hp}/${aliado.hp_max} PV`}>
-              <span className="adventure-actor__tag font-pixel-title">{aliado.hp <= 0 ? 'CAIDO' : p.combate ? (aliado.ja_agiu ? 'JA AGIU' : 'PRONTO') : 'ALIADO'}</span>
+              <span className="adventure-actor__tag font-rpg uppercase tracking-wide">{aliado.hp <= 0 ? 'CAIDO' : p.combate ? (aliado.ja_agiu ? 'JA AGIU' : 'PRONTO') : 'ALIADO'}</span>
               <img className="adventure-actor__sprite" src={getLocalImage('races', aliado.raca || 'Humano')} alt="" draggable={false} />
               <span className="adventure-actor__shadow" aria-hidden="true" />
               <span className="adventure-actor__name font-rpg">{aliado.nome}</span>
@@ -146,7 +146,7 @@ export default function Palco(p: Props) {
               onClick={() => p.aoSelecionar({ tipo: 'inimigo', id: inimigo.nome })}
               aria-pressed={alvo === inimigo.nome && p.combate}
               aria-label={`Selecionar ${inimigo.nome}, ${inimigo.hp}/${inimigo.max_hp} PV${inimigo.intencao ? `, intenção: ${inimigo.intencao}` : ''}`}>
-              <span className="adventure-actor__tag font-pixel-title">{inimigo.afastado ? 'AFASTADO' : inimigo.hp <= 0 ? 'DERROTADO' : inimigo.intencao || 'OBSERVANDO'}</span>
+              <span className="adventure-actor__tag font-rpg uppercase tracking-wide">{inimigo.afastado ? 'AFASTADO' : inimigo.hp <= 0 ? 'DERROTADO' : inimigo.intencao || 'OBSERVANDO'}</span>
               <FloatingCombatText itens={p.danos.filter(dano => dano.idx === indice).map(dano => ({ id: dano.id, texto: `−${dano.valor}`, cor: 'text-red-300' }))} />
               <img className="adventure-actor__sprite" src={spriteInimigo(inimigo)} alt="" draggable={false} />
               <span className="adventure-actor__shadow" aria-hidden="true" />

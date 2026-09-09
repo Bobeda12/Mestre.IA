@@ -62,7 +62,7 @@ export default function MenuConfiguracao({
       >
         <div className="flex items-center justify-between p-3 border-b-2 border-gray-700">
           <h2 className="font-pixel-title text-xs text-rpg-gold flex items-center gap-2">
-            <PixelIcon name="config" size={16} /> OPÇÕES
+            <PixelIcon name="config" size={16} /> OPCOES
           </h2>
           <button
             onClick={aoFechar}

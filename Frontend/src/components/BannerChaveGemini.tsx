@@ -19,7 +19,7 @@ export default function BannerChaveGemini() {
         <PixelIcon name="estrela" size={20} className="mt-0.5 shrink-0" />
         <div className="flex-1 min-w-0">
           <h3 className="font-pixel-title text-[10px] text-rpg-gold mb-1.5 leading-relaxed">
-            ACESSO VIP GRÁTIS
+            ACESSO VIP GRATIS
           </h3>
           <p className="text-[11px] text-gray-300 leading-relaxed font-rpg">
             Use sua própria chave gratuita do Gemini — leva menos de um minuto pra criar no{' '}

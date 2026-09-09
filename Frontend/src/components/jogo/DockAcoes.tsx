@@ -147,7 +147,7 @@ export default function DockAcoes(p: Props) {
               <button type="button" key={h.id} className={`dock__card ${trancada ? 'is-locked' : ''}`}
                 disabled={bloqueado || p.caido || !h.disponivel || (h.alvo === 'inimigo' && !p.alvo)}
                 onClick={() => { p.aoAgir({ acao: 'usar_habilidade', habilidade: h.id, ...(h.alvo === 'inimigo' ? { alvo: p.alvo } : {}) }, `${h.nome}${h.alvo === 'inimigo' ? ` em ${p.alvo}` : ''}`); setPopover(null); }}>
-                <span className="dock__card-head font-pixel-title"><strong>{h.nome}</strong><span>{h.custo} {foco?.nome ?? 'Foco'}</span></span>
+                <span className="dock__card-head font-rpg uppercase tracking-wide"><strong>{h.nome}</strong><span>{h.custo} {foco?.nome ?? 'Foco'}</span></span>
                 <span className="dock__card-body font-rpg">{h.descricao}</span>
                 <small className="font-rpg">{motivo}</small>
               </button>
@@ -161,7 +161,7 @@ export default function DockAcoes(p: Props) {
             <button type="button" key={t.acao} className="dock__card" title={t.dica}
               disabled={bloqueado || p.caido || (t.acao === 'investir' && !p.alvo)}
               onClick={() => { p.aoAgir({ acao: t.acao, ...(t.acao === 'investir' ? { alvo: p.alvo } : {}) }, t.nome); setPopover(null); }}>
-              <span className="dock__card-head font-pixel-title"><PixelIcon name={t.icone} size={14} /><strong>{t.nome}</strong></span>
+              <span className="dock__card-head font-rpg uppercase tracking-wide"><PixelIcon name={t.icone} size={14} /><strong>{t.nome}</strong></span>
               <span className="dock__card-body font-rpg">{t.dica}</span>
             </button>
           ))}
@@ -172,7 +172,7 @@ export default function DockAcoes(p: Props) {
           {interacoes.map(i => (
             <button type="button" key={i.id} className="dock__card" disabled={bloqueado || p.caido}
               onClick={() => { p.aoAgir({ acao: 'interagir', interacao: i.id }, i.nome); setPopover(null); }}>
-              <span className="dock__card-head font-pixel-title"><PixelIcon name={ICONE_INTERACAO[i.id] ?? 'bau'} size={14} /><strong>{i.nome}</strong></span>
+              <span className="dock__card-head font-rpg uppercase tracking-wide"><PixelIcon name={ICONE_INTERACAO[i.id] ?? 'bau'} size={14} /><strong>{i.nome}</strong></span>
               <span className="dock__card-body font-rpg">{i.descricao}</span>
             </button>
           ))}
@@ -184,14 +184,14 @@ export default function DockAcoes(p: Props) {
           {consumiveis.map(item => (
             <button type="button" key={`c:${item}`} className="dock__card" disabled={bloqueado || p.caido} title={p.catalogoItens[item]?.descricao}
               onClick={() => { p.aoAgir({ acao: 'usar_item', item }, `Usar ${item}`); setPopover(null); }}>
-              <span className="dock__card-head font-pixel-title"><PixelIcon name={categoriaDe(item, p.catalogoItens[item]).icone} size={14} /><strong>{item}</strong></span>
+              <span className="dock__card-head font-rpg uppercase tracking-wide"><PixelIcon name={categoriaDe(item, p.catalogoItens[item]).icone} size={14} /><strong>{item}</strong></span>
               <span className="dock__card-body font-rpg">{p.catalogoItens[item]?.descricao ?? 'Usar agora.'}</span>
             </button>
           ))}
           {outrosItens.map(item => (
             <button type="button" key={`o:${item}`} className="dock__card" disabled={bloqueado} title="Cita o item na sua ação"
               onClick={() => { p.setInput(`${p.input}${p.input && !p.input.endsWith(' ') ? ' ' : ''}[${item}] `); setPopover(null); textarea.current?.focus(); }}>
-              <span className="dock__card-head font-pixel-title"><PixelIcon name={categoriaDe(item, p.catalogoItens[item]).icone} size={14} /><strong>{item}</strong></span>
+              <span className="dock__card-head font-rpg uppercase tracking-wide"><PixelIcon name={categoriaDe(item, p.catalogoItens[item]).icone} size={14} /><strong>{item}</strong></span>
               <span className="dock__card-body font-rpg">Citar na ação</span>
             </button>
           ))}

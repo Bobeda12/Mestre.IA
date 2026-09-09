@@ -10,7 +10,7 @@ export default function ArcoDesfechoOverlay({ arco, aoFechar }: { arco: ArcoEnce
   return (
     <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/85 p-4 animate-fade-in" role="dialog" aria-modal="true" aria-labelledby="arco-titulo">
       <PanelFrame className="w-full max-w-2xl bg-[#0b0e0a] p-5 max-h-full overflow-y-auto">
-        <p className="font-pixel-title text-[9px] text-gray-400 tracking-widest">CAPÍTULO ENCERRADO · {rotulo[arco.resultado] ?? arco.resultado}</p>
+        <p className="font-rpg text-xs text-gray-400 tracking-widest uppercase">CAPÍTULO ENCERRADO · {rotulo[arco.resultado] ?? arco.resultado}</p>
         <h2 id="arco-titulo" className="font-rpg text-2xl text-rpg-gold mt-1 mb-3 flex items-center gap-2"><PixelIcon name="pergaminho" size={18} />{arco.titulo}</h2>
         <div className="font-rpg text-gray-200 leading-relaxed whitespace-pre-wrap">{arco.texto}</div>
         {(arco.recompensa.xp > 0 || arco.recompensa.ouro > 0 || arco.recompensa.itens.length > 0) && (

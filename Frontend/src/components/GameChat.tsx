@@ -1003,7 +1003,7 @@ export default function GameChat() {
       {gameOver && (
         <div className="absolute inset-0 z-[100] bg-black/95 flex flex-col items-center justify-center px-6 text-center overflow-y-auto py-10 animate-fade-in">
           <h1 className="text-3xl md:text-5xl font-pixel-title text-red-600 tracking-widest leading-relaxed">GAME OVER</h1>
-          <p className="text-gray-500 mt-2 font-serif italic">{charName || 'O herói'} não resistiu.</p>
+          <p className="text-gray-500 mt-2 font-rpg italic">{charName || 'O herói'} não resistiu.</p>
 
           <div className="grid grid-cols-3 gap-8 mt-8">
             <div>

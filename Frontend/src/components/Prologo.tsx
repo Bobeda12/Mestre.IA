@@ -74,7 +74,7 @@ export default function Prologo({
         </div>
 
         <div className="flex-1 min-w-0 w-full">
-          <h1 className="font-pixel-title text-xl md:text-3xl text-rpg-gold mb-3 leading-relaxed break-words">{nome}</h1>
+          <h1 className="font-rpg text-2xl md:text-4xl text-rpg-gold mb-3 leading-relaxed break-words">{nome}</h1>
           <p className="text-xs md:text-sm text-gray-300 uppercase tracking-widest mb-5 font-rpg">
             {raca} · {classe} · {local}{clima ? ` · ${clima}` : ''}
           </p>
@@ -105,7 +105,7 @@ export default function Prologo({
             onClick={onComecar}
             className="pixel-frame mt-8 bg-rpg-gold text-black font-pixel-title text-[10px] md:text-xs px-6 py-3 hover:bg-white transition-colors"
           >
-            COMEÇAR
+            COMECAR
           </button>
         </div>
       </div>

@@ -61,7 +61,7 @@ export default function LootRevealOverlay({ loot, onFinish }: { loot: LootAtivo 
             <PixelIcon name={icone} size={48} />
           </motion.div>
           <motion.p
-            className="font-pixel-title text-[10px] text-rpg-gold text-center px-4 leading-relaxed"
+            className="font-rpg text-sm text-rpg-gold text-center px-4 leading-relaxed uppercase tracking-wide"
             initial={{ opacity: 0 }}
             animate={{ opacity: [0, 1, 1, 0] }}
             transition={{ duration: duracao, times: reduzido ? [0, 0.15, 0.75, 1] : [0, 0.15, 0.6, 0.85] }}

@@ -36,7 +36,12 @@ export default function BalcaoMercador(p: Props) {
     <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/80 p-4 animate-fade-in" role="dialog" aria-modal="true" aria-labelledby="balcao-titulo" onClick={p.aoFechar}>
       <PanelFrame className="w-full max-w-2xl bg-[#0b0e0a] p-4 max-h-full overflow-y-auto custom-scrollbar" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between gap-2 mb-2">
-          <h2 id="balcao-titulo" className="font-pixel-title text-rpg-gold text-xs flex items-center gap-2"><PixelIcon name="moeda" size={16} /> BALCAO DE {p.pessoa.nome.toUpperCase()}</h2>
+          {/* "BALCAO" fica sem acento de propósito (rótulo curto e fixo,
+              Press Start 2P); o nome do NPC pode ter acento (ex.: um NPC
+              chamado "Olívia"), então vai em Alegreya, que tem os glifos. */}
+          <h2 id="balcao-titulo" className="text-rpg-gold text-xs flex items-center gap-2">
+            <PixelIcon name="moeda" size={16} /> <span className="font-pixel-title">BALCAO DE</span> <span className="font-rpg uppercase tracking-wide">{p.pessoa.nome}</span>
+          </h2>
           <button ref={fecharRef} type="button" onClick={p.aoFechar} aria-label="Fechar balcão" className="text-gray-400 hover:text-white p-1"><PixelIcon name="fechar" size={14} /></button>
         </div>
         <p className="font-rpg text-gray-300 text-sm mb-3">Preços do mercado, ajustados pela confiança. Você tem <span className="text-rpg-gold">{p.ouro}</span> de ouro.</p>

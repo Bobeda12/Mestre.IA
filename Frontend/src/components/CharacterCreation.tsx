@@ -413,7 +413,7 @@ export default function CharacterCreation({ onCharacterCreated }: CharacterCreat
 
       <div className="w-full md:w-1/3 md:h-full flex flex-col bg-gray-900 border-b-2 md:border-b-0 md:border-r border-gray-800 z-20 shadow-2xl relative">
         <div className="p-6 border-b border-gray-800 bg-black/40 mt-10">
-           <h1 className="text-xl font-pixel-title text-rpg-gold flex items-center gap-2"><PixelIcon name="coroa" size={20} /> CRIAÇÃO</h1>
+           <h1 className="text-xl font-pixel-title text-rpg-gold flex items-center gap-2"><PixelIcon name="coroa" size={20} /> CRIACAO</h1>
            {/* Etapa 14 (C-4) — passos em blocos discretos, mesmo espírito do
                PixelBar (Etapa 11), em vez da barra fina arredondada. */}
            <div className="flex gap-1 mt-4 px-2">{[1,2,3,4,5,6].map(s => (<button key={s} disabled={s > step && s !== step + 1} onClick={() => { if (step === 6 || (s < step)) setStep(s); }} className={`h-3 flex-1 transition-colors ${step >= s ? 'bg-rpg-gold cursor-pointer' : 'bg-gray-800 cursor-not-allowed'}`}/>))}</div>
