@@ -76,7 +76,7 @@ def _documentos(embed_fn: Callable[[str], list[float]] | None = None) -> list[hy
 
 
 def regras_relevantes(
-    query: str, k: int = 2, embed_fn: Callable[[str], list[float]] | None = None
+    query: str, k: int = 1, embed_fn: Callable[[str], list[float]] | None = None
 ) -> list[str]:
     """Sempre inclui as diretrizes de narração; acrescenta as `k` seções
     situacionais mais relevantes para `query`. Se a bíblia não tiver seções

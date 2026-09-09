@@ -97,10 +97,12 @@ WORLD_TOOLS = [
     ),
     _tool(
         "agir_no_mundo",
-        "Resolva a intenção livre pelas propriedades reais do alvo. Exemplos: bloquear porta "
-        "usando meio=estante; destrancar fechadura; negociar com pessoa e proposta concreta. "
-        "Falha mantém alternativas; examinar/investigar dão informações, não inventam loot. "
-        "Use IDs registrados; negociações preservam limites do NPC. Meio é ID de objeto local ou item possuído.",
+        (
+            "Resolve uma intenção livre pelas propriedades reais do alvo (ex: bloquear alvo=porta" 
+            "meio=estante; destrancar; negociar com proposta). Use IDs do estado; meio = objeto da cena ou" 
+            "item possuído. Examinar/investigar dão informação, não loot; falha mantém alternativas; limites" 
+            "do NPC valem."
+        ),
         {"acao": {"type": "string", "enum": list(mundo.ACOES)}, "alvo": S, "meio": S, "proposta": S},
         ["acao", "alvo"],
     ),

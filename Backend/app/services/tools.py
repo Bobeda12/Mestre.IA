@@ -889,10 +889,8 @@ TOOLS_SCHEMA: list[dict] = [*WORLD_TOOLS,
         "function": {
             "name": "rolar_teste",
             "description": (
-                "Testa um atributo do herói contra uma dificuldade — para qualquer ação arriscada e "
-                "incerta que NÃO seja atacar em combate (escalar, se esconder, persuadir, resistir a "
-                "veneno, notar uma armadilha, equilibrar-se). Sempre que o jogador tenta algo que pode "
-                "dar errado, chame esta ferramenta em vez de decidir sozinho se ele conseguiu."
+                "Teste de atributo contra CD para qualquer ação arriscada fora de ataque (escalar, esconder," 
+                "persuadir, resistir, perceber). Se pode dar errado, chame — nunca decida sozinho."
             ),
             "parameters": {
                 "type": "object",
@@ -900,8 +898,10 @@ TOOLS_SCHEMA: list[dict] = [*WORLD_TOOLS,
                     "atributo": {
                         "type": "string",
                         "enum": ["forca", "destreza", "constituicao", "inteligencia", "sabedoria", "carisma"],
-                        "description": "O atributo mais relevante para a ação (força para escalar/arrombar, "
-                        "destreza para se esconder/equilibrar, carisma para persuadir/enganar, etc.).",
+                        "description": (
+                            "O atributo mais relevante (força: escalar/arrombar; destreza: esconder/equilibrar;" 
+                            "carisma: persuadir)."
+                        ),
                     },
                     "cd": {
                         "type": "integer",
@@ -911,19 +911,14 @@ TOOLS_SCHEMA: list[dict] = [*WORLD_TOOLS,
                     "item_usado": {
                         "type": "string",
                         "description": (
-                            "Nome exato de um item/arma do inventário do herói, SE ele usar algo de "
-                            "forma criativa pra ajudar no teste (ex: usar um machado pesado pra arrombar "
-                            "uma porta). Omita se nenhum item se aplica."
+                            "Item/arma do inventário usado de forma criativa no teste. Omita se nenhum se aplica."
                         ),
                     },
                     "motivo": {
                         "type": "string",
                         "description": (
-                            "Poucas palavras dizendo O QUE está sendo testado, do jeito mais concreto "
-                            "possível (ex: 'perceber a emboscada no escuro', 'resistir ao veneno da "
-                            "aranha', 'escalar o muro molhado'). Aparece pro jogador junto do resultado "
-                            "e também pode conceder vantagem se um traço do herói se aplicar — não invente "
-                            "nada, só descreva a ação."
+                            "Poucas palavras concretas sobre O QUE está sendo testado (ex: 'resistir ao veneno da" 
+                            "aranha'). O jogador vê isso; pode dar vantagem por traço do herói."
                         ),
                     },
                 },
@@ -948,8 +943,7 @@ TOOLS_SCHEMA: list[dict] = [*WORLD_TOOLS,
                     },
                     "arma": {
                         "type": "string",
-                        "description": "Nome exato de uma arma do inventário do herói. Omita para usar a "
-                        "primeira arma reconhecida do inventário, ou ataque desarmado se não houver nenhuma.",
+                        "description": "Arma do inventário. Omita para a primeira arma reconhecida, ou desarmado.",
                     },
                 },
                 "required": ["alvo"],
@@ -961,9 +955,8 @@ TOOLS_SCHEMA: list[dict] = [*WORLD_TOOLS,
         "function": {
             "name": "investir",
             "description": (
-                "Ataque arriscado (Investida): menos precisão, mais dano — o botão de risco do combate. "
-                "Use quando o jogador quiser atacar com tudo, apostando força por cautela. Deixa o herói "
-                "mais exposto até a próxima rodada."
+                "Investida: menos precisão, mais dano, herói mais exposto até a próxima rodada — o botão de" 
+                "risco."
             ),
             "parameters": {
                 "type": "object",
@@ -974,8 +967,7 @@ TOOLS_SCHEMA: list[dict] = [*WORLD_TOOLS,
                     },
                     "arma": {
                         "type": "string",
-                        "description": "Nome exato de uma arma do inventário do herói. Omita para usar a "
-                        "primeira arma reconhecida do inventário, ou ataque desarmado se não houver nenhuma.",
+                        "description": "Arma do inventário. Omita para a primeira arma reconhecida, ou desarmado.",
                     },
                 },
                 "required": ["alvo"],
@@ -987,9 +979,8 @@ TOOLS_SCHEMA: list[dict] = [*WORLD_TOOLS,
         "function": {
             "name": "esquivar",
             "description": (
-                "O herói foca em não ser atingido em vez de atacar — ataques inimigos contra ele vêm com "
-                "desvantagem até a próxima rodada. Use quando o jogador declarar que está se esquivando, "
-                "se protegendo ou evitando golpes em vez de agir."
+                "Não ser atingido em vez de atacar: ataques inimigos contra o herói com desvantagem até a próxima" 
+                "rodada."
             ),
             "parameters": {"type": "object", "properties": {}},
         },
@@ -998,11 +989,7 @@ TOOLS_SCHEMA: list[dict] = [*WORLD_TOOLS,
         "type": "function",
         "function": {
             "name": "defender",
-            "description": (
-                "O herói assume postura defensiva (+2 na Classe de Armadura até a próxima rodada) em vez "
-                "de atacar. Use quando o jogador declarar que está se defendendo, se protegendo com o "
-                "escudo/arma, ou segurando a posição."
-            ),
+            "description": "Postura defensiva (+2 na CA até a próxima rodada) em vez de atacar; recupera Foco.",
             "parameters": {"type": "object", "properties": {}},
         },
     },
@@ -1011,9 +998,8 @@ TOOLS_SCHEMA: list[dict] = [*WORLD_TOOLS,
         "function": {
             "name": "esconder_se",
             "description": (
-                "O herói tenta sumir de vista (teste de Destreza) em vez de agir. Se bem-sucedido, os "
-                "inimigos não conseguem alvejá-lo na próxima rodada. Use quando o jogador declarar que "
-                "está se escondendo, se camuflando ou recuando para as sombras."
+                "Sumir de vista (teste de Destreza) em vez de agir: em sucesso, os inimigos não o alvejam na" 
+                "próxima rodada."
             ),
             "parameters": {"type": "object", "properties": {}},
         },
@@ -1023,9 +1009,8 @@ TOOLS_SCHEMA: list[dict] = [*WORLD_TOOLS,
         "function": {
             "name": "recrutar_aliado",
             "description": (
-                "Recruta um NPC como companheiro do herói — ele passa a acompanhar a jornada e a lutar ao "
-                "lado dele. Use quando a cena resultar num NPC se juntando de verdade ao grupo (não para "
-                "NPCs que só ajudam de passagem ou aparecem numa cena só)."
+                "Um NPC se junta de verdade ao grupo e passa a acompanhar e lutar ao lado do herói. Não use para" 
+                "ajuda de passagem."
             ),
             "parameters": {
                 "type": "object",
@@ -1046,10 +1031,8 @@ TOOLS_SCHEMA: list[dict] = [*WORLD_TOOLS,
         "function": {
             "name": "atacar_com_aliado",
             "description": (
-                "Resolve o ataque de um aliado recrutado contra um inimigo vivo do combate atual. Use "
-                "quando o jogador dirigir a ação do aliado ('Bob ataca o goblin') ou quando a cena pedir "
-                "que ele entre na luta. Não substitui a ação do herói — chame também a ferramenta da ação "
-                "dele (atacar, esquivar...) para fechar a rodada."
+                "Ataque de um aliado recrutado contra um inimigo vivo. Não substitui a ação do herói — chame" 
+                "também a ferramenta da ação dele para fechar a rodada."
             ),
             "parameters": {
                 "type": "object",
@@ -1069,9 +1052,8 @@ TOOLS_SCHEMA: list[dict] = [*WORLD_TOOLS,
         "function": {
             "name": "fugir",
             "description": (
-                "O herói tenta escapar do combate por completo (teste de Destreza). Se bem-sucedido, o "
-                "combate termina sem vitória nem derrota. Se falhar, os inimigos têm uma rodada de ataque "
-                "livre. Use quando o jogador declarar que está fugindo, recuando de vez ou correndo."
+                "Escapar do combate (teste de Destreza): sucesso encerra sem vitória nem derrota; falha dá uma" 
+                "rodada de ataque livre aos inimigos."
             ),
             "parameters": {"type": "object", "properties": {}},
         },
@@ -1081,10 +1063,9 @@ TOOLS_SCHEMA: list[dict] = [*WORLD_TOOLS,
         "function": {
             "name": "aplicar_dano",
             "description": (
-                "Aplica dano que NÃO vem de um ataque com arma — queda, armadilha, fogo, veneno, magia "
-                "ambiental. Não use para ataques normais em combate (isso é a ferramenta 'atacar'). Você "
-                "propõe a notação de dado apropriada à fonte do dano (ex: uma queda de 3 metros é '1d6', "
-                "uma fogueira é '2d6'); o servidor rola o dado de verdade."
+                "Dano que NÃO é ataque com arma: queda, armadilha, fogo, veneno, magia ambiental. Você propõe o" 
+                "dado (queda de 3 m '1d6', fogueira '2d6'); o servidor rola. Em combate, contra inimigo, gasta a" 
+                "ação."
             ),
             "parameters": {
                 "type": "object",
@@ -1105,12 +1086,8 @@ TOOLS_SCHEMA: list[dict] = [*WORLD_TOOLS,
         "function": {
             "name": "mover",
             "description": (
-                "Move o herói para outro local do mundo. Use quando o jogador declarar que está indo "
-                "para um lugar específico e a cena não estiver em combate. O destino precisa ser um dos "
-                "locais conhecidos do mundo — se não tiver certeza do nome exato, chame mesmo assim: o "
-                "servidor devolve a lista de locais válidos se o nome não bater. Se a cena descobre um "
-                "local NOVO (sem equivalente na lista), passe 'descricao_proposta' — o servidor registra "
-                "esse local antes de mover pra lá, e ele passa a existir de verdade no mundo."
+                "Leva o herói a outro local (nunca em combate). Se o nome não bater, o servidor devolve os locais" 
+                "válidos. Local NOVO: passe descricao_proposta e ele passa a existir."
             ),
             "parameters": {
                 "type": "object",
@@ -1118,10 +1095,7 @@ TOOLS_SCHEMA: list[dict] = [*WORLD_TOOLS,
                     "destino": {"type": "string", "description": "Nome do local de destino."},
                     "descricao_proposta": {
                         "type": "string",
-                        "description": (
-                            "Só quando 'destino' é um lugar NOVO, fora dos locais conhecidos: uma "
-                            "descrição curta do que o local é, pra registrá-lo no mundo."
-                        ),
+                        "description": "Só para destino NOVO: descrição curta do lugar, para registrá-lo no mundo.",
                     },
                 },
                 "required": ["destino"],
@@ -1133,9 +1107,8 @@ TOOLS_SCHEMA: list[dict] = [*WORLD_TOOLS,
         "function": {
             "name": "consultar_regra",
             "description": (
-                "Busca uma regra na bíblia do mestre. Chame SEMPRE que o jogador fizer uma pergunta sobre "
-                "como uma mecânica do jogo funciona — mesmo fora do personagem, mesmo em tom de dúvida "
-                "('como funciona X?', 'o que acontece se eu Y?') — em vez de responder de memória."
+                "Busca uma regra na bíblia. Chame SEMPRE que o jogador perguntar como uma mecânica funciona," 
+                "mesmo fora do personagem — nunca responda de memória."
             ),
             "parameters": {
                 "type": "object",
@@ -1161,10 +1134,8 @@ TOOLS_SCHEMA: list[dict] = [*WORLD_TOOLS,
         "function": {
             "name": "descansar",
             "description": (
-                "O herói descansa para recuperar PV. 'curto' recupera parcial e pode acontecer em "
-                "quase qualquer lugar seguro o bastante pra uma pausa. 'longo' recupera tudo, mas só "
-                "funciona num local seguro (uma cidade, uma pousada) e não pode se repetir rápido "
-                "demais. Nunca use em combate."
+                "Recupera PV. 'curto': parcial, quase em qualquer lugar. 'longo': tudo, só em local seguro e não" 
+                "repetido cedo demais. Nunca em combate."
             ),
             "parameters": {
                 "type": "object",
@@ -1207,9 +1178,8 @@ TOOLS_SCHEMA: list[dict] = [*WORLD_TOOLS,
         "function": {
             "name": "ajustar_reputacao_npc",
             "description": (
-                "Registra que o herói foi notavelmente rude, ameaçador, generoso ou gentil com um NPC "
-                "nomeado — não em toda interação trivial, só quando o tom da cena claramente muda a "
-                "relação. O NPC vai lembrar disso em cenas futuras (preço, disposição a ajudar, tom)."
+                "Registra que o herói foi notavelmente rude, ameaçador, generoso ou gentil com um NPC nomeado —" 
+                "só quando o tom muda a relação de verdade. O NPC lembra em cenas futuras."
             ),
             "parameters": {
                 "type": "object",
@@ -1217,9 +1187,7 @@ TOOLS_SCHEMA: list[dict] = [*WORLD_TOOLS,
                     "npc": {"type": "string", "description": "Nome exato do NPC."},
                     "delta": {
                         "type": "integer",
-                        "description": "Positivo para melhorar a relação, negativo para piorar. "
-                        "Use algo entre -10 e 10 proporcional à gravidade (insulto leve: -2, "
-                        "ameaça grave: -8, presente generoso: +5).",
+                        "description": "-10 a 10, proporcional (insulto leve -2, ameaça grave -8, presente +5).",
                     },
                     "motivo": {"type": "string", "description": "O que o herói fez, em poucas palavras."},
                 },
@@ -1232,9 +1200,8 @@ TOOLS_SCHEMA: list[dict] = [*WORLD_TOOLS,
         "function": {
             "name": "iniciar_combate",
             "description": (
-                "Cria um combate quando a cena tem um confronto físico iminente com um ou mais monstros "
-                "do bestiário do mundo. Use assim que a ameaça se torna hostil — não espere o jogador "
-                "declarar 'eu ataco' primeiro, isso quem resolve é a ferramenta 'atacar' depois."
+                "Cria o combate assim que a ameaça fica hostil (não espere 'eu ataco'). Inimigos são nomes do" 
+                "bestiário OU nomes narrativos próprios — o servidor escolhe a ficha real por trás do nome."
             ),
             "parameters": {
                 "type": "object",
@@ -1243,11 +1210,8 @@ TOOLS_SCHEMA: list[dict] = [*WORLD_TOOLS,
                         "type": "array",
                         "items": {"type": "string"},
                         "description": (
-                            "Nomes dos inimigos na cena. Pode usar o nome exato de um monstro do bestiário "
-                            "(ex: 'Goblin'), OU inventar um nome narrativo próprio pra dar identidade à "
-                            "cena (ex: 'Batedor Rasgacouro', 'Lobo Alfa do Bando de Vharn') — o servidor "
-                            "escolhe a ficha (HP, CA, dano) de um arquétipo real do nível certo por trás "
-                            "do nome inventado; a mecânica nunca muda, só o rótulo que o jogador vê."
+                            "Nomes dos inimigos: exatos do bestiário ('Goblin') ou narrativos ('Lobo Alfa de Vharn')" 
+                            "— a ficha vem de um arquétipo real do nível certo."
                         ),
                     },
                     "cenario": {
@@ -1291,9 +1255,8 @@ TOOLS_SCHEMA: list[dict] = [*WORLD_TOOLS,
         "function": {
             "name": "concluir_objetivo",
             "description": (
-                "Concede XP por um objetivo narrativo cumprido sem combate — resolver um enigma, "
-                "convencer um NPC, completar uma missão por diplomacia ou investigação. Use uma vez "
-                "por objetivo concluído, nunca repetidamente pelo mesmo feito."
+                "XP por objetivo cumprido sem combate (enigma, NPC convencido, missão por diplomacia). Uma vez" 
+                "por objetivo."
             ),
             "parameters": {
                 "type": "object",
@@ -1314,9 +1277,8 @@ TOOLS_SCHEMA.extend([
         "type": "function", "function": {
             "name": "usar_habilidade",
             "description": (
-                "Usa uma técnica da classe presente no painel de progressão. O servidor valida nível, "
-                "Foco e alvo, resolve dano/efeitos e reação inimiga. Técnicas são certeiras e gastam Foco. "
-                "Uma ação por turno; não use aplicar_dano para simular magias."
+                "Técnica da classe (id do painel). O servidor valida nível, Foco e alvo e resolve efeitos. Uma" 
+                "ação por turno; não use aplicar_dano para simular magias."
             ),
             "parameters": {"type": "object", "properties": {
                 "habilidade": {"type": "string", "description": "ID exato da habilidade da classe."},

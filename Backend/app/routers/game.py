@@ -410,7 +410,7 @@ async def chat_endpoint(
     migrar_progressao(heroi, w_state)
     migrar_mundo(w_state, heroi)
     w_state.turno += 1
-    hist = contexto_recente(list(heroi.historico_chat), n=4)
+    hist = contexto_recente(list(heroi.historico_chat), n=3)
 
     # Teste de morte é consequência automática de HP 0, não uma decisão do
     # jogador/modelo — resolvido antes de chamar o modelo, e sem ferramenta
@@ -597,7 +597,7 @@ def chat_stream_endpoint(
     migrar_progressao(heroi, w_state)
     migrar_mundo(w_state, heroi)
     w_state.turno += 1
-    hist = contexto_recente(list(heroi.historico_chat), n=4)
+    hist = contexto_recente(list(heroi.historico_chat), n=3)
 
     # Etapa 10 (A-6) — preenchido dentro de `gerar()`, lido por
     # `_tarefa_pos_stream` depois que a resposta inteira já foi entregue

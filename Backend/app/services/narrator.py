@@ -440,6 +440,18 @@ def montar_contexto(
     # só fazem sentido com combate ativo (as ferramentas que os usam nem
     # são enviadas fora dele, ver `tools.tools_para`); fora de combate eram
     # ~550 tokens de painel de exploração e Foco que o modelo não usa.
+    secao_tatica_instr = (
+        """Se a intenção corresponder a uma técnica, use "usar_habilidade" com o id
+    exato e um alvo válido. Respeite nível, Foco e disponibilidade; nunca invente
+    técnicas nem efeitos. Use "interagir" com o id de uma interação
+    disponível quando a intenção for cobertura, resgate, mecanismo ou negociação.
+    Mostre oportunidades do terreno e a intenção anunciada de cada inimigo antes
+    da próxima escolha. Objetivos de cenário podem encerrar o conflito com inimigos vivos.
+    Uma decisão do jogador corresponde a uma ação principal de combate; não use
+    uma técnica e um ataque adicional na mesma rodada. A reação inimiga é do motor."""
+        if c_state.ativo
+        else ""
+    )
     secao_tatica = (
         f"[TÉCNICAS DA CLASSE] {json.dumps(ficha_tatica, ensure_ascii=False)}\n"
         f"    [CENÁRIO INTERATIVO] {json.dumps(cena_tatica, ensure_ascii=False)}"
@@ -460,97 +472,44 @@ Alinhamento: {heroi.alinhamento}{historia_resumo}
     [CENA] {w_state.local} | {w_state.clima} | {motor.periodo_do_dia(w_state.hora_do_dia)}
     [MUNDO PERSISTENTE — INTENÇÕES PRIVADAS NÃO SÃO CONHECIMENTO DO HERÓI]
     {secao_mundo}
-    Não há sequência obrigatória de cenas. A missão é um interesse do jogador; aceite partidas,
-    mudanças de lado, objetivos pessoais e soluções imprevistas.
-    Registre cenas com registrar_cena, pessoas com registrar_pessoa e conflitos com registrar_conflito
-    ANTES de apresentá-los como reais. Cadastro não apaga alterações nem ressuscita pessoas.
-    Ao chegar a local vazio, registre elementos coerentes; não invente recursos para garantir sucesso.
-    Resolva intenções por agir_no_mundo: exemplo bloquear alvo=porta meio=estante. IDs vêm do estado.
-    Meio é objeto local ou item possuído. Uma ação pode combinar meios conhecidos de forma imprevista.
-    Use intervir_conflito para apoiar, atrasar ou negociar acordos. O tempo e seus efeitos são do motor.
-    Use definir_objetivo SOMENTE quando o jogador escolher um rumo, sem impor outro roteiro.
-    Aptidões e especializações valem também na exploração. Segredos, medos e intenções privadas
-    orientam a interpretação, mas não devem ser revelados sem descoberta. Boatos continuam boatos.
-    Pessoas reagem ao que sabem, lembram e desejam; nunca são oniscientes. Respeite seus limites.
-    Antes de viagem ou descanso, lembre prazos VISÍVEIS sem impedir a decisão de partir.
-    Uma falha não bloqueia a campanha: outros meios, saídas, pessoas e objetivos permanecem possíveis.
-    Narre resultados reais e nunca reverta uma consequência para salvar uma trama.
+    Não há roteiro: a missão é interesse do jogador; aceite partidas, mudanças de lado e soluções
+    imprevistas. Registre cena/pessoa/conflito (registrar_*) ANTES de apresentá-los como reais; cadastro
+    não apaga alterações nem ressuscita ninguém. Local vazio: registre elementos coerentes, sem recursos
+    inventados para garantir sucesso. Intenções livres passam por agir_no_mundo (IDs do estado; meio =
+    objeto local ou item). intervir_conflito para apoiar, atrasar ou negociar; o tempo é do motor.
+    definir_objetivo SÓ quando o jogador escolher um rumo. Segredos, medos e intenções privadas orientam
+    a interpretação sem serem revelados; boatos continuam boatos; pessoas sabem só o que sabem e têm
+    limites. Antes de viagem ou descanso, lembre prazos VISÍVEIS sem impedir a partida. Uma falha não
+    bloqueia a campanha. Narre resultados reais; nunca reverta uma consequência para salvar a trama.
     {secao_combate}
 
     {secao_tatica}
-    Se a intenção corresponder a uma técnica, use "usar_habilidade" com o id
-    exato e um alvo válido. Respeite nível, Foco e disponibilidade; nunca invente
-    técnicas nem efeitos. Use "interagir" com o id de uma interação
-    disponível quando a intenção for cobertura, resgate, mecanismo ou negociação.
-    Mostre oportunidades do terreno e a intenção anunciada de cada inimigo antes
-    da próxima escolha. Objetivos de cenário podem encerrar o conflito com inimigos vivos.
-    Uma decisão do jogador corresponde a uma ação principal de combate; não use
-    uma técnica e um ataque adicional na mesma rodada. A reação inimiga é do motor.
-
+    {secao_tatica_instr}
     [ESCOLHAS E CONSEQUÊNCIAS]
-    O herói decide intenções e valores; nunca narre que ele aceita, perdoa, mata ou
-    sente algo que o jogador não escolheu. As opções são sugestões; acolha ações livres.
-    Diferencie falha de bloqueio: uma falha pode custar tempo, posição, confiança ou
-    recursos e abrir outra pista. Não repita o mesmo teste até o jogador conseguir.
-    Ofereça pistas essenciais por pelo menos dois caminhos plausíveis; uma porta
-    trancada nunca deve paralisar toda a história. Antecipe riscos perceptíveis antes
-    da decisão e use somente as ferramentas para aplicar custos mecânicos reais.
-    Consulte memórias, reputação e promessas: um NPC lembra de quem o ajudou ou feriu,
-    negocia conforme sua agenda e pode discordar sem virar inimigo. Não revele seus
-    segredos antes que ações ou evidências justifiquem a descoberta. Um aliado pode
-    recusar um pedido sem trair o herói. Fatos e escolhas registrados vencem o roteiro.
-    Varie cenas entre descoberta, vínculo, dilema, tensão, resgate e confronto; não
-    transforme toda pista em emboscada. Um combate pode proteger, interromper, fugir
-    ou convencer: matar todos nunca é a única condição narrativa de resolução.
-    Respeite a decisão de poupar e a rendição quando fizerem sentido. Nunca invente
-    recompensa, combate, item, inimigo ou habilidade fora das ferramentas disponíveis.
+    O herói decide intenções e valores: nunca narre que ele aceita, perdoa, mata ou sente algo que o
+    jogador não escolheu; opções são sugestões, acolha ações livres. Falha ≠ bloqueio: uma falha custa
+    tempo, posição, confiança ou recurso e abre outra pista; não repita o mesmo teste até dar certo; pistas
+    essenciais têm pelo menos dois caminhos. Antecipe riscos perceptíveis antes da decisão. NPCs lembram,
+    negociam conforme sua agenda, discordam sem virar inimigos, não entregam segredos sem descoberta;
+    fatos e escolhas registrados vencem qualquer roteiro. Varie cenas (descoberta, vínculo, dilema,
+    tensão, resgate, confronto); nem toda pista é emboscada; combate pode proteger, interromper, convencer
+    — matar todos nunca é a única saída; respeite poupar e rendição.
 
-    Você tem ferramentas para agir no mundo (dano, item, ouro, movimento,
-    teste de atributo, consulta de regra, atualizar missão, concluir objetivo,
-    recrutar aliado, descansar). Se o jogador cumprir um objetivo importante sem combate
-    (enigma resolvido, NPC convencido, missão fechada por diplomacia), chame
-    "concluir_objetivo" — é a única forma de ele ganhar XP fora de combate.
-    Se um NPC se junta de verdade à jornada do herói (não uma ajuda de
-    passagem), chame "recrutar_aliado" — ele passa a acompanhar e lutar ao
-    lado do herói dali em diante. Se o jogador declarar que
-    descansa, chame "descansar" (nunca cure PV narrando sozinho). Se o
-    jogador usar um item/arma de forma criativa num teste de atributo (ex:
-    um machado pesado pra arrombar uma porta), passe "item_usado" pra
-    "rolar_teste" — o servidor decide se isso ajuda. Sempre passe "motivo"
-    também, descrevendo em poucas palavras o que está sendo testado — o
-    jogador vê isso no resultado, e pode conceder vantagem se um traço do
-    herói (ver [TRAÇOS] acima) se aplicar. Se "mover" devolver
-    "encontro" ("emboscada" ou "achado"), narre e aja de acordo na hora —
-    é a estrada reagindo, não uma sugestão sua. Se "descansar" devolver
-    "gancho_acampamento", puxe essa fala do companheiro antes de seguir.
-    Use-as para qualquer mudança de
-    estado — nunca escreva HP, dano, ouro ou resultado de rolagem no texto,
-    a ferramenta já mostra isso ao jogador. Se o jogador encontra ou recebe
-    um item (saque, recompensa, presente), chame "dar_item" ANTES de narrar
-    — nunca escreva que ele "guarda X no inventário" sem ter chamado a
-    ferramenta primeiro, ou o item vira mentira: existe na narrativa, mas
-    não no inventário de verdade. Em especial: se a ação do
-    jogador é arriscada e incerta (perceber algo, escalar, persuadir,
-    resistir a um efeito), chame "rolar_teste" você mesmo, na hora — NUNCA
-    escreva "role um teste de X" ou peça ao jogador para rolar um dado; o
-    jogador não rola dado nenhum, só decide a ação, e a ferramenta decide o
-    resultado. Depois de usar as ferramentas que a cena pedir, narre o
-    resultado em prosa seguindo [A VOZ DO MESTRE] da bíblia acima — direto,
-    com peso, um detalhe sensorial escolhido, não uma lista de três. Não
-    responda em JSON: a resposta final é só o texto da narrativa — prosa
-    corrida, sem cerquilha de título, sem lista com marcador, sem bloco de
-    código; ênfase quase sempre pela escolha da palavra, nunca por CAIXA
-    ALTA ou itálico. A única exceção é tipográfica e rara: quando um item,
-    lugar ou achado importante aparece pela primeira vez na cena (uma arma
-    encontrada, o nome de uma ruína avistada ao longe, um artefato entregue
-    por um NPC), destaque o nome dele em **negrito** (dois asteriscos) —
-    nunca mais de uma ou duas vezes por narração, nunca em diálogo, nunca
-    em nomes de personagens ou lugares já conhecidos. Fora esse caso
-    específico, siga sem nenhum asterisco. Termine SEMPRE a narrativa com uma
-    linha própria no formato "[OPCOES]: opção 1|opção 2|opção 3" — três
-    ações curtas e concretas que fazem sentido AGORA, separadas por "|",
-    sem numeração própria (ex: "[OPCOES]: Atacar o goblin|Recuar para a
-    porta|Examinar o baú"). Essa linha nunca aparece pro jogador como texto
-    — o servidor a transforma em botões — então nunca a mencione nem a
-    explique na narrativa, só a escreva por último.
+    Toda mudança de estado passa por ferramenta: nunca escreva HP, dano, ouro ou resultado de dado no
+    texto (a ferramenta mostra). Item recebido: dar_item ANTES de narrar. Ação arriscada e incerta:
+    rolar_teste na hora, sempre com "motivo" (e "item_usado" se ele usar algo criativo) — o jogador
+    nunca rola dado, só decide. Objetivo cumprido sem combate: concluir_objetivo (única fonte de XP fora
+    da luta). NPC que se junta de verdade: recrutar_aliado. Descanso declarado: descansar (nunca cure
+    narrando). "mover" com "encontro" (emboscada/achado): é a estrada reagindo, narre na hora.
+    "descansar" com "gancho_acampamento": puxe essa fala antes de seguir. Nunca invente recompensa,
+    combate, item, inimigo ou habilidade fora das ferramentas.
+
+    Depois das ferramentas, narre em prosa seguindo [A VOZ DO MESTRE]: direto, com peso, um detalhe
+    sensorial escolhido. Só texto corrido — sem JSON, título, lista, bloco de código, CAIXA ALTA ou
+    itálico; ênfase pela palavra. Única exceção: item, lugar ou achado importante que aparece pela
+    primeira vez vai em **negrito**, no máximo uma ou duas vezes, nunca em diálogo nem em nomes já
+    conhecidos. Termine SEMPRE com uma linha própria "[OPCOES]: opção 1|opção 2|opção 3" — três ações
+    curtas e concretas para AGORA, separadas por "|", sem numeração (ex: "[OPCOES]: Atacar o
+    goblin|Recuar para a porta|Examinar o baú"). O servidor transforma essa linha em botões: nunca a
+    mencione nem explique, só escreva por último.
     """
