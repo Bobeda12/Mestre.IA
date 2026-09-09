@@ -298,8 +298,13 @@ export default function CharacterCreation({ onCharacterCreated }: CharacterCreat
           setOraculoRespostas(["", ""]);
           setOraculoPistaVisual(res.data.pista_visual_en || "");
           setOraculoConfirmado(false);
-      } catch {
-          setOraculoErro("O Oráculo não respondeu. Tente de novo, ou escolha manualmente.");
+      } catch (err: any) {
+          // Rodada de melhorias pós-Fase-6 — antes disto qualquer falha (chave
+          // recusada, limite de uso, timeout) virava a mesma frase genérica;
+          // o backend já manda o motivo certo em `detail` (ver
+          // llm_client._mensagem_erro_byok e ErroMestre), só não chegava à tela.
+          const detalhe = err?.response?.data?.detail;
+          setOraculoErro(detalhe || "O Oráculo não respondeu. Tente de novo, ou escolha manualmente.");
       } finally {
           setOraculoCarregando(false);
       }
@@ -319,8 +324,9 @@ export default function CharacterCreation({ onCharacterCreated }: CharacterCreat
           setGoal(res.data.objetivo);
           setAlignment(res.data.alinhamento);
           setOraculoConfirmado(true);
-      } catch {
-          setOraculoErro("O Oráculo não conseguiu escrever a história agora. Tente de novo.");
+      } catch (err: any) {
+          const detalhe = err?.response?.data?.detail;
+          setOraculoErro(detalhe || "O Oráculo não conseguiu escrever a história agora. Tente de novo.");
       } finally {
           setOraculoCarregando(false);
       }
