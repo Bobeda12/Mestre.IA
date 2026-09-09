@@ -34,7 +34,7 @@ import DetalheMonstroModal from './DetalheMonstroModal';
 import GuiaAventureiro from './GuiaAventureiro';
 import AdventureStage from './AdventureStage';
 import LivingWorld from './LivingWorld';
-import type { AcaoDireta, Cena, InimigoVisual, Progressao, MundoPersistente } from '../lib/gameplay';
+import type { AcaoDireta, Cena, InimigoVisual, Progressao, MundoPersistente, Equipamento, ItemInfo } from '../lib/gameplay';
 
 // Etapa 14 (revisão) — a ficha virou menu de abas estilo JRPG. Antes tudo
 // (retrato, barras, atributos, missão, inventário) era uma pilha só numa
@@ -145,6 +145,9 @@ interface EstadoJogo {
   // nenhum consumidor no frontend.
   reputacao_npcs?: Record<string, number>;
   inventory?: string[];
+  // Fase 1 (ADR-0033) — slots equipados e ficha pública dos itens do herói / à venda.
+  equipamento?: Equipamento;
+  catalogo_itens?: Record<string, ItemInfo>;
   combat_active: boolean;
   inimigos?: InimigoVisual[];
   missao?: unknown;
@@ -308,6 +311,9 @@ export default function GameChat() {
   // tempo (ambos disputam o mesmo `turno_esperado`/world_state.turno), mas
   // são flags de UI com significados diferentes.
   const [acaoTaticaEmCurso, setAcaoTaticaEmCurso] = useState(false);
+  // Fase 1 (ADR-0033)
+  const [equipamento, setEquipamento] = useState<Equipamento>({});
+  const [catalogoItens, setCatalogoItens] = useState<Record<string, ItemInfo>>({});
   const [erroAcao, setErroAcao] = useState<string | null>(null);
   const [resultadoAcao, setResultadoAcao] = useState<string | null>(null);
   // Fase 1 da revisão de gameplay — o momento mais tenso do jogo (herói a
@@ -544,6 +550,8 @@ export default function GameChat() {
       }
     }
     setInventory(d.inventory || []);
+    if (d.equipamento !== undefined) setEquipamento(d.equipamento);
+    if (d.catalogo_itens !== undefined) setCatalogoItens(d.catalogo_itens);
     setCombatActive(d.combat_active);
 
     const novosInimigos = d.inimigos || [];
@@ -892,6 +900,8 @@ export default function GameChat() {
           proposta: acao.proposta,
           marco: acao.marco,
           escolha: acao.escolha,
+          item: acao.item,
+          slot: acao.slot,
           rotulo,
           tipo: 'curto',
         },
@@ -1264,7 +1274,13 @@ export default function GameChat() {
                     </div>
                     <InventoryGrid
                       items={inventory}
+                      infos={catalogoItens}
+                      equipamento={equipamento}
+                      ocupado={loading || acaoTaticaEmCurso || gameOver}
                       onUsarItem={(item) => setInput(prev => `${prev}${prev && !prev.endsWith(' ') ? ' ' : ''}[${item}] `)}
+                      onEquipar={(item) => aoAgir({ acao: 'equipar', item }, `Equipar ${item}`)}
+                      onDesequipar={(slot) => aoAgir({ acao: 'desequipar', slot }, `Guardar ${slot}`)}
+                      onConsumir={(item) => aoAgir({ acao: 'usar_item', item }, `Usar ${item}`)}
                     />
                 </div>
               )}
@@ -1710,7 +1726,7 @@ export default function GameChat() {
                     aoInspecionarHeroi={() => setFichaModalAberta(true)}
                 />
                 {mundoPersistente && <LivingWorld
-                    mundo={mundoPersistente} nivel={nivel} inventario={inventory}
+                    mundo={mundoPersistente} nivel={nivel} inventario={inventory} catalogo={catalogoItens} ouro={ouro}
                     ocupado={loading || acaoTaticaEmCurso || hpAtual <= 0} combate={combatActive}
                     aoAgir={aoAgir} aoIdeia={texto => sendAction(texto)}
                 />}

@@ -35,7 +35,7 @@ from app.services.guardrail import (
 from app.services.living_world import migrar_mundo, painel_mundo
 from app.services.memory import contexto_recente
 from app.services.narrator import gerar_epitafio, montar_contexto
-from app.services.progression import migrar_progressao, painel_progressao
+from app.services.progression import migrar_equipamento, migrar_progressao, painel_progressao
 from app.services.tools import ToolExecutor, sincronizar_aliados, tools_para
 
 router = APIRouter(tags=["game"])
@@ -122,6 +122,24 @@ def _persistir_memoria_em_segundo_plano(
         db.close()
 
 
+def _catalogo_itens(heroi: Personagem, mundo: WorldState) -> dict:
+    from app.services import items as itens
+
+    saida: dict = {}
+    nomes = set(heroi.inventario or [])
+    for pessoa in mundo.mundo.pessoas.values():
+        if pessoa.local == mundo.local:
+            nomes.update(pessoa.mercadoria)
+    for nome in nomes:
+        f = itens.ficha(nome, mundo.itens_inventados)
+        if f:
+            saida[nome] = {
+                "tipo": f["tipo"], "tags": f.get("tags", []), "descricao": f.get("descricao", ""),
+                "preco_venda": itens.preco_venda(f.get("preco", 0)),
+            }
+    return saida
+
+
 def _resposta(heroi: Personagem, c_state: CombatState, q_state: QuestLog, **extra: object) -> dict:
     mundo = WorldState.model_validate(heroi.world_state or {})
     return {
@@ -141,6 +159,11 @@ def _resposta(heroi: Personagem, c_state: CombatState, q_state: QuestLog, **extr
         "xp": heroi.xp,
         "xp_proximo_nivel": regras_xp_proximo_nivel(heroi.nivel),
         "inventory": heroi.inventario,
+        # Fase 1 (ADR-0033) — slots equipados e a ficha pública de cada item
+        # que o herói tem (tipo/tags/descrição/preço de venda), para o
+        # frontend não adivinhar categoria por palavra-chave.
+        "equipamento": heroi.equipamento or {},
+        "catalogo_itens": _catalogo_itens(heroi, mundo),
         "atributos": heroi.atributos,
         # Fase 3 da revisão de gameplay — roster persistente (fora e dentro
         # de combate; o HP em combate vem sincronizado de volta pra cá em
@@ -243,6 +266,8 @@ def load_game(
     if migrar_mundo(w_state, heroi):
         heroi.world_state = w_state.model_dump()
         db.commit()
+    if migrar_equipamento(heroi):
+        db.commit()
 
     # Rodada de conserto (Parte 2, item G) — "Anteriormente…": três fatos do
     # resumo rolante (que já existe, Etapa 5) para o jogador que volta a uma
@@ -292,6 +317,7 @@ def game_action(
 
     migrar_progressao(heroi, w_state)
     migrar_mundo(w_state, heroi)
+    migrar_equipamento(heroi)
     executor = ToolExecutor(heroi, c_state, w_state, q_state)
     if action.acao == "resistir":
         if heroi.hp_atual > 0:
@@ -330,6 +356,12 @@ def game_action(
                           "proposta": action.proposta}
         elif action.acao == "definir_objetivo":
             argumentos = {"objetivo": action.proposta}
+        elif action.acao == "equipar":
+            argumentos = {"item": action.item or ""}
+        elif action.acao == "desequipar":
+            argumentos = {"slot": action.slot or "arma"}
+        elif action.acao == "comerciar":
+            argumentos = {"npc": action.alvo or "", "operacao": action.operacao, "item": action.item}
         elif action.acao == "escolher_especializacao":
             argumentos = {"marco": action.marco, "escolha": action.escolha}
         resultado, sucesso = executor.executar(action.acao, json.dumps(argumentos, ensure_ascii=False))
@@ -409,6 +441,7 @@ async def chat_endpoint(
     turno_mundo_persistido = w_state.turno
     migrar_progressao(heroi, w_state)
     migrar_mundo(w_state, heroi)
+    migrar_equipamento(heroi)
     w_state.turno += 1
     hist = contexto_recente(list(heroi.historico_chat), n=3)
 
@@ -596,6 +629,7 @@ def chat_stream_endpoint(
     turno_mundo_persistido = w_state.turno
     migrar_progressao(heroi, w_state)
     migrar_mundo(w_state, heroi)
+    migrar_equipamento(heroi)
     w_state.turno += 1
     hist = contexto_recente(list(heroi.historico_chat), n=3)
 

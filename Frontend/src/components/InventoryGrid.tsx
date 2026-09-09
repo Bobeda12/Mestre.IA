@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import PixelIcon, { type PixelIconName } from './PixelIcon';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip';
+import type { Equipamento, ItemInfo } from '../lib/gameplay';
 
 // Etapa 14 (C-6) — grade de slots (estilo RPG clássico) no lugar da lista de
 // texto com ícone pequeno na frente (Etapa 7/`ItemIcon`).
@@ -27,7 +28,20 @@ export interface Categoria {
   rotulo: string;
 }
 
-export function categoriaDe(nome: string): Categoria {
+// Fase 1 do plano "jogo completo" (ADR-0033): quando o servidor manda a
+// ficha (`catalogo_itens` no frame de estado), o tipo vem dela; a heurística
+// por palavra fica só como fallback pra item que o servidor não conhece.
+const _ICONE_POR_TIPO: Record<ItemInfo['tipo'], Categoria> = {
+  consumivel: { icone: 'pocao-verde', rotulo: 'Consumível' },
+  arma: { icone: 'espada', rotulo: 'Arma' },
+  armadura: { icone: 'escudo', rotulo: 'Armadura' },
+  escudo: { icone: 'escudo', rotulo: 'Escudo' },
+  ferramenta: { icone: 'pergaminho', rotulo: 'Ferramenta' },
+  inventado: { icone: 'pergaminho', rotulo: 'Item' },
+};
+
+export function categoriaDe(nome: string, info?: ItemInfo): Categoria {
+  if (info && _ICONE_POR_TIPO[info.tipo]) return _ICONE_POR_TIPO[info.tipo];
   const n = nome.toLowerCase();
   if (_PALAVRAS_POCAO.some((p) => n.includes(p))) return { icone: 'pocao-verde', rotulo: 'Consumível' };
   if (_PALAVRAS_ARMA.some((p) => n.includes(p))) return { icone: 'espada', rotulo: 'Arma' };
@@ -51,36 +65,56 @@ const SLOTS_MINIMOS = 12;
 // coisas de uma vez (abrir detalhes E injetar no chat), o que gerava clique
 // acidental no chat. Agora são dois passos: o slot só abre/fecha o painel de
 // descrição; o botão "Citar no chat" dentro do painel é que injeta.
-export default function InventoryGrid({ items, onUsarItem }: { items: string[]; onUsarItem?: (item: string) => void }) {
+export default function InventoryGrid({ items, onUsarItem, infos, equipamento, onEquipar, onDesequipar, onConsumir, ocupado }: {
+  items: string[];
+  onUsarItem?: (item: string) => void;
+  infos?: Record<string, ItemInfo>;
+  equipamento?: Equipamento;
+  onEquipar?: (item: string) => void;
+  onDesequipar?: (slot: 'arma' | 'armadura' | 'escudo') => void;
+  onConsumir?: (item: string) => void;
+  ocupado?: boolean;
+}) {
   const [selecionado, setSelecionado] = useState<number | null>(null);
   const vazios = Math.max(0, SLOTS_MINIMOS - items.length);
   const itemAberto = selecionado != null ? items[selecionado] : null;
+  const infoAberto = itemAberto ? infos?.[itemAberto] : undefined;
+  const slotEquipado = (item: string): 'arma' | 'armadura' | 'escudo' | null =>
+    equipamento?.arma === item ? 'arma' : equipamento?.armadura === item ? 'armadura' : equipamento?.escudo === item ? 'escudo' : null;
+  const equipavel = infoAberto && ['arma', 'armadura', 'escudo'].includes(infoAberto.tipo);
 
   return (
     <TooltipProvider delayDuration={120}>
+      {equipamento && (
+        <p className="text-[10px] text-gray-400 font-rpg uppercase tracking-widest mb-1">
+          Equipado: {equipamento.arma ?? '—'} · {equipamento.armadura ?? '—'} · {equipamento.escudo ?? '—'}
+        </p>
+      )}
       <div className="grid grid-cols-4 gap-1.5">
         {items.map((item, i) => {
-          const { icone } = categoriaDe(item);
+          const { icone } = categoriaDe(item, infos?.[item]);
           const ativo = selecionado === i;
+          const eq = slotEquipado(item);
           return (
             <Tooltip key={i}>
               <TooltipTrigger asChild>
                 <button
                   type="button"
                   onClick={() => setSelecionado(ativo ? null : i)}
-                  aria-label={`Ver detalhes de ${item}`}
+                  aria-label={`Ver detalhes de ${item}${eq ? ' (equipado)' : ''}`}
                   aria-expanded={ativo}
                   aria-controls="painel-detalhe-item"
-                  className={`aspect-square flex items-center justify-center border-2 transition-colors animate-fade-in focus-visible:outline-none focus-visible:border-rpg-gold ${
+                  className={`relative aspect-square flex items-center justify-center border-2 transition-colors animate-fade-in focus-visible:outline-none focus-visible:border-rpg-gold ${
                     ativo
                       ? 'border-rpg-gold bg-rpg-gold/20'
-                      : 'border-gray-600 bg-black/60 hover:border-gray-400'
+                      : eq ? 'border-emerald-700 bg-black/60 hover:border-emerald-400' : 'border-gray-600 bg-black/60 hover:border-gray-400'
                   }`}
                 >
                   <PixelIcon name={icone} size={26} />
+                  {eq && <span aria-hidden className="absolute bottom-0 right-0 text-[8px] text-emerald-300 font-rpg px-0.5">E</span>}
                 </button>
               </TooltipTrigger>
-              <TooltipContent>{item}</TooltipContent>
+              <TooltipContent>{item}{eq ? ' · equipado' : ''}</TooltipContent>
             </Tooltip>
           );
         })}
@@ -94,23 +128,49 @@ export default function InventoryGrid({ items, onUsarItem }: { items: string[]; 
           mesmo lugar (embaixo da grade) em vez de virar um popover flutuante,
           que é como menu de RPG de console faz — assim a grade não pula de
           posição quando o jogador seleciona algo. */}
-      <div id="painel-detalhe-item" className="mt-2 border-2 border-gray-700 bg-black/60 p-2 min-h-[3.5rem] flex items-center">
+      <div id="painel-detalhe-item" className="mt-2 border-2 border-gray-700 bg-black/60 p-2 min-h-[3.5rem]">
         {itemAberto ? (
-          <div className="animate-fade-in flex items-center justify-between gap-2 w-full">
-            <div className="min-w-0">
-              <p className="font-rpg text-rpg-gold leading-tight truncate">{itemAberto}</p>
-              <p className="text-[10px] text-gray-300 uppercase tracking-widest font-rpg">
-                {categoriaDe(itemAberto).rotulo}
-              </p>
+          <div className="animate-fade-in space-y-1.5 w-full">
+            <div className="flex items-center justify-between gap-2">
+              <div className="min-w-0">
+                <p className="font-rpg text-rpg-gold leading-tight truncate">{itemAberto}</p>
+                <p className="text-[10px] text-gray-300 uppercase tracking-widest font-rpg">
+                  {categoriaDe(itemAberto, infoAberto).rotulo}
+                  {infoAberto?.tags?.length ? ` · ${infoAberto.tags.join(', ')}` : ''}
+                  {infoAberto ? ` · vende por ${infoAberto.preco_venda}` : ''}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => onUsarItem?.(itemAberto)}
+                aria-label={`Mencionar ${itemAberto} na ação`}
+                className="shrink-0 flex items-center gap-1 text-[10px] uppercase tracking-widest font-rpg text-rpg-gold border-2 border-rpg-leather hover:border-rpg-gold px-2 py-1 transition-colors focus-visible:outline-none focus-visible:border-rpg-gold"
+              >
+                💬 Citar no chat
+              </button>
             </div>
-            <button
-              type="button"
-              onClick={() => onUsarItem?.(itemAberto)}
-              aria-label={`Mencionar ${itemAberto} na ação`}
-              className="shrink-0 flex items-center gap-1 text-[10px] uppercase tracking-widest font-rpg text-rpg-gold border-2 border-rpg-leather hover:border-rpg-gold px-2 py-1 transition-colors focus-visible:outline-none focus-visible:border-rpg-gold"
-            >
-              💬 Citar no chat
-            </button>
+            {infoAberto?.descricao && <p className="text-[11px] text-gray-300 font-rpg leading-snug">{infoAberto.descricao}</p>}
+            {/* Fase 1 — o juiz resolve na hora (POST /game/action), sem passar pelo narrador. */}
+            <div className="flex gap-1.5 flex-wrap">
+              {equipavel && !slotEquipado(itemAberto) && (
+                <button type="button" disabled={ocupado} onClick={() => onEquipar?.(itemAberto)}
+                  className="text-[10px] uppercase tracking-widest font-rpg text-emerald-200 border-2 border-emerald-800 hover:border-emerald-400 px-2 py-1 disabled:opacity-50">
+                  Equipar
+                </button>
+              )}
+              {equipavel && slotEquipado(itemAberto) && (
+                <button type="button" disabled={ocupado} onClick={() => onDesequipar?.(slotEquipado(itemAberto)!)}
+                  className="text-[10px] uppercase tracking-widest font-rpg text-gray-200 border-2 border-gray-600 hover:border-gray-300 px-2 py-1 disabled:opacity-50">
+                  Guardar
+                </button>
+              )}
+              {infoAberto?.tipo === 'consumivel' && (
+                <button type="button" disabled={ocupado} onClick={() => onConsumir?.(itemAberto)}
+                  className="text-[10px] uppercase tracking-widest font-rpg text-emerald-200 border-2 border-emerald-800 hover:border-emerald-400 px-2 py-1 disabled:opacity-50">
+                  Usar
+                </button>
+              )}
+            </div>
           </div>
         ) : (
           <p className="text-[11px] text-gray-400 font-rpg">

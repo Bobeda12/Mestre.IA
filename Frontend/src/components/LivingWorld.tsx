@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { AcaoDireta, MundoPersistente } from '../lib/gameplay';
+import type { AcaoDireta, ItemInfo, MundoPersistente } from '../lib/gameplay';
 import PixelIcon from './PixelIcon';
 import { getLocalImage } from '../lib/utils';
 
@@ -11,6 +11,9 @@ interface Props {
   combate: boolean;
   aoAgir: (acao: AcaoDireta, rotulo: string) => void;
   aoIdeia: (texto: string) => void;
+  /** Fase 1 (ADR-0033) — ficha dos itens do herói (preço de venda) e ouro atual, para o balcão do mercador. */
+  catalogo?: Record<string, ItemInfo>;
+  ouro?: number;
 }
 
 const ACOES: Record<string, string> = {
@@ -97,6 +100,24 @@ export default function LivingWorld(p: Props) {
       </button>
       {pessoa && pessoa.lembrancas.length > 0 && <details><summary>O que aconteceu entre vocês</summary>
         {pessoa.lembrancas.slice(-4).map((m, i) => <p key={i}>{m}</p>)}</details>}
+      {pessoa && (pessoa.vitrine?.length ?? 0) > 0 && <div className="living-world__shop" aria-label={`Balcão de ${pessoa.nome}`}>
+        <strong>Balcão de {pessoa.nome}</strong><small>Preços do mercado, ajustados pela confiança. Você tem {p.ouro ?? 0} de ouro.</small>
+        <div className="living-world__shop-grid">
+          {pessoa.vitrine!.map(v => <button type="button" key={`c:${v.item}`} disabled={p.ocupado || p.combate || (p.ouro ?? 0) < v.preco}
+            onClick={() => p.aoAgir({acao: 'comerciar', alvo: pessoa.id, operacao: 'comprar', item: v.item}, `Comprar ${v.item} de ${pessoa.nome}`)}>
+            Comprar {v.item}<small>{v.preco} ouro</small>
+          </button>)}
+        </div>
+        {p.inventario.length > 0 && <>
+          <small>Vender do seu inventário (metade do valor):</small>
+          <div className="living-world__shop-grid">
+            {p.inventario.map((item, i) => <button type="button" key={`v:${item}:${i}`} disabled={p.ocupado || p.combate}
+              onClick={() => p.aoAgir({acao: 'comerciar', alvo: pessoa.id, operacao: 'vender', item}, `Vender ${item} a ${pessoa.nome}`)}>
+              Vender {item}<small>{p.catalogo?.[item]?.preco_venda ?? 1} ouro</small>
+            </button>)}
+          </div>
+        </>}
+      </div>}
     </div>}
     <form className="living-world__free" onSubmit={e => {e.preventDefault(); if (ideia.trim()) {p.aoIdeia(ideia); setIdeia('');}}}>
       <label>Outra ideia?<input value={ideia} maxLength={1800} onChange={e => setIdeia(e.target.value)}

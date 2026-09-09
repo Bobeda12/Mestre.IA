@@ -434,6 +434,20 @@ def montar_contexto(
         f"{heroi.classe}: proficiências em {proficiencias_txt}"
     )
 
+    # Fase 1 (ADR-0033) — inventário com tipo/tags e o que está equipado; o
+    # narrador nunca escreve número de item, só sabe o que cada coisa É.
+    from app.services import items as itens
+
+    partes_inv = []
+    for nome in heroi.inventario or []:
+        f = itens.ficha(nome, w_state.itens_inventados)
+        tags = "/" + ",".join(f["tags"][:2]) if f and f.get("tags") else ""
+        partes_inv.append(f"{nome} ({f['tipo']}{tags})" if f else nome)
+    eq = heroi.equipamento or {}
+    secao_inventario = (
+        ", ".join(partes_inv) + f" | EQUIPADO arma={eq.get('arma') or '-'} armadura={eq.get('armadura') or '-'} "
+        f"escudo={eq.get('escudo') or '-'} Defesa {heroi.defesa}"
+    )
     secao_mundo = json.dumps(
         _compacto(painel_mundo(w_state, heroi.classe, privado=True)), ensure_ascii=False, separators=(",", ":")
     )
@@ -471,7 +485,7 @@ def montar_contexto(
 Ouro: {heroi.ouro}{secao_tracos}
     [PASSADO] Background: {heroi.background} | Objetivo: {heroi.objetivo} | \
 Alinhamento: {heroi.alinhamento}{historia_resumo}
-    [INVENTÁRIO] {heroi.inventario}{secao_aliados}
+    [INVENTÁRIO] {secao_inventario}{secao_aliados}
     [MISSÃO ATUAL] {q_state.nome_missao}: {q_state.objetivo_missao}
     [CENA] {w_state.local} | {w_state.clima} | {motor.periodo_do_dia(w_state.hora_do_dia)}
     [MUNDO PERSISTENTE — INTENÇÕES PRIVADAS NÃO SÃO CONHECIMENTO DO HERÓI]
@@ -481,7 +495,10 @@ Alinhamento: {heroi.alinhamento}{historia_resumo}
     não apaga alterações nem ressuscita ninguém. Local vazio: registre elementos coerentes, sem recursos
     inventados para garantir sucesso. Intenções livres passam por agir_no_mundo (IDs do estado; meio =
     objeto local ou item). intervir_conflito para apoiar, atrasar ou negociar; o tempo é do motor.
-    definir_objetivo SÓ quando o jogador escolher um rumo. Segredos, medos e intenções privadas orientam
+    definir_objetivo SÓ quando o jogador escolher um rumo. Se o jogador procurar comércio, registre a
+    pessoa com "mercadoria" (nomes do catálogo: Poção de Cura, Poção de Foco, Antídoto, Frasco de Óleo,
+    Óleo de Lâmina, Tocha, Armadura de Couro, Armadura de Escamas, Escudo, Adaga, Espada Curta, Espada
+    Longa, Arco Curto...) e negocie por comerciar. Segredos, medos e intenções privadas orientam
     a interpretação sem serem revelados; boatos continuam boatos; pessoas sabem só o que sabem e têm
     limites. Antes de viagem ou descanso, lembre prazos VISÍVEIS sem impedir a partida. Uma falha não
     bloqueia a campanha. Narre resultados reais; nunca reverta uma consequência para salvar a trama.
@@ -500,7 +517,9 @@ Alinhamento: {heroi.alinhamento}{historia_resumo}
     — matar todos nunca é a única saída; respeite poupar e rendição.
 
     Toda mudança de estado passa por ferramenta: nunca escreva HP, dano, ouro ou resultado de dado no
-    texto (a ferramenta mostra). Item recebido: dar_item ANTES de narrar. Ação arriscada e incerta:
+    texto (a ferramenta mostra). Item recebido: dar_item ANTES de narrar (fora do catálogo, com
+    descricao e tags). Vestir/trocar arma, armadura ou escudo: equipar. Compra ou venda com quem tem
+    mercadoria: comerciar — nunca narre preço antes. Ação arriscada e incerta:
     rolar_teste na hora, sempre com "motivo" (e "item_usado" se ele usar algo criativo) — o jogador
     nunca rola dado, só decide. Objetivo cumprido sem combate: concluir_objetivo (única fonte de XP fora
     da luta). NPC que se junta de verdade: recrutar_aliado. Descanso declarado: descansar (nunca cure

@@ -40,8 +40,10 @@ export interface InimigoVisual {
 }
 
 export interface AcaoDireta {
-  acao: 'atacar' | 'defender' | 'esquivar' | 'investir' | 'esconder_se' | 'fugir' | 'usar_habilidade' | 'interagir' | 'descansar' | 'resistir' | 'agir_no_mundo' | 'intervir_conflito' | 'definir_objetivo' | 'escolher_especializacao';
+  acao: 'atacar' | 'defender' | 'esquivar' | 'investir' | 'esconder_se' | 'fugir' | 'usar_habilidade' | 'interagir' | 'descansar' | 'resistir' | 'agir_no_mundo' | 'intervir_conflito' | 'definir_objetivo' | 'escolher_especializacao' | 'equipar' | 'desequipar' | 'comerciar' | 'usar_item';
   alvo?: string;
+  item?: string;
+  slot?: 'arma' | 'armadura' | 'escudo';
   habilidade?: string;
   interacao?: string;
   operacao?: string;
@@ -58,7 +60,18 @@ export interface EntidadeMundo {
 export interface PessoaMundo {
   id: string; nome: string; descricao: string; disposicao: string; confianca: number; raca?: string;
   necessidade: string; lembrancas: string[]; promessas: string[]; depoimento?: string;
+  /** Fase 1 (ADR-0033) — vitrine do mercador, com preço já calculado pelo servidor. */
+  vitrine?: { item: string; preco: number }[];
 }
+
+/** Fase 1 (ADR-0033) — ficha pública de um item que o herói tem ou que está à venda. */
+export interface ItemInfo {
+  tipo: 'consumivel' | 'ferramenta' | 'armadura' | 'escudo' | 'arma' | 'inventado';
+  tags: string[];
+  descricao: string;
+  preco_venda: number;
+}
+export interface Equipamento { arma?: string | null; armadura?: string | null; escudo?: string | null }
 export interface MundoPersistente {
   local: string; descricao: string; entidades: EntidadeMundo[]; pessoas: PessoaMundo[];
   conflitos: {id: string; nome: string; sinal: string; progresso: number; etapas: number;

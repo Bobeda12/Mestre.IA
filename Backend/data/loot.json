@@ -1,0 +1,14 @@
+{
+  "_nota": "Saque por banda do bestiário (services/loot.py). 'ouro' é notação de dado; 'chance_item' em %; 'itens' são nomes do catálogo (items.json/weapons.json). 'arco' é a recompensa de fim de arco por faixa de nível (Fase 4).",
+  "Nivel_1": {"ouro": "1d6", "chance_item": 25, "itens": ["Poção de Cura", "Tocha", "Adaga", "Frasco de Óleo"]},
+  "Nivel_2": {"ouro": "2d6", "chance_item": 35, "itens": ["Poção de Cura", "Poção de Foco", "Espada Curta", "Armadura de Couro", "Antídoto"]},
+  "Nivel_3": {"ouro": "3d6", "chance_item": 45, "itens": ["Poção de Cura", "Poção de Foco", "Óleo de Lâmina", "Cimitarra", "Escudo", "Armadura de Escamas"]},
+  "Nivel_4": {"ouro": "3d6+5", "chance_item": 55, "itens": ["Poção de Cura Maior", "Poção de Foco", "Espada Longa", "Martelo de Guerra", "Cota de Malha"]},
+  "Chefe": {"ouro": "4d6+10", "chance_item": 100, "itens": ["Poção de Cura Maior", "Cota de Malha", "Espada Longa", "Machado Grande", "Arco Longo"]},
+  "arco": {
+    "1": {"ouro": "3d6+10", "itens": ["Poção de Cura", "Poção de Foco"]},
+    "3": {"ouro": "5d6+20", "itens": ["Poção de Cura Maior", "Armadura de Escamas"]},
+    "5": {"ouro": "6d6+40", "itens": ["Poção de Cura Maior", "Cota de Malha"]},
+    "8": {"ouro": "8d6+80", "itens": ["Poção de Cura Maior", "Armadura de Placas"]}
+  }
+}

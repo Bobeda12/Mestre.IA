@@ -79,7 +79,10 @@ def test_criar_e_carregar_personagem(monkeypatch):
     assert dados["hp_atual"] > 0
     # Humano dá +1 fixo em todos os atributos (data/races.json) — não tem livre_escolha.
     assert dados["atributos"]["forca"] == 16
-    assert dados["defesa"] == 10 + (dados["atributos"]["destreza"] - 10) // 2
+    # Fase 1 (ADR-0033) — o Guerreiro nasce com Cota de Malha (CA 16, pesada:
+    # ignora Destreza) e Escudo (+2) equipados: Defesa 18, não 10 + DES.
+    assert dados["equipamento"] == {"arma": "Espada Longa", "armadura": "Cota de Malha", "escudo": "Escudo"}
+    assert dados["defesa"] == 18
 
 
 def _payload_base(**overrides):

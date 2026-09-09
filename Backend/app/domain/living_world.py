@@ -61,6 +61,9 @@ class PessoaMundo(BaseModel):
     medo: str = Field(default="", max_length=400)
     limite: str = Field(default="", max_length=400)
     necessidade: str = Field(default="", max_length=120)
+    # Fase 1 (ADR-0033) — nomes do catálogo que esta pessoa vende; preços
+    # são do servidor (services/items.py). Vazio = não é mercador.
+    mercadoria: list[str] = Field(default_factory=list, max_length=8)
     segredo: str = Field(default="", max_length=600)
     segredo_revelado: bool = False
     confianca: int = Field(default=0, ge=-100, le=100)

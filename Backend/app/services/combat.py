@@ -35,15 +35,20 @@ def _mod_para_arma(atributos: dict, propriedades: list[str]) -> tuple[int, str]:
     return mod_forca, "forca"
 
 
-def escolher_arma(inventario: list[str], proposta: str | None) -> tuple[str, dict]:
+def escolher_arma(inventario: list[str], proposta: str | None, equipada: str | None = None) -> tuple[str, dict]:
     """O narrador propõe a arma que o jogador quis usar; aqui o servidor
     confirma que ela existe no arsenal E está na mochila do herói. Se a
-    proposta falhar, cai para a primeira arma reconhecida no inventário, e
-    por fim para ataque desarmado — nunca para uma arma inventada."""
+    proposta falhar, cai para a arma EQUIPADA (Fase 1, ADR-0033), depois
+    para a primeira arma reconhecida no inventário, e por fim para ataque
+    desarmado — nunca para uma arma inventada."""
     if proposta:
         dados = regras.get_weapon(proposta)
         if dados and proposta in inventario:
             return proposta, dados
+    if equipada and equipada in inventario:
+        dados = regras.get_weapon(equipada)
+        if dados:
+            return equipada, dados
     for item in inventario:
         dados = regras.get_weapon(item)
         if dados:
@@ -213,6 +218,7 @@ def turno_jogador(
     vantagem: bool | None = None,
     investida: bool = False,
     classe: str | None = None,
+    arma_equipada: str | None = None,
 ) -> list[str]:
     """Resolve o ataque do jogador contra um inimigo vivo, mutando
     `c_state.inimigos` in place (mesmo padrão de reatribuição de coluna JSON
@@ -227,7 +233,7 @@ def turno_jogador(
         return []
 
     alvo = next((i for i in vivos if i.nome == alvo_proposto), vivos[0])
-    nome_arma, dados_arma = escolher_arma(inventario, arma_proposta)
+    nome_arma, dados_arma = escolher_arma(inventario, arma_proposta, arma_equipada)
     mod_atributo, attr_usado = _mod_para_arma(atributos_heroi, dados_arma.get("propriedades", []))
     if classe in CONJURADORES and arma_proposta is None:
         attr_usado = perfil_classe(classe)["atributo"]
@@ -277,6 +283,7 @@ def turno_jogador(
             dano += motor.calcular_dano("2d6" if nivel >= 10 else "1d6", resultado.critico, rng)
     dano += 3 if alvo.efeitos.get("marcado", 0) else 0
     dano += 2 if c_state.efeitos_heroi.get("furia", 0) else 0
+    dano += 2 if c_state.efeitos_heroi.get("lamina", 0) else 0  # Óleo de Lâmina (Fase 1)
     dano = max(1, dano + c_state.bonus_especializacao)
     if investida:
         dano = dano * 3 // 2

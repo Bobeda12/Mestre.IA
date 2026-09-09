@@ -1,22 +1,196 @@
 {
-  "Tocha": {
-    "descricao": "Uma tocha que ainda arde, prendendo luz e calor.",
-    "tags": ["Fogo", "Luz"]
+  "Poção de Cura": {
+    "tipo": "consumivel",
+    "tags": [
+      "Cura"
+    ],
+    "preco": 25,
+    "descricao": "Um frasco vermelho e morno. Recupera 2d4+2 PV.",
+    "efeito": {
+      "cura": "2d4+2"
+    }
   },
-  "Símbolo Sagrado": {
-    "descricao": "Um pingente abençoado, gasto pelo tempo.",
-    "tags": ["Sagrado"]
+  "Poção de Cura Maior": {
+    "tipo": "consumivel",
+    "tags": [
+      "Cura"
+    ],
+    "preco": 90,
+    "descricao": "Vidro grosso, líquido denso como mel. Recupera 4d4+4 PV.",
+    "efeito": {
+      "cura": "4d4+4"
+    }
   },
-  "Corda e Gancho": {
-    "descricao": "Uma corda resistente com um gancho de ferro na ponta.",
-    "tags": ["Utilidade"]
+  "Poção de Foco": {
+    "tipo": "consumivel",
+    "tags": [
+      "Foco",
+      "Arcano"
+    ],
+    "preco": 30,
+    "descricao": "Azul e fria ao toque. Devolve 2 de Foco em combate.",
+    "efeito": {
+      "foco": 2
+    }
+  },
+  "Antídoto": {
+    "tipo": "consumivel",
+    "tags": [
+      "Cura"
+    ],
+    "preco": 15,
+    "descricao": "Amargo. Limpa veneno e enfraquecimento do corpo.",
+    "efeito": {
+      "remover_efeitos": [
+        "envenenado",
+        "vulneravel",
+        "enfraquecido"
+      ]
+    }
+  },
+  "Óleo de Lâmina": {
+    "tipo": "consumivel",
+    "tags": [
+      "Fogo",
+      "Afiado"
+    ],
+    "preco": 20,
+    "descricao": "Passado no fio da arma, arde ao cortar. +2 de dano por 3 rodadas.",
+    "efeito": {
+      "bonus_dano_temporario": 2,
+      "rodadas": 3
+    }
   },
   "Frasco de Óleo": {
-    "descricao": "Óleo inflamável, útil além de acender lamparinas.",
-    "tags": ["Fogo"]
+    "tipo": "consumivel",
+    "tags": [
+      "Fogo"
+    ],
+    "preco": 10,
+    "descricao": "Óleo inflamável, útil além de acender lamparinas. Arremessado e aceso: 2d6 em todos os inimigos.",
+    "efeito": {
+      "dano_area": "2d6"
+    }
   },
   "Água Benta": {
-    "descricao": "Água abençoada por um sacerdote, guardada num frasco de vidro.",
-    "tags": ["Sagrado"]
+    "tipo": "consumivel",
+    "tags": [
+      "Sagrado"
+    ],
+    "preco": 25,
+    "descricao": "Água abençoada por um sacerdote, guardada num frasco de vidro. Queima o profano: 2d6 em todos os inimigos.",
+    "efeito": {
+      "dano_area": "2d6"
+    }
+  },
+  "Bomba de Fumaça": {
+    "tipo": "consumivel",
+    "tags": [
+      "Utilidade"
+    ],
+    "preco": 20,
+    "descricao": "Estoura numa nuvem cinza. Os inimigos perdem o herói de vista por uma rodada.",
+    "efeito": {
+      "esconder": true
+    }
+  },
+  "Tocha": {
+    "tipo": "ferramenta",
+    "tags": [
+      "Fogo",
+      "Luz"
+    ],
+    "preco": 1,
+    "descricao": "Uma tocha que ainda arde, prendendo luz e calor."
+  },
+  "Símbolo Sagrado": {
+    "tipo": "ferramenta",
+    "tags": [
+      "Sagrado"
+    ],
+    "preco": 5,
+    "descricao": "Um pingente abençoado, gasto pelo tempo."
+  },
+  "Corda e Gancho": {
+    "tipo": "ferramenta",
+    "tags": [
+      "Utilidade"
+    ],
+    "preco": 5,
+    "descricao": "Uma corda resistente com um gancho de ferro na ponta."
+  },
+  "Ferramentas de Ladrão": {
+    "tipo": "ferramenta",
+    "tags": [
+      "Utilidade"
+    ],
+    "preco": 25,
+    "descricao": "Gazuas, lima e um espelhinho. Ajudam em fechaduras e armadilhas."
+  },
+  "Mochila": {
+    "tipo": "ferramenta",
+    "tags": [],
+    "preco": 2,
+    "descricao": "Couro gasto, costuras firmes."
+  },
+  "Armadura de Couro": {
+    "tipo": "armadura",
+    "categoria": "leve",
+    "ca_base": 11,
+    "tags": [
+      "Leve"
+    ],
+    "preco": 10,
+    "descricao": "Couro endurecido. CA 11 + Destreza."
+  },
+  "Armadura de Escamas": {
+    "tipo": "armadura",
+    "categoria": "media",
+    "ca_base": 14,
+    "tags": [
+      "Pesada"
+    ],
+    "preco": 50,
+    "descricao": "Placas sobrepostas sobre couro. CA 14 + Destreza (máx. 2)."
+  },
+  "Cota de Malha": {
+    "tipo": "armadura",
+    "categoria": "pesada",
+    "ca_base": 16,
+    "forca_min": 13,
+    "tags": [
+      "Pesada"
+    ],
+    "preco": 75,
+    "descricao": "Anéis de ferro entrelaçados. CA 16, exige Força 13."
+  },
+  "Armadura de Placas": {
+    "tipo": "armadura",
+    "categoria": "pesada",
+    "ca_base": 18,
+    "forca_min": 15,
+    "tags": [
+      "Pesada"
+    ],
+    "preco": 300,
+    "descricao": "Aço articulado da cabeça aos pés. CA 18, exige Força 15."
+  },
+  "Escudo": {
+    "tipo": "escudo",
+    "ca_bonus": 2,
+    "tags": [
+      "Pesada"
+    ],
+    "preco": 10,
+    "descricao": "Madeira reforçada com ferro. +2 CA; não combina com arma de duas mãos."
+  },
+  "Escudo de Madeira": {
+    "tipo": "escudo",
+    "ca_bonus": 2,
+    "tags": [
+      "Leve"
+    ],
+    "preco": 8,
+    "descricao": "Tábuas amarradas com couro. +2 CA; não combina com arma de duas mãos."
   }
 }

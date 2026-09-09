@@ -12,6 +12,7 @@ class GameAction(BaseModel):
         "atacar", "defender", "esquivar", "investir", "esconder_se", "fugir",
         "usar_habilidade", "interagir", "descansar", "usar_item", "resistir",
         "agir_no_mundo", "intervir_conflito", "definir_objetivo", "escolher_especializacao",
+        "equipar", "desequipar", "comerciar",
     ]
     turno_esperado: int = Field(ge=1)
     alvo: str | None = Field(default=None, max_length=120)
@@ -29,3 +30,4 @@ class GameAction(BaseModel):
     # no histórico em vez do id cru da ação. Só apresentação: a ação que o
     # juiz resolve continua sendo `acao` + argumentos.
     rotulo: str | None = Field(default=None, max_length=80)
+    slot: Literal["arma", "armadura", "escudo"] | None = None

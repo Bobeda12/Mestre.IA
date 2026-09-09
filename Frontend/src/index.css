@@ -626,6 +626,8 @@ img[src^="/assets/backgrounds/"] {
 .living-world details { margin-top: .9rem; border-top: 1px solid #425570; padding-top: .7rem; }
 .living-world summary { cursor: pointer; font-size: 1rem; color: #eed096; }
 .living-world__paths { display: flex; gap: .4rem; flex-wrap: wrap; margin-top: 1rem; }
+.living-world__shop { margin-top: .8rem; padding: .7rem; border: 1px dashed #aa8138; background: #16201a; }
+.living-world__shop-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: .4rem; margin-block: .4rem; }
 .living-world__paths > strong, .living-world__paths > small { width: 100%; }
 .living-world__fact { border-left: 3px solid #c9a456; padding-left: .7rem; }
 .living-world progress { display: block; width: 100%; accent-color: #daa64c; margin-block: .4rem; }

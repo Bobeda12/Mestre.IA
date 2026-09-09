@@ -22,6 +22,16 @@ def migrar_progressao(heroi, w_state) -> None:
     w_state.versao_progressao = 1
 
 
+def migrar_equipamento(heroi) -> bool:
+    """Fase 1 (ADR-0033) — save anterior aos slots: equipa a primeira arma,
+    armadura e escudo do inventário e recalcula a defesa. Idempotente."""
+    from app.services.items import auto_equipar
+
+    if heroi.equipamento:
+        return False
+    return auto_equipar(heroi)
+
+
 def painel_progressao(heroi, c_state) -> dict:
     nivel = heroi.nivel or 1
     perfil = perfil_classe(heroi.classe)

@@ -90,7 +90,7 @@ def create_character(
     }
 
     hp = d_classe.get("dado_vida", 8) + calcular_modificador(attr_final["constituicao"])
-    defesa = 10 + calcular_modificador(attr_final["destreza"])
+    defesa = 10 + calcular_modificador(attr_final["destreza"])  # provisória; auto_equipar recalcula abaixo
 
     session_id = f"{char.nome.lower()}_{random.randint(1000, 9999)}"
     roteiro = gerar_prologo_missao(char, chamar_fn=chave.chamar_fn)
@@ -141,6 +141,11 @@ def create_character(
         historico_chat=[{"role": "assistant", "content": roteiro["intro_narrativa"],
                          "opcoes": roteiro.get("opcoes", [])}],
     )
+    # Fase 1 (ADR-0033) — o equipamento inicial da classe já vem vestido.
+    from app.services.items import auto_equipar
+
+    auto_equipar(novo)
+    defesa = novo.defesa
     db.add(novo)
     db.commit()
     telemetria.registrar_evento(db, current_user.id, "sessao_criada", personagem_id=novo.id)

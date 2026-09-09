@@ -1,6 +1,13 @@
 import json
+import unicodedata
 
+from app.domain.items import ItemCatalogo
 from app.infra.settings import settings
+
+
+def _normalizar(nome: str) -> str:
+    sem_acento = unicodedata.normalize("NFD", nome)
+    return "".join(c for c in sem_acento if unicodedata.category(c) != "Mn").casefold().strip()
 
 
 class DataManager:
@@ -18,6 +25,14 @@ class DataManager:
         # matemática de ataque, ver services/combat.py): tags são pra uso
         # criativo fora do combate (rolar_teste), não pra dano.
         self.items = self._load_json("items.json")
+        # Fase 1 do plano "jogo completo" (ADR-0033) — o catálogo tem
+        # NÚMEROS (cura, CA, preço); validar no boot é o que impede um JSON
+        # torto de virar matemática de combate errada em pleno jogo.
+        for dados in self.items.values():
+            ItemCatalogo.model_validate(dados)
+        self._indice_itens = {_normalizar(n): n for n in self.items}
+        self._indice_armas = {_normalizar(n): n for g in self.weapons.values() for n in g}
+        self.loot = self._load_json("loot.json")
 
         self.biblia_text = self._load_text("biblia_mestre.txt")
 
@@ -79,10 +94,21 @@ class DataManager:
         return list(self.monsters.get(banda, {}).keys())
 
     def get_weapon(self, nome: str) -> dict | None:
+        exato = self._indice_armas.get(_normalizar(nome), nome)
         for grupo in self.weapons.values():
-            if nome in grupo:
-                return dict(grupo[nome])
+            if exato in grupo:
+                return dict(grupo[exato])
         return None
+
+    def nome_canonico(self, nome: str) -> str | None:
+        """Nome exato do catálogo (item ou arma) para um nome "quase" — acento/caixa."""
+        chave = _normalizar(nome)
+        return self._indice_itens.get(chave) or self._indice_armas.get(chave)
+
+    def listar_por_tipo(self, tipo: str) -> list[str]:
+        if tipo == "arma":
+            return [n for g in self.weapons.values() for n in g]
+        return [n for n, d in self.items.items() if d.get("tipo") == tipo]
 
     def get_location(self, nome: str) -> dict | None:
         """Usado pela ferramenta `mover` (Etapa 4) para confirmar que o
@@ -95,7 +121,8 @@ class DataManager:
         return list(self.locations.keys())
 
     def get_item(self, nome: str) -> dict | None:
-        dados = self.items.get(nome)
+        exato = self._indice_itens.get(_normalizar(nome), nome)
+        dados = self.items.get(exato)
         return dict(dados) if dados is not None else None
 
     def get_tags(self, nome: str) -> list[str]:

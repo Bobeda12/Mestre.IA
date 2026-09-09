@@ -162,6 +162,8 @@ def registrar_pessoa(executor: "ToolExecutor", pessoa: dict) -> dict:
     # O cadastro cria a pessoa, não resultados de ações ou relações conquistadas.
     if npc.raca not in regras.get_races_list():
         npc.raca = "Humano"  # o retrato do painel vem de /assets/races/<raca>.png
+    # Mercadoria só com nomes do catálogo (nome canônico); o resto é descartado.
+    npc.mercadoria = [c for c in (regras.nome_canonico(n) for n in npc.mercadoria) if c][:8]
     npc.confianca = max(-30, min(30, (executor.heroi.reputacao_npcs or {}).get(npc.nome, 0)))
     npc.segredo_revelado = False
     npc.lembrancas = []
@@ -627,6 +629,13 @@ def painel_mundo(w_state, classe: str, privado: bool = False) -> dict:
             dados = pessoa.model_dump(exclude={"segredo", "medo", "objetivo", "limite", "conhecimentos"})
             if pessoa.segredo_revelado:
                 dados["depoimento"] = pessoa.segredo
+            # Fase 1 — vitrine com preço já calculado pelo servidor.
+            from app.services import items as itens
+
+            dados["vitrine"] = [
+                {"item": n, "preco": itens.preco_compra((itens.ficha(n) or {}).get("preco", 0), pessoa.confianca)}
+                for n in pessoa.mercadoria
+            ]
         pessoas.append(dados)
     conflitos = []
     for conflito in mundo.conflitos.values():

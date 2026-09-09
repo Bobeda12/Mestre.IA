@@ -11,35 +11,19 @@ sucesso) — nunca deixa uma ferramenta malformada derrubar o turno inteiro."""
 import json
 import random
 from collections.abc import Callable
+from typing import Any
 
 from app.domain.eventos import DadosRolagem, EventoRolagem, EventoStatus
 from app.domain.state import Aliado, CombatState, Inimigo, LocalDescoberto, QuestLog, WorldState
 from app.infra.data_manager import regras
 from app.infra.db import Personagem
 from app.services import combat
+from app.services import items as itens
 from app.services import rules_engine as motor
 from app.services.class_abilities import limite_foco, perfil_classe
+from app.services.loot import gerar_loot
 from app.services.world_tools import WORLD_DISPATCH, WORLD_TOOLS
 
-
-def _efeito_pocao_cura(executor: "ToolExecutor") -> dict:
-    cura = motor.calcular_dano("2d4+2", rng=executor.rng)
-    executor.heroi.hp_atual = min(executor.heroi.hp_max, executor.heroi.hp_atual + cura)
-    executor.eventos.append(
-        EventoRolagem(
-            f"🧪 Poção de Cura: recupera {cura} PV. HP: {executor.heroi.hp_atual}/{executor.heroi.hp_max}.",
-            EventoStatus(tipo="cura", quem="heroi", valor=cura),
-        )
-    )
-    return {"cura": cura, "hp_atual": executor.heroi.hp_atual}
-
-
-# Itens com efeito mecânico conhecido. Um item fora deste mapa ainda pode ser
-# "usado" (validação de posse continua valendo), só não move nenhum número —
-# não existe um sistema de itens completo ainda, é escopo aberto para depois.
-_EFEITOS_ITENS: dict[str, Callable[["ToolExecutor"], dict]] = {
-    "Poção de Cura": _efeito_pocao_cura,
-}
 
 class ToolExecutor:
     """Um por turno. Mantém referência direta a `c_state`/`w_state` (o mesmo
@@ -96,7 +80,9 @@ class ToolExecutor:
         mod = motor.calcular_modificador(self.heroi.atributos.get(atributo, 10))
         partes_bonus = [{"rotulo": motor.ATRIBUTO_LABEL[atributo], "valor": mod}]
         mod_total = mod
-        tags = regras.get_tags(item_usado) if item_usado and item_usado in self.heroi.inventario else []
+        item_real = itens.resolver_nome(item_usado, self.heroi.inventario) if item_usado else None
+        tags = itens.tags_de(item_real, self.w_state.itens_inventados) if item_real else []
+        item_usado = item_real or item_usado
         if tags:
             mod_total += self.BONUS_ITEM_COM_TAG
             partes_bonus.append({"rotulo": f"{item_usado} ({tags[0]})", "valor": self.BONUS_ITEM_COM_TAG})
@@ -128,6 +114,7 @@ class ToolExecutor:
         eventos = combat.turno_jogador(
             self.c_state, self.heroi.atributos, self.heroi.inventario, arma, alvo, self.rng, self._nivel(),
             classe=self.heroi.classe,
+            arma_equipada=(self.heroi.equipamento or {}).get("arma"),
         )
         self.eventos.extend(eventos)
         self._recuperar_foco(1)
@@ -192,6 +179,7 @@ class ToolExecutor:
                 dano += motor.calcular_dano("2d6", rng=self.rng)
             dano += 3 if inimigo.efeitos.get("marcado", 0) else 0
             dano += 2 if self.c_state.efeitos_heroi.get("furia", 0) else 0
+            dano += 2 if self.c_state.efeitos_heroi.get("lamina", 0) else 0
             dano = max(1, dano)
             dano_real = min(inimigo.hp, dano)
             inimigo.hp = max(0, inimigo.hp - dano)
@@ -306,6 +294,7 @@ class ToolExecutor:
             self.c_state, self.heroi.atributos, self.heroi.inventario, arma, alvo, self.rng, self._nivel(),
             investida=True,
             classe=self.heroi.classe,
+            arma_equipada=(self.heroi.equipamento or {}).get("arma"),
         )
         self.eventos.extend(eventos)
         if all(i.hp <= 0 or i.afastado for i in self.c_state.inimigos):
@@ -407,9 +396,26 @@ class ToolExecutor:
                 chave = inimigo.arquetipo or inimigo.nome
                 abates[chave] = abates.get(chave, 0) + 1
             self.heroi.monstros_derrotados = abates
+        # Fase 1 (ADR-0033) — saque determinístico por banda, no único
+        # ponto de vitória. Ouro entra aqui e no fim de arco (Fase 4), e só.
+        # RNG próprio, derivado da semente da aventura e do turno: o saque é
+        # reprodutível e não consome a sequência de dados do combate (os
+        # testes com `RngFixo` continuam exatos).
+        rng_saque = random.Random(f"{self.w_state.semente_aventura}:{self.w_state.turno}:saque")
+        saque = gerar_loot(inimigos_derrotados, rng_saque)
+        extra: dict = {}
+        if saque.ouro:
+            self.heroi.ouro += saque.ouro
+            self.eventos.append(f"💰 Saque: {saque.ouro} de ouro. Total: {self.heroi.ouro}.")
+            extra["ouro_saque"] = saque.ouro
+        for nome_item in saque.itens:
+            self.heroi.inventario = [*self.heroi.inventario, nome_item]
+            self.eventos.append(f"🎁 {self.heroi.nome} recebe: {nome_item}.")
+        if saque.itens:
+            extra["itens_saque"] = saque.itens
         if xp_ganho <= 0:
-            return {}
-        return self._aplicar_xp(xp_ganho)
+            return extra
+        return {**extra, **self._aplicar_xp(xp_ganho)}
 
     def _aplicar_xp(self, xp_ganho: int) -> dict:
         """Núcleo comum de `_conceder_xp` (vitória em combate) e
@@ -569,18 +575,23 @@ class ToolExecutor:
         return {"encontrado": True, "trechos": trechos[:3]}
 
     def usar_item(self, item: str) -> dict:
-        if item not in self.heroi.inventario:
+        real = itens.resolver_nome(item, self.heroi.inventario)
+        if real is None:
             return {"erro": f"'{item}' não está no inventário"}
-        efeito = _EFEITOS_ITENS.get(item)
-        if efeito is None:
-            # Sem efeito mecânico conhecido: não é consumível, não sai do
-            # inventário (só itens com `_EFEITOS_ITENS` são consumidos).
-            resultado = {"usado": True, "efeito": "sem efeito mecânico definido — narre livremente o uso"}
+        ficha_bruta = regras.get_item(real)
+        if not ficha_bruta or ficha_bruta.get("tipo") != "consumivel":
+            # Ferramenta, arma, armadura ou item inventado: não some da
+            # mochila e não move número — o uso é narrativo (ou `equipar`).
+            resultado = {"usado": True, "item": real, "efeito": "sem efeito mecânico — narre livremente o uso"}
         else:
-            resultado = efeito(self)
+            from app.domain.items import ItemCatalogo
+
+            resultado = itens.aplicar_efeito_consumivel(self, real, ItemCatalogo.model_validate(ficha_bruta))
             inventario = list(self.heroi.inventario)
-            inventario.remove(item)
+            inventario.remove(real)
             self.heroi.inventario = inventario
+            if resultado.get("resultado") == "vitoria":
+                return resultado
         # Fase 1 da revisão de gameplay — usar um item em combate gasta a
         # ação do herói como qualquer outra: antes disso os inimigos nunca
         # reagiam a um turno "de item" (self._resolver_reacao_inimiga() é
@@ -662,10 +673,94 @@ class ToolExecutor:
             )
         return resultado
 
-    def dar_item(self, item: str) -> dict:
+    def dar_item(self, item: str, descricao: str | None = None, tags: list[str] | None = None) -> dict:
+        """Fase 1 (ADR-0033): item do catálogo entra como sempre (nome
+        canônico); item fora dele só entra com descrição + tags do
+        vocabulário fechado e vira `ItemInventado` — nunca tem efeito além
+        do bônus de tag em `rolar_teste`."""
+        from pydantic import ValidationError
+
+        from app.domain.items import TAGS_VALIDAS, ItemInventado
+
+        canonico = regras.nome_canonico(item)
+        if canonico is not None:
+            item = canonico
+        elif item in self.w_state.itens_inventados:
+            pass
+        else:
+            if not descricao or not tags:
+                return {"erro": f"'{item}' não está no catálogo: passe descricao e tags ({', '.join(TAGS_VALIDAS)})"}
+            try:
+                inventado = ItemInventado(nome=item, descricao=descricao, tags=tags)  # type: ignore[arg-type]
+            except ValidationError:
+                return {"erro": f"tags inválidas; use até 3 de: {', '.join(TAGS_VALIDAS)}"}
+            self.w_state.itens_inventados = {**self.w_state.itens_inventados, item: inventado}
         self.heroi.inventario = [*self.heroi.inventario, item]
         self.eventos.append(f"🎁 {self.heroi.nome} recebe: {item}.")
         return {"inventario": self.heroi.inventario}
+
+    def equipar(self, item: str) -> dict:
+        resultado = itens.equipar(self.heroi, item)
+        if "erro" not in resultado:
+            self.eventos.append(f"🛡️ Equipa {resultado['equipado']}. Defesa: {self.heroi.defesa}.")
+            if self.c_state.ativo:
+                resultado.update(self._resolver_reacao_inimiga())
+        return resultado
+
+    def desequipar(self, slot: str) -> dict:
+        resultado = itens.desequipar(self.heroi, slot)
+        if "erro" not in resultado:
+            self.eventos.append(f"🛡️ Guarda {resultado['desequipado']}. Defesa: {self.heroi.defesa}.")
+        return resultado
+
+    def comerciar(self, npc: str, operacao: str, item: str | None = None) -> dict:
+        """Preços são do servidor (`items.preco_compra/venda`), nunca do
+        narrador; o NPC precisa estar presente e ter `mercadoria`."""
+        if self.c_state.ativo:
+            return {"erro": "ninguém negocia no meio de um combate"}
+        mundo = self.w_state.mundo
+        pessoa = mundo.pessoas.get(npc) or next(
+            (p for p in mundo.pessoas.values() if p.nome.strip().lower() == npc.strip().lower()), None
+        )
+        if pessoa is None or pessoa.local != self.w_state.local or pessoa.disposicao == "ausente":
+            return {"erro": f"'{npc}' não está aqui"}
+        if not pessoa.mercadoria:
+            return {"erro": f"{pessoa.nome} não tem nada para vender nem compra nada"}
+        vitrine: list[dict[str, Any]] = [
+            {"item": n, "preco": itens.preco_compra((itens.ficha(n) or {}).get("preco", 0), pessoa.confianca)}
+            for n in pessoa.mercadoria
+        ]
+        if operacao == "listar":
+            return {"vitrine": vitrine, "ouro": self.heroi.ouro}
+        if not item:
+            return {"erro": "diga qual item"}
+        if operacao == "comprar":
+            oferta = next((v for v in vitrine if v["item"].lower() == item.lower()), None)
+            if oferta is None:
+                return {"erro": f"{pessoa.nome} não vende '{item}'", "vitrine": vitrine}
+            if self.heroi.ouro < oferta["preco"]:
+                return {"erro": f"ouro insuficiente: {oferta['item']} custa {oferta['preco']}, tem {self.heroi.ouro}"}
+            self.heroi.ouro -= oferta["preco"]
+            self.heroi.inventario = [*self.heroi.inventario, oferta["item"]]
+            self.eventos.append(f"💰 Compra {oferta['item']} de {pessoa.nome} por {oferta['preco']} de ouro.")
+            self.eventos.append(f"🎁 {self.heroi.nome} recebe: {oferta['item']}.")
+            return {"comprado": oferta["item"], "preco": oferta["preco"], "ouro_restante": self.heroi.ouro}
+        if operacao == "vender":
+            real = itens.resolver_nome(item, self.heroi.inventario)
+            if real is None:
+                return {"erro": f"'{item}' não está no inventário"}
+            valor = itens.preco_venda((itens.ficha(real, self.w_state.itens_inventados) or {}).get("preco", 0))
+            inventario = list(self.heroi.inventario)
+            inventario.remove(real)
+            self.heroi.inventario = inventario
+            eq = itens.equipamento_de(self.heroi)
+            for slot in ("arma", "armadura", "escudo"):
+                if getattr(eq, slot) == real and real not in inventario:
+                    itens.desequipar(self.heroi, slot)
+            self.heroi.ouro += valor
+            self.eventos.append(f"💰 Vende {real} a {pessoa.nome} por {valor} de ouro.")
+            return {"vendido": real, "preco": valor, "ouro_restante": self.heroi.ouro}
+        return {"erro": "operacao precisa ser listar, comprar ou vender"}
 
     def gastar_ouro(self, qtd: int) -> dict:
         if qtd < 0:
@@ -803,6 +898,8 @@ class ToolExecutor:
                  "mover", "descansar"}
         em_combate = self.c_state.ativo
         consome = nome in acoes and not (nome == "agir_no_mundo" and args.get("acao") == "examinar")
+        if nome == "equipar":
+            consome = em_combate  # trocar de arma no meio da luta custa a ação
         if nome == "aplicar_dano" and em_combate:
             # dano ambiental num inimigo é uma ação de combate como outra qualquer
             nomes_heroi = {"heroi", "herói", "você", "voce", self.heroi.nome.lower()}
@@ -847,6 +944,9 @@ ToolExecutor._DESPACHO = {
     "consultar_regra": ToolExecutor.consultar_regra,
     "usar_item": ToolExecutor.usar_item,
     "dar_item": ToolExecutor.dar_item,
+    "equipar": ToolExecutor.equipar,
+    "desequipar": ToolExecutor.desequipar,
+    "comerciar": ToolExecutor.comerciar,
     "gastar_ouro": ToolExecutor.gastar_ouro,
     "ajustar_reputacao_npc": ToolExecutor.ajustar_reputacao_npc,
     "iniciar_combate": ToolExecutor.iniciar_combate,
@@ -1156,7 +1256,21 @@ TOOLS_SCHEMA: list[dict] = [*WORLD_TOOLS,
             ),
             "parameters": {
                 "type": "object",
-                "properties": {"item": {"type": "string", "description": "Nome do item a entregar."}},
+                "properties": {
+                    "item": {"type": "string", "description": "Nome do item a entregar."},
+                    "descricao": {
+                        "type": "string",
+                        "description": "Só para item FORA do catálogo: o que ele é, em uma frase.",
+                    },
+                    "tags": {
+                        "type": "array",
+                        "items": {"type": "string", "enum": [
+                            "Fogo", "Luz", "Sagrado", "Utilidade", "Cura", "Foco", "Veneno", "Gelo", "Leve", "Pesada",
+                            "Afiado", "Arcano"
+                        ]},
+                        "description": "Só para item FORA do catálogo: até 3 tags; é o único poder que ele terá.",
+                    },
+                },
                 "required": ["item"],
             },
         },
@@ -1298,6 +1412,56 @@ TOOLS_SCHEMA.extend([
 ])
 
 
+TOOLS_SCHEMA.extend([
+    {
+        "type": "function",
+        "function": {
+            "name": "equipar",
+            "description": (
+                "Equipa arma, armadura ou escudo que está no inventário; o servidor decide o slot e "
+                "recalcula a Defesa. Em combate custa a ação."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {"item": {"type": "string", "description": "Nome do item no inventário."}},
+                "required": ["item"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "desequipar",
+            "description": "Tira o que está num slot (arma, armadura ou escudo). Fora de combate.",
+            "parameters": {
+                "type": "object",
+                "properties": {"slot": {"type": "string", "enum": ["arma", "armadura", "escudo"]}},
+                "required": ["slot"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "comerciar",
+            "description": (
+                "Compra, venda ou vitrine com um NPC presente que tenha mercadoria. Preços são do "
+                "servidor — nunca narre preço antes de chamar. Nunca em combate."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "npc": {"type": "string", "description": "id ou nome da pessoa registrada."},
+                    "operacao": {"type": "string", "enum": ["listar", "comprar", "vender"]},
+                    "item": {"type": "string", "description": "Item a comprar (da vitrine) ou vender (do inventário)."},
+                },
+                "required": ["npc", "operacao"],
+            },
+        },
+    },
+])
+
+
 # Fase 0 do plano "jogo completo" (08/09/2026) — ferramentas por estado.
 #
 # Achado ao vivo: a chave do Groq no plano gratuito tem teto de 8.000
@@ -1316,6 +1480,7 @@ _SO_EM_COMBATE = {
     "usar_habilidade", "interagir", "atacar_com_aliado",
 }
 _SO_FORA_DE_COMBATE = {
+    "comerciar", "desequipar",
     "mover", "descansar", "iniciar_combate", "recrutar_aliado", "concluir_objetivo",
     "atualizar_missao", "registrar_cena", "registrar_pessoa", "registrar_conflito",
     "intervir_conflito", "definir_objetivo", "registrar_vinculo", "gastar_ouro",

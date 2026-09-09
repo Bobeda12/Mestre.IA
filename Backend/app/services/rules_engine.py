@@ -48,6 +48,21 @@ def calcular_modificador(valor: int) -> int:
     return (valor - 10) // 2
 
 
+def calcular_defesa(atributos: dict, armadura: dict | None, escudo: dict | None, bonus_extra: int = 0) -> int:
+    """Única fonte de `Personagem.defesa` desde a Fase 1 (ADR-0033): sem
+    armadura 10 + DES; leve `ca_base` + DES; média `ca_base` + min(DES, 2);
+    pesada `ca_base`; escudo soma `ca_bonus`. `bonus_extra` é o canal para
+    talentos (Fase 3)."""
+    des = calcular_modificador(atributos.get("destreza", 10))
+    if not armadura:
+        base = 10 + des
+    else:
+        categoria = armadura.get("categoria", "leve")
+        ca_base = int(armadura.get("ca_base", 10))
+        base = ca_base + (des if categoria == "leve" else min(des, 2) if categoria == "media" else 0)
+    return base + int((escudo or {}).get("ca_bonus", 0)) + bonus_extra
+
+
 # Pendência do remaster UX (PLANO_REMASTER_UX.md, item 2) — "o tempo não
 # passa por número de turnos, passa por ação lógica": `WorldState.hora_do_dia`
 # (0-23) avança por horas de verdade em `services/tools.py` (mover soma

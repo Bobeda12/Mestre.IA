@@ -106,6 +106,10 @@ class Personagem(Base):
 
     atributos: Mapped[dict] = mapped_column(JSON)
     inventario: Mapped[list] = mapped_column(JSON, default=list)
+    # Fase 1 do plano "jogo completo" (ADR-0033) — {"arma","armadura","escudo"}
+    # com nomes do inventário; migration 0016. `services/items.py` é o único
+    # lugar que escreve aqui (equipar/desequipar/auto_equipar).
+    equipamento: Mapped[dict] = mapped_column(JSON, default=dict, server_default="{}")
     quest_log: Mapped[dict] = mapped_column(JSON, default=dict)
     world_state: Mapped[dict] = mapped_column(JSON, default=dict)
     combat_state: Mapped[dict] = mapped_column(JSON, default=dict)
