@@ -3,6 +3,7 @@ from collections.abc import Callable
 from typing import Any
 
 from app.domain.character import CharacterCreationRequest
+from app.domain.living_world import SAIDA_LIVRE
 from app.domain.memoria import ResumoRolante
 from app.domain.state import CombatState, QuestLog, WorldState
 from app.infra import llm_client
@@ -78,6 +79,99 @@ def chamar_mestre(msgs: list[dict], chamar_fn: Callable[..., Any] | None = None)
         raise ErroMestre("O mestre respondeu num formato que não consegui entender.") from e
 
 
+# Chaves de app.domain.living_world.MundoVivo — todas têm default, então um
+# merge parcial nunca deixa o modelo pydantic sem campo obrigatório.
+_CHAVES_MUNDO_INICIAL = (
+    "versao", "arcos", "minutos", "cenas", "pessoas", "conflitos",
+    "conhecimento", "tentativas", "objetivos", "especializacoes",
+)
+
+
+def _normalizar_mundo_inicial(roteiro: dict, mundo_padrao: dict) -> dict:
+    """Achado ao vivo (Groq): o modelo às vezes devolve `cenas`/`pessoas`/
+    `conflitos` como chaves de NÍVEL SUPERIOR do JSON (irmãs de
+    `local_inicial`) em vez de aninhadas dentro de `mundo_inicial`, apesar do
+    prompt pedir o aninhamento — `validar_mundo_inicial` então via um
+    `mundo_inicial` praticamente vazio (só `versao`/`arcos`) e rejeitava o
+    roteiro inteiro, mesmo quando o resto (intro_narrativa original, cena
+    coerente) estava bom. O jogo caía no fallback determinístico — que cita
+    o objetivo do jogador literalmente — só por causa desse desvio de forma.
+
+    Em vez de descartar um roteiro que só errou de "andar", aceita as duas
+    formas: qualquer chave de `MundoVivo` encontrada solta no topo é
+    realocada para dentro de `mundo_inicial` antes da validação. Só cai no
+    `mundo_padrao` (a origem determinística) se não achar nem `mundo_inicial`
+    nem nenhuma chave solta — sinal de resposta truncada/vazia de verdade."""
+    mundo = roteiro.get("mundo_inicial")
+    mundo = dict(mundo) if isinstance(mundo, dict) else {}
+    achou_chave_solta = any(chave not in mundo and chave in roteiro for chave in _CHAVES_MUNDO_INICIAL)
+    if not mundo and not achou_chave_solta:
+        return mundo_padrao
+    for chave in _CHAVES_MUNDO_INICIAL:
+        if chave not in mundo and chave in roteiro:
+            mundo[chave] = roteiro[chave]
+    return mundo
+
+
+def _reparar_lacunas_mundo_inicial(mundo: dict, local: str) -> dict:
+    """Segundo achado ao vivo (Groq), depois de já corrigir o aninhamento:
+    o modelo às vezes aninha tudo direito mas esquece uma peça obrigatória —
+    nenhuma pessoa no local inicial, ou nenhuma saída na cena
+    (`validar_mundo_inicial` recusa os dois casos, ver `emergent_start.py`).
+    Mesma lógica de "reparar em vez de descartar": completa o mínimo (uma
+    pessoa genérica, uma saída livre) só quando falta, e descarta apenas os
+    conflitos/arcos que referenciam algo inexistente — eles são dispensáveis
+    (a própria `criar_origem` produz mundos sem nenhum, quando `tipo` não
+    pede), diferente de pessoa/saída, que o schema exige. Preserva tudo o
+    que já está bom (incluindo a prosa original do modelo)."""
+    mundo = dict(mundo)
+    cenas = {k: dict(v) for k, v in (mundo.get("cenas") or {}).items() if isinstance(v, dict)}
+    pessoas = {k: v for k, v in (mundo.get("pessoas") or {}).items() if isinstance(v, dict)}
+    conflitos = {k: v for k, v in (mundo.get("conflitos") or {}).items() if isinstance(v, dict)}
+    arcos = [a for a in (mundo.get("arcos") or []) if isinstance(a, dict)]
+
+    if local not in cenas:
+        # Sem cena nem isso dá pra reparar — validar_mundo_inicial vai
+        # recusar do mesmo jeito, e quem chama trata o ValueError.
+        return mundo
+
+    if not any(p.get("local") == local for p in pessoas.values()):
+        pessoas = {
+            **pessoas,
+            "visitante_local": {
+                "id": "visitante_local", "nome": "Um morador local", "local": local,
+                "descricao": "Alguém que conhece bem este lugar.",
+                "objetivo": "seguir com o que estava fazendo antes de ser interrompido",
+            },
+        }
+
+    cena_local = cenas[local]
+    entidades = dict(cena_local.get("entidades") or {})
+    if not any(isinstance(e, dict) and e.get("tipo") == "saida" for e in entidades.values()):
+        entidades = {
+            **entidades,
+            "estrada_saida": {
+                "id": "estrada_saida", "nome": "A estrada", "tipo": "saida", "destino": SAIDA_LIVRE,
+                "descricao": "O caminho segue livre a partir daqui.",
+            },
+        }
+    cena_local["entidades"] = entidades
+    cenas[local] = cena_local
+
+    conflitos_validos = {
+        chave: c for chave, c in conflitos.items()
+        if c.get("agente") in pessoas and c.get("local") in cenas
+        and (c.get("efeito") != "bloquear" or c.get("alvo") in cenas[c["local"]].get("entidades", {}))
+    }
+    arcos_validos = [a for a in arcos if a.get("conflito_central") in conflitos_validos][:1]
+
+    mundo["cenas"] = cenas
+    mundo["pessoas"] = pessoas
+    mundo["conflitos"] = conflitos_validos
+    mundo["arcos"] = arcos_validos
+    return mundo
+
+
 def gerar_prologo_missao(
     char: CharacterCreationRequest, chamar_fn: Callable[..., Any] | None = None, *, semente: int | None = None
 ) -> dict:
@@ -122,8 +216,12 @@ def gerar_prologo_missao(
         },
         ensure_ascii=False,
     )}
-    Pode substituir inteiramente lugar, pessoas, objetos, disputa e texto. mundo_inicial.cenas
-    usa o NOME do local como chave; entidades usam seu id como chave; pessoas/conflitos também.
+    Pode substituir inteiramente lugar, pessoas, objetos, disputa e texto. IMPORTANTE: "cenas",
+    "pessoas", "conflitos", "arcos", "objetivos" e "minutos" NÃO são chaves de nível superior do
+    JSON — elas vivem DENTRO do objeto "mundo_inicial", exatamente como no exemplo acima (o nível
+    superior só tem local_inicial, clima_inicial, nome_missao, objetivo_missao, intro_narrativa,
+    opcoes, chaves, mundo_inicial, direcao). mundo_inicial.cenas usa o NOME do local como chave;
+    entidades usam seu id como chave; pessoas/conflitos também.
     Todo agente de conflito deve existir e todo alvo de bloqueio deve existir na cena correspondente.
     Objetos com propriedades movel/pesado/trancado/mecanismo/investigavel/inflamavel/cobertura/fragil
     permitem ações reais. Saídas têm tipo=saida e destino. Não crie itens recebidos sem ferramenta.
@@ -140,6 +238,13 @@ def gerar_prologo_missao(
 
     if not isinstance(roteiro, dict):
         return abertura
+    # Achado ao vivo (Groq): às vezes o modelo escreve o `\n` de parágrafo
+    # como dois caracteres literais ("\" + "n") dentro da string JSON, em
+    # vez de uma quebra de linha de verdade — aparecia como "\n\n" cru na
+    # tela em vez de parágrafos separados. Normaliza antes de qualquer
+    # validação, já que isso não afeta se o texto está vazio ou não.
+    if isinstance(roteiro.get("intro_narrativa"), str):
+        roteiro["intro_narrativa"] = roteiro["intro_narrativa"].replace("\\n", "\n")
     # Uma resposta truncada nunca produz campanha com título/local/texto ausentes.
     campos_texto = ("local_inicial", "clima_inicial", "nome_missao", "objetivo_missao", "intro_narrativa")
     if any(not isinstance(roteiro.get(campo), str) or not roteiro[campo].strip() for campo in campos_texto):
@@ -169,9 +274,9 @@ def gerar_prologo_missao(
     else:
         roteiro["local_inicial_descricao"] = None
     try:
-        roteiro["mundo_inicial"] = validar_mundo_inicial(
-            roteiro.get("mundo_inicial", abertura["mundo_inicial"]), roteiro["local_inicial"]
-        )
+        normalizado = _normalizar_mundo_inicial(roteiro, abertura["mundo_inicial"])
+        reparado = _reparar_lacunas_mundo_inicial(normalizado, roteiro["local_inicial"])
+        roteiro["mundo_inicial"] = validar_mundo_inicial(reparado, roteiro["local_inicial"])
     except (ValueError, TypeError):
         return abertura
     opcoes = roteiro.get("opcoes")
@@ -347,6 +452,45 @@ def _compacto(obj):
     return obj
 
 
+# Rodada de melhorias pós-Fase-6 — "a progressão está muito boba, só ganha
+# mais dados": as técnicas de classe (Fúria primordial, Bomba de fumaça,
+# Aura guardiã...) já armam efeitos com duração em rodadas
+# (`CombatState.efeitos_heroi`, ver services/tools.py:usar_habilidade), mas
+# o narrador nunca ficava sabendo — só o lado do INIMIGO chega ao prompt
+# (via json.dumps, logo abaixo). O jogador ativava "Fúria primordial" e o
+# texto seguinte não tinha nenhuma pista de que o herói estava enfurecido;
+# só o número de dano mudava. Este dicionário traduz cada efeito pra uma
+# frase que o narrador pode de fato usar.
+_EFEITO_HEROI_TEXTO = {
+    "furia": "está em fúria de combate — golpes mais fortes, guarda mais baixa",
+    "protecao": "assumiu uma postura protetora, absorvendo parte do próximo golpe",
+    "guarda": "está em guarda alta, mais difícil de acertar",
+    "esquiva": "está esquivo, antecipando o próximo golpe do inimigo",
+    "precisao": "está com a mira afiada, pronto para o próximo ataque",
+    "lamina": "empunha a lâmina com um poder extra latente",
+}
+
+
+def _secao_estado_heroi(c_state: CombatState) -> str:
+    """Frase pronta para o prompt, ou vazia quando não há nada ativo (seção
+    condicional, mesmo padrão de [ARCO ATUAL]/[TRAÇOS])."""
+    partes = [_EFEITO_HEROI_TEXTO.get(nome, nome) for nome, duracao in c_state.efeitos_heroi.items() if duracao > 0]
+    if c_state.heroi_escondido:
+        partes.append("está escondido, tentando não ser visto pelos inimigos")
+    if c_state.heroi_bonus_ca:
+        partes.append("está numa postura defensiva nesta rodada")
+    if c_state.heroi_vantagem_inimiga is True:
+        partes.append("se lançou num ataque arriscado, mais exposto que o normal")
+    elif c_state.heroi_vantagem_inimiga is False:
+        partes.append("está esquivando, difícil de acertar neste instante")
+    if not partes:
+        return ""
+    return (
+        f"\n    [ESTADO DO HERÓI] Agora ele {'; '.join(partes)}. Narre refletindo isso — "
+        "não é só um número por trás, é como ele se move e como os inimigos o veem."
+    )
+
+
 def montar_contexto(
     heroi: Personagem,
     w_state: WorldState,
@@ -428,7 +572,7 @@ def montar_contexto(
     número, você só narra a INTENÇÃO da ação, num parágrafo curto. Nunca
     peça ao jogador para rolar um dado ou informar um resultado, e não
     escreva números de ataque, dano ou PV: o resultado real da ferramenta
-    aparece automaticamente logo depois da sua narrativa.{aviso_impacto}{aviso_aliado}"""
+    aparece automaticamente logo depois da sua narrativa.{aviso_impacto}{aviso_aliado}{_secao_estado_heroi(c_state)}"""
     else:
         # Fase 0 da revisão de gameplay (Etapa 12/13) — escalonamento de
         # perigo: o servidor decide QUAIS bandas de monstro são compatíveis
