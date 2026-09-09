@@ -57,6 +57,9 @@ trilhas.
 |---|---|---|---|
 | Dungeon Crawl 32x32 tiles | equipe do Dungeon Crawl Stone Soup | [CC0](https://creativecommons.org/publicdomain/zero/1.0/) | [opengameart.org/content/dungeon-crawl-32x32-tiles](https://opengameart.org/content/dungeon-crawl-32x32-tiles) |
 
+> **Fase 5 do plano "jogo completo" (08/09/2026):** os 22 monstros sem arte (`monstros/` além dos 5 do
+> Kenney) também vêm deste pacote (`dc-mon/`), em 32×32 sem redução: `orc` ← `orc_warrior`, `aranha-gigante` ← `animals/wolf_spider`, `capitao-bandido` ← `human`, `ogro` ← `ogre`, `harpia` ← `harpy`, `mumia` ← `undead/mummy`, `troll` ← `troll`, `espectro` ← `undead/wraith`, `dragao-jovem` ← `dragon`, `gnoll-lider` ← `gnoll`, `urso-coruja` ← `animals/grizzly_bear`, `carnical-cinzento` ← `undead/ghoul`, `wight` ← `undead/wight`, `minotauro` ← `minotaur`, `manticora` ← `manticore`, `elemental-de-fogo` ← `nonliving/fire_elemental`, `cavaleiro-negro` ← `hell_knight`, `gigante-da-colina` ← `hill_giant`, `vampiro-jovem` ← `undead/vampire`, `hidra-menor` ← `hydra3`, `golem-de-pedra` ← `nonliving/stone_golem`, `lich-menor` ← `undead/lich`, `dragao-adulto-jovem` ← `golden_dragon`.
+
 São personagens de fantasia completos (com equipamento e silhueta própria)
 em 32×32, o dobro da resolução dos sprites de 16×16 — legíveis e distintos
 entre si num ícone de 48px, que era o problema do pacote anterior.

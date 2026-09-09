@@ -111,7 +111,7 @@ export interface MundoPersistente {
 /** Arquétipos do bestiário com sprite em /assets/monstros (slug sem acento). Fase 5: a lista
  *  cresce conforme a arte entra; quem não tem arte cai na caveira. */
 export const SPRITES_MONSTROS = new Set([
-  'bugbear', 'esqueleto', 'kobold', 'goblin', 'lobo',
+  'aranha-gigante', 'bugbear', 'capitao-bandido', 'carnical-cinzento', 'cavaleiro-negro', 'dragao-adulto-jovem', 'dragao-jovem', 'elemental-de-fogo', 'espectro', 'esqueleto', 'gigante-da-colina', 'gnoll-lider', 'goblin', 'golem-de-pedra', 'harpia', 'hidra-menor', 'kobold', 'lich-menor', 'lobo', 'manticora', 'minotauro', 'mumia', 'ogro', 'orc', 'troll', 'urso-coruja', 'vampiro-jovem', 'wight',
 ]);
 
 export function slugMonstro(nome: string): string {

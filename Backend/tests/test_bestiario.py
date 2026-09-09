@@ -78,3 +78,17 @@ def test_saque_das_bandas_altas():
                     dano_dado="3d8+6", xp=2300)
     saque = gerar_loot([golem], random.Random(3))
     assert saque.ouro >= 47
+
+
+def test_todo_arquetipo_tem_sprite():
+    # Fase 5 — a arte mora em Frontend/public/assets/monstros/<slug>.png (Dungeon Crawl CC0).
+    import pathlib
+    import re
+    import unicodedata
+
+    pasta = pathlib.Path(__file__).resolve().parents[2] / "Frontend" / "public" / "assets" / "monstros"
+    def slug(n):
+        base = "".join(c for c in unicodedata.normalize("NFD", n) if unicodedata.category(c) != "Mn").lower()
+        return re.sub(r"^-|-$", "", re.sub(r"[^a-z0-9]+", "-", base))
+    faltam = [n for g in regras.monsters.values() for n in g if not (pasta / f"{slug(n)}.png").exists()]
+    assert faltam == []
