@@ -35,7 +35,9 @@ def _heroi(**overrides) -> Personagem:
 def _registro_aliado(nome: str, hp: int = 10, hp_max: int = 10, classe: str = "Batedor") -> dict:
     """Mesma forma de `Personagem.aliados` (Fase 3) — só pra não repetir o
     dict inteiro em cada teste."""
-    return {"nome": nome, "classe": classe, "raca": "Humano", "hp": hp, "hp_max": hp_max, "lealdade": 50, "inventario": []}
+    return {
+        "nome": nome, "classe": classe, "raca": "Humano", "hp": hp, "hp_max": hp_max, "lealdade": 50, "inventario": [],
+    }
 
 
 def _executor(heroi=None, c_state=None, w_state=None, q_state=None, rng=None) -> ToolExecutor:
@@ -683,7 +685,10 @@ class TestRecrutarAliado:
         resultado = executor.recrutar_aliado("Bob", "Batedor", 12)
         assert resultado == {"nome": "Bob", "classe": "Batedor", "hp": 12}
         assert heroi.aliados == [
-            {"nome": "Bob", "classe": "Batedor", "raca": "Humano", "hp": 12, "hp_max": 12, "lealdade": 50, "inventario": []}
+            {
+                "nome": "Bob", "classe": "Batedor", "raca": "Humano", "hp": 12, "hp_max": 12, "lealdade": 50,
+                "inventario": [],
+            }
         ]
 
     def test_hp_e_clampado_num_intervalo_razoavel(self):
