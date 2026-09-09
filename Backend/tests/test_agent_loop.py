@@ -357,7 +357,9 @@ def test_stream_ferramenta_e_narrativa_no_mesmo_passo_termina_em_uma_chamada():
     passo_1 = [
         _ChunkFalso(_DeltaFalso(content="Vocês chegam ")),
         _ChunkFalso(_DeltaFalso(tool_calls=[_DeltaToolCallFalso(0, id="t1", name="rolar_teste")])),
-        _ChunkFalso(_DeltaFalso(content="à floresta.", tool_calls=[_DeltaToolCallFalso(0, arguments='{"atributo": "destreza"}')])),
+        _ChunkFalso(_DeltaFalso(
+            content="à floresta.", tool_calls=[_DeltaToolCallFalso(0, arguments='{"atributo": "destreza"}')]
+        )),
     ]
     fake = _StreamLLMFalso([passo_1])
     executor = FakeExecutorEstruturado({"rolar_teste": ({"sucesso": True}, True)})
