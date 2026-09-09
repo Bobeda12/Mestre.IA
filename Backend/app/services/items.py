@@ -73,7 +73,7 @@ def equipamento_de(heroi) -> Equipamento:
     return Equipamento.model_validate(heroi.equipamento or {})
 
 
-def equipar(heroi, nome: str) -> dict:
+def equipar(heroi, nome: str, bonus_defesa: int = 0) -> dict:
     """Decide o slot pela ficha, valida posse, força mínima e escudo × duas mãos, recalcula a defesa."""
     real = resolver_nome(nome, heroi.inventario or [])
     if real is None:
@@ -91,11 +91,11 @@ def equipar(heroi, nome: str) -> dict:
         return {"erro": f"{real} exige as duas mãos: tire o escudo antes"}
     setattr(eq, slot, real)
     heroi.equipamento = eq.model_dump()
-    heroi.defesa = calcular_defesa(heroi.atributos or {}, eq)
+    heroi.defesa = calcular_defesa(heroi.atributos or {}, eq, bonus_defesa)
     return {"equipado": real, "slot": slot, "defesa": heroi.defesa, "equipamento": heroi.equipamento}
 
 
-def desequipar(heroi, slot: str) -> dict:
+def desequipar(heroi, slot: str, bonus_defesa: int = 0) -> dict:
     eq = equipamento_de(heroi)
     if slot not in ("arma", "armadura", "escudo"):
         return {"erro": "slot inválido"}
@@ -104,7 +104,7 @@ def desequipar(heroi, slot: str) -> dict:
     removido = getattr(eq, slot)
     setattr(eq, slot, None)
     heroi.equipamento = eq.model_dump()
-    heroi.defesa = calcular_defesa(heroi.atributos or {}, eq)
+    heroi.defesa = calcular_defesa(heroi.atributos or {}, eq, bonus_defesa)
     return {"desequipado": removido, "slot": slot, "defesa": heroi.defesa, "equipamento": heroi.equipamento}
 
 
@@ -194,9 +194,10 @@ def aplicar_efeito_consumivel(executor: ToolExecutor, nome: str, item: ItemCatal
 
 
 # ------------------------------------------------------------------ preços
-def preco_compra(preco_base: int, confianca: int) -> int:
-    """Confiança 100 = 25% de desconto; -100 = 25% mais caro. Nunca abaixo de 1."""
-    return max(1, round(preco_base * (1 - confianca / 400)))
+def preco_compra(preco_base: int, confianca: int, desconto_pct: int = 0) -> int:
+    """Confiança 100 = 25% de desconto; -100 = 25% mais caro; `desconto_pct`
+    vem de talento (Fase 3). Nunca abaixo de 1."""
+    return max(1, round(preco_base * (1 - confianca / 400) * (1 - desconto_pct / 100)))
 
 
 def preco_venda(preco_base: int) -> int:

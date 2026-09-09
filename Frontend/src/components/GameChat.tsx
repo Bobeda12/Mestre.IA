@@ -26,6 +26,7 @@ import SistemaFeedbackToast, { type ToastItem } from './SistemaFeedbackToast';
 import { type FlutuanteHeroi } from './FloatingCombatText';
 import LootRevealOverlay, { type LootAtivo } from './LootRevealOverlay';
 import FichaModal from './FichaModal';
+import LevelUpModal from './LevelUpModal';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip';
 import HudPersonagem from './HudPersonagem';
 import CabecalhoRegiao from './CabecalhoRegiao';
@@ -315,6 +316,8 @@ export default function GameChat() {
   // Fase 1 (ADR-0033)
   const [equipamento, setEquipamento] = useState<Equipamento>({});
   const [aliados, setAliados] = useState<AliadoVisual[]>([]);
+  // Fase 3 (ADR-0034) — "decidir depois" só esconde até a próxima subida.
+  const [levelUpAdiado, setLevelUpAdiado] = useState<number | null>(null);
   const [catalogoItens, setCatalogoItens] = useState<Record<string, ItemInfo>>({});
   const [erroAcao, setErroAcao] = useState<string | null>(null);
   const [resultadoAcao, setResultadoAcao] = useState<string | null>(null);
@@ -906,6 +909,9 @@ export default function GameChat() {
           item: acao.item,
           slot: acao.slot,
           aliado: acao.aliado,
+          nivel_escolha: acao.nivel_escolha,
+          tipo_escolha: acao.tipo_escolha,
+          opcao: acao.opcao,
           rotulo,
           tipo: 'curto',
         },
@@ -1438,6 +1444,14 @@ export default function GameChat() {
           Personagem": substitui o antigo modal de só-o-retrato (mesma
           informação de nome/raça/classe já cabe dentro da ficha inteira,
           não precisa dos dois). */}
+      {(() => {
+        const pendente = progressao?.pendencias?.[0];
+        if (!pendente || combatActive || gameOver || levelUpAdiado === pendente.nivel) return null;
+        return (
+          <LevelUpModal nivel={pendente.nivel} opcoes={pendente.opcoes} ocupado={loading || acaoTaticaEmCurso}
+            aoEscolher={aoAgir} aoAdiar={() => setLevelUpAdiado(pendente.nivel)} />
+        );
+      })()}
       <FichaModal
           aberto={fichaModalAberta}
           onFechar={() => setFichaModalAberta(false)}

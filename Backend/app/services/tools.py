@@ -17,7 +17,7 @@ from app.domain.eventos import DadosRolagem, EventoRolagem, EventoStatus
 from app.domain.state import Aliado, CombatState, Inimigo, LocalDescoberto, QuestLog, WorldState
 from app.infra.data_manager import regras
 from app.infra.db import Personagem
-from app.services import combat
+from app.services import combat, talents
 from app.services import items as itens
 from app.services import rules_engine as motor
 from app.services.class_abilities import limite_foco, perfil_classe
@@ -45,9 +45,13 @@ class ToolExecutor:
         self.rng = rng
         self.eventos: list[str] = []
         self._acao_gasta = False
+        # Fase 3 (ADR-0034) — talentos são números em canais que o motor já
+        # tem: `bonus_especializacao` é o canal de dano; a defesa é
+        # recalculada onde muda (equipar/nível); vantagem entra em rolar_teste.
+        self.mods = talents.modificadores(w_state.talentos, heroi.classe)
         self.c_state.bonus_especializacao = sum(
             escolha == "combatente" for escolha in w_state.mundo.especializacoes.values()
-        )
+        ) + self.mods.dano
 
     @property
     def eventos_estruturados(self) -> list[dict]:
@@ -92,6 +96,8 @@ class ToolExecutor:
         vantagem = motor.vantagem_por_traco(
             d_raca.get("tracos", []), d_raca.get("visao") == "Escuro", motivo
         ) or None
+        if atributo in self.mods.vantagens:
+            vantagem = True  # talento (Fase 3): vantagem no atributo escolhido
         resultado = motor.resolver_teste_atributo(mod_total, cd, self.rng, vantagem=vantagem)
         dados = DadosRolagem(
             tipo="teste", quem="heroi", d20=resultado.rolagem, bonus=mod_total, total=resultado.total,
@@ -432,11 +438,15 @@ class ToolExecutor:
             if not resultado.subiu:
                 break
             self.heroi.nivel = resultado.nivel_novo
-            self.heroi.hp_max += resultado.hp_ganho
-            self.heroi.hp_atual += resultado.hp_ganho
-            self.eventos.append(
-                f"🎉 Subiu para o nível {resultado.nivel_novo}! (+{resultado.hp_ganho} PV máximo)"
-            )
+            hp_ganho = resultado.hp_ganho + self.mods.hp_por_nivel
+            self.heroi.hp_max += hp_ganho
+            self.heroi.hp_atual += hp_ganho
+            self.eventos.append(f"🎉 Subiu para o nível {resultado.nivel_novo}! (+{hp_ganho} PV máximo)")
+            # Fase 3 (ADR-0034) — a escolha fica pendente para o jogador; o
+            # narrador só lembra, nunca escolhe.
+            if talents.nivel_com_escolha(resultado.nivel_novo):
+                self.w_state.niveis_pendentes = [*self.w_state.niveis_pendentes, resultado.nivel_novo]
+                self.eventos.append(f"⭐ Nível {resultado.nivel_novo}: uma escolha espera por você na ficha.")
             for habilidade in perfil_classe(self.heroi.classe)["habilidades"]:
                 if habilidade["nivel"] == resultado.nivel_novo:
                     self.eventos.append(f"✦ Nova técnica: {habilidade['nome']} — {habilidade['descricao']}")
@@ -698,8 +708,53 @@ class ToolExecutor:
         self.eventos.append(f"🎁 {self.heroi.nome} recebe: {item}.")
         return {"inventario": self.heroi.inventario}
 
+    def escolher_nivel(self, nivel: int, tipo: str, escolha: str) -> dict:
+        """Decisão do jogador (só pela rota /game/action, nunca ferramenta do
+        narrador): +1 atributo, talento, ou especialização nos marcos 3/7."""
+        if nivel not in self.w_state.niveis_pendentes:
+            return {"erro": f"não há escolha pendente para o nível {nivel}"}
+        if self.c_state.ativo:
+            return {"erro": "escolha de nível só fora de combate"}
+        opcoes = talents.opcoes_para(self.heroi.classe, nivel, self.w_state.talentos, self.heroi.atributos or {})
+        opcao = next((o for o in opcoes if o["tipo"] == tipo and o["id"] == escolha), None)
+        if opcao is None:
+            return {"erro": "opção inválida para este nível", "opcoes": opcoes}
+        if tipo == "atributo":
+            atributos = dict(self.heroi.atributos or {})
+            antes = atributos.get(escolha, 10)
+            atributos[escolha] = min(talents.ATRIBUTO_MAXIMO, antes + 1)
+            self.heroi.atributos = atributos
+            subiu_mod = motor.calcular_modificador(atributos[escolha]) > motor.calcular_modificador(antes)
+            if escolha == "constituicao" and subiu_mod:
+                self.heroi.hp_max += self.heroi.nivel or 1  # retroativo: +1 por nível
+                self.heroi.hp_atual += self.heroi.nivel or 1
+            self.eventos.append(f"⭐ Nível {nivel}: {escolha.capitalize()} sobe para {atributos[escolha]}.")
+        elif tipo == "talento":
+            self.w_state.talentos = [*self.w_state.talentos, escolha]
+            t = talents.talento(escolha, self.heroi.classe) or {}
+            hp_por_nivel = int(t.get("efeito", {}).get("hp_por_nivel", 0))
+            if hp_por_nivel:
+                ganho = hp_por_nivel * (self.heroi.nivel or 1)
+                self.heroi.hp_max += ganho
+                self.heroi.hp_atual += ganho
+            self.mods = talents.modificadores(self.w_state.talentos, self.heroi.classe)
+            self.eventos.append(f"⭐ Nível {nivel}: talento {t.get('nome', escolha)} — {t.get('descricao', '')}")
+        else:  # especializacao
+            self.w_state.mundo.especializacoes[str(nivel)] = escolha
+            self.eventos.append(f"⭐ Nível {nivel}: especialização {escolha}.")
+        self.w_state.niveis_pendentes = [n for n in self.w_state.niveis_pendentes if n != nivel]
+        # defesa e dano recalculados com os talentos atuais
+        self.heroi.defesa = itens.calcular_defesa(
+            self.heroi.atributos or {}, itens.equipamento_de(self.heroi), self.mods.ca
+        )
+        self.c_state.bonus_especializacao = sum(
+            e == "combatente" for e in self.w_state.mundo.especializacoes.values()
+        ) + self.mods.dano
+        return {"nivel": nivel, "tipo": tipo, "escolha": escolha, "defesa": self.heroi.defesa,
+                "pendentes": self.w_state.niveis_pendentes}
+
     def equipar(self, item: str) -> dict:
-        resultado = itens.equipar(self.heroi, item)
+        resultado = itens.equipar(self.heroi, item, self.mods.ca)
         if "erro" not in resultado:
             self.eventos.append(f"🛡️ Equipa {resultado['equipado']}. Defesa: {self.heroi.defesa}.")
             if self.c_state.ativo:
@@ -707,7 +762,7 @@ class ToolExecutor:
         return resultado
 
     def desequipar(self, slot: str) -> dict:
-        resultado = itens.desequipar(self.heroi, slot)
+        resultado = itens.desequipar(self.heroi, slot, self.mods.ca)
         if "erro" not in resultado:
             self.eventos.append(f"🛡️ Guarda {resultado['desequipado']}. Defesa: {self.heroi.defesa}.")
         return resultado
@@ -726,7 +781,9 @@ class ToolExecutor:
         if not pessoa.mercadoria:
             return {"erro": f"{pessoa.nome} não tem nada para vender nem compra nada"}
         vitrine: list[dict[str, Any]] = [
-            {"item": n, "preco": itens.preco_compra((itens.ficha(n) or {}).get("preco", 0), pessoa.confianca)}
+            {"item": n, "preco": itens.preco_compra(
+                (itens.ficha(n) or {}).get("preco", 0), pessoa.confianca, self.mods.desconto
+            )}
             for n in pessoa.mercadoria
         ]
         if operacao == "listar":
@@ -946,6 +1003,7 @@ ToolExecutor._DESPACHO = {
     "usar_item": ToolExecutor.usar_item,
     "dar_item": ToolExecutor.dar_item,
     "equipar": ToolExecutor.equipar,
+    "escolher_nivel": ToolExecutor.escolher_nivel,
     "desequipar": ToolExecutor.desequipar,
     "comerciar": ToolExecutor.comerciar,
     "gastar_ouro": ToolExecutor.gastar_ouro,
@@ -1491,7 +1549,7 @@ _SO_FORA_DE_COMBATE = {
 # Decisões do JOGADOR nunca são ferramenta do narrador (o painel e
 # `/game/action` são o único caminho) — mesma regra que a Fase 3 aplica ao
 # level-up.
-_NUNCA_PARA_O_NARRADOR = {"escolher_especializacao"}
+_NUNCA_PARA_O_NARRADOR = {"escolher_especializacao", "escolher_nivel"}
 
 
 def tools_para(c_state: CombatState) -> list[dict]:

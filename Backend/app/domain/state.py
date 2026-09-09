@@ -134,6 +134,10 @@ class WorldState(BaseModel):
     # Fase 1 (ADR-0033) — itens que o narrador criou por `dar_item` fora do
     # catálogo: só nome, descrição e tags fechadas; nunca números.
     itens_inventados: dict[str, ItemInventado] = {}
+    # Fase 3 (ADR-0034) — níveis cuja escolha o jogador ainda não fez, e os
+    # talentos escolhidos (ids de services/talents.py). JSON, sem migration.
+    niveis_pendentes: list[int] = []
+    talentos: list[str] = []
     # Relógios genéricos por nome. O único uso (urgência do Ato) saiu com
     # os Atos (Fase 0 do plano "jogo completo", ADR-0032); o campo fica
     # pra saves antigos carregarem sem erro e pra um relógio futuro caber

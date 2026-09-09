@@ -8,12 +8,18 @@ export interface Habilidade {
   disponivel: boolean;
 }
 
+export interface OpcaoNivel { tipo: 'atributo' | 'talento' | 'especializacao'; id: string; nome: string; descricao: string }
+
 export interface Progressao {
   nivel_maximo: number;
   estilo: string;
   recurso: { nome: string; atual: number; maximo: number };
   habilidades: Habilidade[];
   niveis: { nivel: number; xp: number; descricao: string }[];
+  /** Fase 3 (ADR-0034) — escolhas de nível que o jogador ainda não fez. */
+  pendencias?: { nivel: number; opcoes: OpcaoNivel[] }[];
+  talentos?: { id: string; nome: string; descricao: string }[];
+  especializacoes?: Record<string, string>;
 }
 
 export interface Cena {
@@ -50,8 +56,11 @@ export interface InimigoVisual {
 }
 
 export interface AcaoDireta {
-  acao: 'atacar' | 'defender' | 'esquivar' | 'investir' | 'esconder_se' | 'fugir' | 'usar_habilidade' | 'interagir' | 'descansar' | 'resistir' | 'agir_no_mundo' | 'intervir_conflito' | 'definir_objetivo' | 'escolher_especializacao' | 'equipar' | 'desequipar' | 'comerciar' | 'usar_item' | 'atacar_com_aliado';
+  acao: 'atacar' | 'defender' | 'esquivar' | 'investir' | 'esconder_se' | 'fugir' | 'usar_habilidade' | 'interagir' | 'descansar' | 'resistir' | 'agir_no_mundo' | 'intervir_conflito' | 'definir_objetivo' | 'escolher_especializacao' | 'equipar' | 'desequipar' | 'comerciar' | 'usar_item' | 'atacar_com_aliado' | 'escolher_nivel';
   alvo?: string;
+  nivel_escolha?: number;
+  tipo_escolha?: 'atributo' | 'talento' | 'especializacao';
+  opcao?: string;
   aliado?: string;
   item?: string;
   slot?: 'arma' | 'armadura' | 'escudo';

@@ -36,6 +36,7 @@ Template: [`0000-template.md`](0000-template.md) · Sistema completo: [`../READM
 | [0031](0031-login-com-motivo-de-erro-diferenciado.md) | Login devolve motivo distinto (senha errada / pendente / não encontrada / só-Google), abrindo mão da anti-enumeração | 15 | ✅ aceito | 29/08/2026 |
 | [0032](0032-mundo-emergente-puro.md) | Mundo emergente puro: o esqueleto de Atos e as 8 aberturas roteirizadas saem; a campanha nasce de uma origem determinística e cresce pelas ferramentas do Mundo Vivo | Plano "jogo completo" (Fase 0) | ✅ aceito | 08/09/2026 |
 | [0033](0033-catalogo-de-itens-com-tags-fechadas.md) | Catálogo de itens com números validado no boot; item inventado pelo narrador só com tags fechadas; slots equipados, saque por banda e mercador com preço do servidor | Plano "jogo completo" (Fase 1) | ✅ aceito | 08/09/2026 |
+| [0034](0034-progressao-com-escolha-do-jogador.md) | Cada nível deixa uma escolha do jogador (atributo, talento ou especialização) pela interface; talentos são números em canais do motor, nunca ferramenta do narrador | Plano "jogo completo" (Fase 3) | ✅ aceito | 08/09/2026 |
 
 **Legenda:** 🕓 previsto · ✅ aceito · ⛔ substituído
 

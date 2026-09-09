@@ -143,7 +143,7 @@ def _catalogo_itens(heroi: Personagem, mundo: WorldState) -> dict:
 def _resposta(heroi: Personagem, c_state: CombatState, q_state: QuestLog, **extra: object) -> dict:
     mundo = WorldState.model_validate(heroi.world_state or {})
     return {
-        "progressao": painel_progressao(heroi, c_state),
+        "progressao": painel_progressao(heroi, c_state, mundo),
         "mundo": painel_mundo(mundo, heroi.classe),
         "cena": painel_cena(c_state, mundo),
         "marcos": mundo.marcos,
@@ -363,6 +363,10 @@ def game_action(
                           "proposta": action.proposta}
         elif action.acao == "definir_objetivo":
             argumentos = {"objetivo": action.proposta}
+        elif action.acao == "escolher_nivel":
+            argumentos = {
+                "nivel": action.nivel_escolha or 0, "tipo": action.tipo_escolha or "", "escolha": action.opcao or "",
+            }
         elif action.acao == "atacar_com_aliado":
             argumentos = {"aliado": action.aliado or "", "alvo": action.alvo}
         elif action.acao == "equipar":

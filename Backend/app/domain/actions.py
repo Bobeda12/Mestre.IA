@@ -12,7 +12,7 @@ class GameAction(BaseModel):
         "atacar", "defender", "esquivar", "investir", "esconder_se", "fugir",
         "usar_habilidade", "interagir", "descansar", "usar_item", "resistir",
         "agir_no_mundo", "intervir_conflito", "definir_objetivo", "escolher_especializacao",
-        "equipar", "desequipar", "comerciar", "atacar_com_aliado",
+        "equipar", "desequipar", "comerciar", "atacar_com_aliado", "escolher_nivel",
     ]
     turno_esperado: int = Field(ge=1)
     alvo: str | None = Field(default=None, max_length=120)
@@ -32,3 +32,7 @@ class GameAction(BaseModel):
     rotulo: str | None = Field(default=None, max_length=80)
     slot: Literal["arma", "armadura", "escudo"] | None = None
     aliado: str | None = Field(default=None, max_length=80)
+    # Fase 3 (ADR-0034) — escolha de nível pela interface.
+    nivel_escolha: int | None = Field(default=None, ge=1, le=20)
+    tipo_escolha: Literal["atributo", "talento", "especializacao"] | None = None
+    opcao: str | None = Field(default=None, max_length=40)

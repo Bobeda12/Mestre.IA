@@ -32,8 +32,23 @@ def migrar_equipamento(heroi) -> bool:
     return auto_equipar(heroi)
 
 
-def painel_progressao(heroi, c_state) -> dict:
+def painel_progressao(heroi, c_state, w_state=None) -> dict:
+    from app.services import talents
+
     nivel = heroi.nivel or 1
+    pendencias = []
+    talentos_ids: list[str] = []
+    especializacoes: dict = {}
+    if w_state is not None:
+        talentos_ids = list(w_state.talentos)
+        especializacoes = dict(w_state.mundo.especializacoes)
+        for n in sorted(w_state.niveis_pendentes):
+            opcoes = talents.opcoes_para(heroi.classe, n, talentos_ids, heroi.atributos or {})
+            pendencias.append({"nivel": n, "opcoes": opcoes})
+    talentos_publicos = [
+        {"id": t["id"], "nome": t["nome"], "descricao": t["descricao"]}
+        for t in talents.catalogo(heroi.classe) if t["id"] in talentos_ids
+    ]
     perfil = perfil_classe(heroi.classe)
     habilidades = []
     for habilidade in perfil["habilidades"]:
@@ -60,4 +75,8 @@ def painel_progressao(heroi, c_state) -> dict:
         "recurso": {"nome": "Foco", "atual": c_state.foco, "maximo": limite_foco(nivel)},
         "habilidades": habilidades,
         "niveis": [{"nivel": n, "xp": xp, "descricao": marcos[n]} for n, xp in XP_POR_NIVEL.items()],
+        # Fase 3 (ADR-0034)
+        "pendencias": pendencias,
+        "talentos": talentos_publicos,
+        "especializacoes": especializacoes,
     }

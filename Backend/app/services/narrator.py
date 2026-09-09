@@ -455,7 +455,17 @@ def montar_contexto(
     secao_mundo = json.dumps(
         _compacto(painel_mundo(w_state, heroi.classe, privado=True)), ensure_ascii=False, separators=(",", ":")
     )
-    progressao = painel_progressao(heroi, c_state)
+    progressao = painel_progressao(heroi, c_state, w_state)
+    # Fase 3 (ADR-0034) — o narrador sabe dos talentos e lembra da escolha
+    # pendente; nunca escolhe por ele (não existe ferramenta para isso).
+    talentos_txt = ", ".join(t["nome"] for t in progressao["talentos"])
+    pendentes = [p["nivel"] for p in progressao["pendencias"]]
+    secao_progressao = ""
+    if talentos_txt or pendentes:
+        secao_progressao = "\n    [PROGRESSÃO] " + (f"talentos: {talentos_txt}. " if talentos_txt else "") + (
+            f"Escolha de nível pendente ({', '.join(map(str, pendentes))}): lembre o jogador com uma frase "
+            "que a ficha espera uma decisão; nunca escolha por ele." if pendentes else ""
+        )
     ficha_tatica = {campo: progressao[campo] for campo in ("estilo", "recurso", "habilidades")}
     cena_tatica = painel_cena(c_state, w_state)
     # Fase 0 do plano "jogo completo" — técnicas de classe e cenário tático
@@ -491,7 +501,7 @@ Ouro: {heroi.ouro}{secao_tracos}
 Alinhamento: {heroi.alinhamento}{historia_resumo}
     [INVENTÁRIO] {secao_inventario}{secao_aliados}
     [MISSÃO ATUAL] {q_state.nome_missao}: {q_state.objetivo_missao}
-    [CENA] {w_state.local} | {w_state.clima} | {motor.periodo_do_dia(w_state.hora_do_dia)}
+    [CENA] {w_state.local} | {w_state.clima} | {motor.periodo_do_dia(w_state.hora_do_dia)}{secao_progressao}
     [MUNDO PERSISTENTE — INTENÇÕES PRIVADAS NÃO SÃO CONHECIMENTO DO HERÓI]
     {secao_mundo}
     Não há roteiro: a missão é interesse do jogador; aceite partidas, mudanças de lado e soluções

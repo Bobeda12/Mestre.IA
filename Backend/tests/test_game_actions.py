@@ -173,3 +173,22 @@ def test_clique_atacar_com_aliado_uma_vez_por_rodada(monkeypatch):
     r3 = client.post("/game/action", json={"session_id": sid, "acao": "atacar_com_aliado", "aliado": "Ninguém",
                                              "alvo": "Sentinela", "turno_esperado": r.json()["turno_mundo"]})
     assert r3.status_code == 400
+
+
+def test_clique_escolher_nivel(monkeypatch):
+    # Fase 3 do plano "jogo completo".
+    sid = _partida(monkeypatch)
+    with SessionLocal() as db:
+        heroi = db.query(Personagem).filter_by(session_id=sid).one()
+        heroi.combat_state = CombatState().model_dump()
+        heroi.nivel = 2
+        ws = WorldState.model_validate(heroi.world_state)
+        ws.niveis_pendentes = [2]
+        heroi.world_state = ws.model_dump()
+        db.commit()
+    carga = client.post("/load_game", json={"session_id": sid}).json()
+    assert carga["progressao"]["pendencias"][0]["nivel"] == 2
+    r = client.post("/game/action", json={"session_id": sid, "acao": "escolher_nivel", "nivel_escolha": 2,
+                                          "tipo_escolha": "talento", "opcao": "couro_duro", "turno_esperado": 1})
+    assert r.status_code == 200, r.text
+    assert r.json()["progressao"]["pendencias"] == [] and r.json()["progressao"]["talentos"][0]["id"] == "couro_duro"
