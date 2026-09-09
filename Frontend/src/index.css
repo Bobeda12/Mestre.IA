@@ -651,11 +651,15 @@ img[src^="/assets/backgrounds/"] {
 /* Fase 6 ("uma tela só", ADR-0036) — palco de altura fixa e dock contextual.
    Reaproveita `.adventure-world*` e `.adventure-actor*` (acima); o que era
    console/abas dentro do palco e o painel Mundo Vivo deixaram de existir. */
-.palco { position: relative; flex-shrink: 0; height: clamp(240px, 34vh, 360px); margin: 8px 12px 0; border: 2px solid #695333; box-shadow: 0 0 0 2px #000, inset 0 0 0 1px #b79552; color: #e3d9c3; display: flex; flex-direction: column; }
-.palco .adventure-world__party { flex: 1; min-height: 0; padding: 40px 16px 8px; align-items: flex-end; gap: 12px; }
-.palco__group { display: flex; align-items: flex-end; gap: clamp(8px, 1.5vw, 20px); flex-wrap: wrap; min-width: 0; }
-.palco .adventure-actor { width: clamp(84px, 9vw, 116px); padding: 4px 6px 7px; }
-.palco .adventure-actor__sprite { width: 64px; height: 64px; }
+/* Item 9/E (rodada de melhorias pós-Fase-6) — o palco dominava a tela
+   (até 360px de altura, 34vh) e sobrava pouco espaço pra narrativa/dock
+   abaixo. Reduzido para dar mais peso ao texto — continua mostrando
+   herói/aliados/inimigos, só não precisa de tanta altura pra isso. */
+.palco { position: relative; flex-shrink: 0; height: clamp(190px, 26vh, 280px); margin: 8px 12px 0; border: 2px solid #695333; box-shadow: 0 0 0 2px #000, inset 0 0 0 1px #b79552; color: #e3d9c3; display: flex; flex-direction: column; }
+.palco .adventure-world__party { flex: 1; min-height: 0; padding: 32px 16px 6px; align-items: flex-end; gap: 10px; }
+.palco__group { display: flex; align-items: flex-end; gap: clamp(6px, 1.2vw, 16px); flex-wrap: wrap; min-width: 0; }
+.palco .adventure-actor { width: clamp(72px, 7.5vw, 96px); padding: 3px 5px 6px; }
+.palco .adventure-actor__sprite { width: 52px; height: 52px; }
 .palco .adventure-actor__tag { min-height: 18px; font-size: 10px; }
 .adventure-actor--npc { border-color: #d9c46f55; }
 .adventure-actor--npc .adventure-actor__tag { color: #f0deb0; font-size: 11px; }
@@ -704,10 +708,10 @@ img[src^="/assets/backgrounds/"] {
 .dock__card small { margin-top: auto; font-size: 11px; color: #d0b878; }
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 @media (max-width: 640px) {
-  .palco { height: clamp(180px, 28vh, 240px); margin: 6px 6px 0; }
-  .palco .adventure-world__party { padding: 34px 8px 6px; }
-  .palco .adventure-actor { width: 72px; padding: 3px; }
-  .palco .adventure-actor__sprite { width: 48px; height: 48px; }
+  .palco { height: clamp(150px, 22vh, 200px); margin: 6px 6px 0; }
+  .palco .adventure-world__party { padding: 28px 8px 6px; }
+  .palco .adventure-actor { width: 64px; padding: 3px; }
+  .palco .adventure-actor__sprite { width: 40px; height: 40px; }
   .palco__objective { display: none; }
   .palco__shelf { padding-bottom: 10px; scroll-snap-type: x proximity; }
   .palco__shelf-item { min-height: 44px; scroll-snap-align: start; }

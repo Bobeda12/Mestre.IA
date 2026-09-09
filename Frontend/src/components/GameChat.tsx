@@ -1181,7 +1181,12 @@ export default function GameChat() {
               seta do teclado e leitor de tela funcionarem como o esperado.
               Item 6 (respiro) — `pt-3`→`pt-4` e `gap-1`→`gap-1.5`: os botões
               de aba estavam colados no bloco de cima. */}
-          <div role="tablist" aria-label="Ficha do personagem" className="flex shrink-0 px-3 pt-4 gap-1.5">
+          {/* Item D (rodada de melhorias pós-Fase-6) — a aba PODERES levou de 5
+              para 6 abas nesta fileira; numa fileira só (`flex-1`) o texto
+              cortava ("RELA[ÇÕES]", "BESTIÁRIO" sumindo). Grid 3x2 (pedido
+              do usuário) em vez de rolagem: 6 abas cabem exatas em duas
+              fileiras de 3, cada uma com largura suficiente pro rótulo. */}
+          <div role="tablist" aria-label="Ficha do personagem" className="grid grid-cols-3 shrink-0 px-3 pt-4 gap-1.5">
               {ABAS.map((aba) => (
                   <button
                       key={aba.id}
@@ -1193,7 +1198,7 @@ export default function GameChat() {
                       // `font-rpg` (VT323) e nao `font-pixel-title`: a Press
                       // Start 2P nao tem glifos acentuados, e "MISSÃO" saia
                       // renderizado como "MISSAO" na aba.
-                      className={`flex-1 flex items-center justify-center gap-1 py-2 border-2 text-sm tracking-wider font-rpg transition-colors focus-visible:outline-none focus-visible:border-rpg-gold ${
+                      className={`flex items-center justify-center gap-1 py-2 px-1 border-2 text-sm tracking-wider font-rpg transition-colors focus-visible:outline-none focus-visible:border-rpg-gold ${
                           abaAtiva === aba.id
                               ? 'border-rpg-gold bg-rpg-gold/20 text-rpg-gold'
                               : 'border-gray-700 bg-black/40 text-gray-400 hover:text-gray-200 hover:border-gray-500'
