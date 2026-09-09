@@ -982,8 +982,14 @@ export default function GameChat() {
     );
   }
 
+  /* Fase 6.4/6.6 (ADR-0036) — `h-dvh` em vez de `h-screen`: no mobile, a
+     barra de endereço/teclado do navegador muda a altura visível de
+     verdade sem redimensionar a `viewport height` fixa do `vh`, o que
+     deixava o rodapé (dock) cortado ou com uma faixa vazia embaixo.
+     `overscroll-contain` evita que um puxão de rolagem na borda do dock
+     ou do palco "vaze" para o pull-to-refresh do navegador mobile. */
   return (
-    <div className={`flex h-screen w-screen bg-black text-gray-100 font-sans overflow-hidden relative ${shakeScreen ? 'animate-shake' : ''}`}>
+    <div className={`flex h-dvh w-screen overscroll-contain bg-black text-gray-100 font-sans overflow-hidden relative ${shakeScreen ? 'animate-shake' : ''}`}>
 
       <SistemaFeedbackToast toasts={toasts} />
       <LootRevealOverlay loot={lootAtivo} onFinish={() => setLootAtivo(null)} />
