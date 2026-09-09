@@ -21,7 +21,6 @@ import Carregando from './Carregando';
 import MenuConfiguracao from './MenuConfiguracao';
 import PainelRegrasModal from './PainelRegrasModal';
 import ConfirmeEmail from './ConfirmeEmail';
-import PixelActionCard from './PixelActionCard';
 import SistemaFeedbackToast, { type ToastItem } from './SistemaFeedbackToast';
 import { type FlutuanteHeroi } from './FloatingCombatText';
 import LootRevealOverlay, { type LootAtivo } from './LootRevealOverlay';
@@ -34,12 +33,13 @@ import CabecalhoRegiao from './CabecalhoRegiao';
 import PixelTooltip from './PixelTooltip';
 import DetalheMonstroModal from './DetalheMonstroModal';
 import GuiaAventureiro from './GuiaAventureiro';
-import AdventureStage from './AdventureStage';
-import LivingWorld from './LivingWorld';
+import Palco from './jogo/Palco';
+import DockAcoes from './jogo/DockAcoes';
 import AbaJornada from './jogo/AbaJornada';
 import AbaRelacoes from './jogo/AbaRelacoes';
 import BalcaoMercador from './jogo/BalcaoMercador';
-import type { AliadoVisual, ArcoAtual, ArcoEncerrado, AcaoDireta, Cena, InimigoVisual, Progressao, MundoPersistente, Equipamento, ItemInfo } from '../lib/gameplay';
+import type { AliadoVisual, ArcoAtual, ArcoEncerrado, AcaoDireta, Cena, InimigoVisual, Progressao, MundoPersistente, Equipamento, ItemInfo, Selecao } from '../lib/gameplay';
+import { alvoValido } from '../lib/gameplay';
 
 // Etapa 14 (revisão) — a ficha virou menu de abas estilo JRPG. Antes tudo
 // (retrato, barras, atributos, missão, inventário) era uma pilha só numa
@@ -310,6 +310,9 @@ export default function GameChat() {
   const [arcoVisto, setArcoVisto] = useState<string | null>(null);
   // Fase 6 (ADR-0036) — id do NPC cujo balcão está aberto; fecha se ele some.
   const [balcaoAberto, setBalcaoAberto] = useState<string | null>(null);
+  // Fase 6 (ADR-0036) — a seleção única do palco (inimigo, pessoa ou objeto),
+  // lida pelo palco e pelo dock. Some quando o alvo some ou o combate vira.
+  const [selecao, setSelecao] = useState<Selecao | null>(null);
   const [catalogoItens, setCatalogoItens] = useState<Record<string, ItemInfo>>({});
   const [erroAcao, setErroAcao] = useState<string | null>(null);
   const [resultadoAcao, setResultadoAcao] = useState<string | null>(null);
@@ -872,7 +875,18 @@ export default function GameChat() {
   const [comentarioAbertoIdx, setComentarioAbertoIdx] = useState<number | null>(null);
   const [comentarioTexto, setComentarioTexto] = useState('');
 
-  // Botões de AdventureStage.tsx — ação mecânica resolvida na hora por
+  useEffect(() => {
+    if (!selecao) return;
+    const existe = selecao.tipo === 'inimigo' ? enemies.some(i => i.nome === selecao.id && i.hp > 0 && !i.afastado)
+      : selecao.tipo === 'pessoa' ? (mundoPersistente?.pessoas ?? []).some(x => x.id === selecao.id)
+      : (mundoPersistente?.entidades ?? []).some(x => x.id === selecao.id);
+    if (!existe || (combatActive && selecao.tipo !== 'inimigo') || (!combatActive && selecao.tipo === 'inimigo')) setSelecao(null);
+  }, [selecao, enemies, mundoPersistente, combatActive]);
+  const alvoCombate = combatActive ? alvoValido(selecao?.tipo === 'inimigo' ? selecao.id : null, enemies) : undefined;
+  const pessoaSelecionada = selecao?.tipo === 'pessoa' ? mundoPersistente?.pessoas.find(x => x.id === selecao.id) : undefined;
+  const entidadeSelecionada = selecao?.tipo === 'objeto' ? mundoPersistente?.entidades.find(x => x.id === selecao.id) : undefined;
+
+  // Botões do palco e do dock (jogo/Palco.tsx, jogo/DockAcoes.tsx) — ação mecânica resolvida na hora por
   // POST /game/action (services/tools.py:ToolExecutor), sem passar pelo
   // narrador (ADR-0006 continua valendo só pro texto livre; isto é o outro
   // lado da tese "juiz × narrador" ganhando UI própria). `loading` e
@@ -1313,7 +1327,7 @@ export default function GameChat() {
                   de só o número — reaproveita o Tooltip que RollCard e a
                   faixa de vitais já usam. */}
               {abaAtiva === 'relacoes' && (
-                <AbaRelacoes reputacoes={reputacoes} pessoas={mundoPersistente?.pessoas ?? []} />
+                <AbaRelacoes reputacoes={reputacoes} pessoas={mundoPersistente?.pessoas ?? []} onSelecionar={id => { setSelecao({ tipo: 'pessoa', id }); setAbaAtiva('status'); }} />
               )}
               {/* Fase 3 do remaster UX — grid de cards de monstro, sprites
                   reais de `/assets/monstros/` (mesmos usados no card de
@@ -1426,7 +1440,13 @@ export default function GameChat() {
           com um véu de cor sutil em vez de arte de cenário nova (o jogo
           não tem nenhum fundo por local/bioma hoje — produzir isso é
           escopo de arte, não só de código; ver PLANO_REMASTER_UX.md §5). */}
-      <div className={`flex-1 flex flex-col min-h-0 relative bg-[#050505] ${horaDoDia != null ? `periodo-${periodoDoDia(horaDoDia).replace('ã', 'a')}` : ''}`}>
+      {/* Fase 6 (ADR-0036) — `min-w-0` é o que falta pra um item flex
+          encolher abaixo da largura intrínseca do conteúdo; sem isso, no
+          mobile a coluna do chat (e o dock lá dentro, com sua barra de
+          verbos) empurrava a tela pra mais largo que a viewport, e como o
+          backdrop da gaveta cobre só os 375px reais, o conteúdo que vazava
+          ficava visível sem escurecer ao lado da ficha. */}
+      <div className={`flex-1 min-w-0 flex flex-col min-h-0 relative bg-[#050505] ${horaDoDia != null ? `periodo-${periodoDoDia(horaDoDia).replace('ã', 'a')}` : ''}`}>
         {/* Item 1+2 da rodada de polish pós-remaster — a faixa antiga de
             vitais (HP/nível/defesa) virou CabecalhoRegiao.tsx (Local/Clima
             + pílula de HP compacta): HP/XP/Ouro detalhados agora moram na
@@ -1657,38 +1677,30 @@ export default function GameChat() {
             continua vendo o palco, com o botão "Resistir" no lugar de
             "Atacar" (o próprio AdventureStage decide isso via `hp`). */}
         {!gameOver && (
-            <div className="shrink-0 overflow-y-auto overscroll-contain max-h-[min(48vh,560px)]">
-                <AdventureStage
-                    nome={charName}
-                    classe={charClass}
-                    nivel={nivel}
-                    hp={hpAtual}
-                    hpMax={hpMax}
-                    local={localAtual}
-                    clima={climaAtual}
-                    hora={horaDoDia}
-                    combate={combatActive}
-                    ocupado={loading || acaoTaticaEmCurso}
-                    encerrado={gameOver}
-                    cena={cena}
-                    progressao={progressao}
-                    marcos={marcos}
-                    inimigos={enemies}
-                    aliados={aliados}
-                    escondido={heroiEscondido}
-                    bonusDefesa={heroiBonusCa}
-                    danos={danosFlutuantes}
-                    erro={erroAcao}
-                    resultado={resultadoAcao}
-                    aoAgir={aoAgir}
-                    aoInspecionarHeroi={() => setFichaModalAberta(true)}
-                />
-                {mundoPersistente && <LivingWorld
-                    mundo={mundoPersistente} nivel={nivel} inventario={inventory} catalogo={catalogoItens} ouro={ouro} arco={arcoAtual}
-                    ocupado={loading || acaoTaticaEmCurso || hpAtual <= 0} combate={combatActive}
-                    aoAgir={aoAgir} aoIdeia={texto => sendAction(texto)} aoAbrirBalcao={setBalcaoAberto}
-                />}
-            </div>
+            <Palco
+                nome={charName}
+                classe={charClass}
+                hp={hpAtual}
+                hpMax={hpMax}
+                local={localAtual}
+                clima={climaAtual}
+                hora={horaDoDia}
+                combate={combatActive}
+                ocupado={loading || acaoTaticaEmCurso}
+                cena={cena}
+                inimigos={enemies}
+                aliados={aliados}
+                pessoas={mundoPersistente?.pessoas ?? []}
+                entidades={mundoPersistente?.entidades ?? []}
+                escondido={heroiEscondido}
+                bonusDefesa={heroiBonusCa}
+                danos={danosFlutuantes}
+                resultado={resultadoAcao}
+                selecao={selecao}
+                aoSelecionar={setSelecao}
+                aoAgir={aoAgir}
+                aoInspecionarHeroi={() => setFichaModalAberta(true)}
+            />
         )}
 
         {/* Fase 1 (revisão de gameplay) — testes de morte visíveis: o herói
@@ -1736,51 +1748,32 @@ export default function GameChat() {
             enviarFeedback={enviarFeedback}
         />
 
-        {/* INPUT AREA */}
-        {/* Rodada de conserto — `z-40` empatava com o backdrop da gaveta
-            mobile (mesmo z-index, e este vem depois no DOM), então a caixa
-            de texto ficava acesa e clicável por cima do fundo escurecido
-            enquanto a ficha estava aberta. `z-10` fica abaixo do backdrop
-            (`z-40`) e da gaveta (`z-50`). */}
-        <div className="shrink-0 p-4 border-t border-gray-800 bg-gray-900 z-10 relative">
-            {/* Fase 1 (revisão de gameplay) — sugestões extraídas da tag
-                [OPCOES]: preenchem a caixa, nunca enviam sozinhas. A caixa
-                de texto livre continua sendo o caminho principal — isto é
-                um atalho pra quem não sabe o que digitar, não uma troca
-                dela por um menu (mesmo espírito do clique no inimigo). */}
-            {opcoes.length > 0 && !loading && !gameOver && (
-                <div className="max-w-4xl mx-auto flex flex-wrap gap-2 mb-2 animate-fade-in">
-                    {opcoes.map((op, i) => (
-                        <PixelActionCard
-                            key={i}
-                            onClick={() => setInput(op)}
-                            className="text-xs md:text-sm px-3 py-2"
-                        >
-                            {op}
-                        </PixelActionCard>
-                    ))}
-                </div>
-            )}
-            <div className="max-w-4xl mx-auto flex gap-2 bg-black/40 p-1.5 border-2 border-gray-700 focus-within:border-rpg-gold transition-colors shadow-inner">
-                <textarea
-                    value={input}
-                    onChange={(e) => setInput(e.target.value)}
-                    onKeyDown={handleKeyDown}
-                    placeholder={combatActive ? "Ameaça iminente! (Ex: 'Ataco o inimigo', 'Fujo')" : "Sua ação..."}
-                    aria-label="Sua ação"
-                    disabled={gameOver || acaoTaticaEmCurso}
-                    className="flex-1 bg-transparent text-gray-200 p-3 outline-none resize-none h-12 max-h-32 custom-scrollbar font-serif text-sm placeholder-gray-500 disabled:opacity-50"
-                />
-                <button
-                    onClick={handleSendMessage}
-                    disabled={loading || !input.trim() || gameOver || acaoTaticaEmCurso}
-                    aria-label="Enviar ação"
-                    className="h-10 w-10 bg-gray-800 hover:bg-gray-700 text-rpg-gold flex items-center justify-center transition-all mt-1 mr-1 border border-gray-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rpg-gold disabled:opacity-40"
-                >
-                    <PixelIcon name="enviar" size={18}/>
-                </button>
-            </div>
-        </div>
+        <DockAcoes
+            combate={combatActive}
+            caido={hpAtual <= 0}
+            ocupado={loading || acaoTaticaEmCurso}
+            encerrado={gameOver}
+            loading={loading}
+            alvo={alvoCombate}
+            selecao={selecao}
+            pessoaSelecionada={pessoaSelecionada}
+            entidadeSelecionada={entidadeSelecionada}
+            cena={cena}
+            progressao={progressao}
+            nivel={nivel}
+            inventory={inventory}
+            catalogoItens={catalogoItens}
+            entidades={mundoPersistente?.entidades ?? []}
+            opcoes={opcoes}
+            erro={erroAcao}
+            input={input}
+            setInput={setInput}
+            handleSendMessage={handleSendMessage}
+            handleKeyDown={handleKeyDown}
+            aoAgir={aoAgir}
+            onAbrirBalcao={setBalcaoAberto}
+            onLimparSelecao={() => setSelecao(null)}
+        />
       </div>
     </div>
   );

@@ -132,3 +132,9 @@ export function alvoValido(selecionado: string | null, inimigos: InimigoVisual[]
   return inimigos.find(inimigo => inimigo.nome === selecionado && inimigo.hp > 0 && !inimigo.afastado)?.nome
     ?? inimigos.find(inimigo => inimigo.hp > 0 && !inimigo.afastado)?.nome;
 }
+
+/** Fase 6 (ADR-0036) — a seleção única do palco: um inimigo (alvo de combate), uma pessoa ou um objeto/saída. */
+export interface Selecao { tipo: 'inimigo' | 'pessoa' | 'objeto'; id: string }
+
+/** Sentinela do backend (`domain/living_world.SAIDA_LIVRE`): saída sem destino fixo. */
+export const SAIDA_LIVRE = 'Estrada livre';

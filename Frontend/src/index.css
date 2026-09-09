@@ -637,3 +637,66 @@ img[src^="/assets/backgrounds/"] {
 .living-world__fact { border-left: 3px solid #c9a456; padding-left: .7rem; }
 .living-world progress { display: block; width: 100%; accent-color: #daa64c; margin-block: .4rem; }
 @media (max-width: 520px) { .living-world__controls { grid-template-columns: 1fr; } .living-world { padding: .7rem; } }
+
+/* Fase 6 ("uma tela só", ADR-0036) — palco de altura fixa e dock contextual.
+   Reaproveita `.adventure-world*` e `.adventure-actor*` (acima); o que era
+   console/abas dentro do palco e o painel Mundo Vivo deixaram de existir. */
+.palco { position: relative; flex-shrink: 0; height: clamp(240px, 34vh, 360px); margin: 8px 12px 0; border: 2px solid #695333; box-shadow: 0 0 0 2px #000, inset 0 0 0 1px #b79552; color: #e3d9c3; display: flex; flex-direction: column; }
+.palco .adventure-world__party { flex: 1; min-height: 0; padding: 40px 16px 8px; align-items: flex-end; gap: 12px; }
+.palco__group { display: flex; align-items: flex-end; gap: clamp(8px, 1.5vw, 20px); flex-wrap: wrap; min-width: 0; }
+.palco .adventure-actor { width: clamp(84px, 9vw, 116px); padding: 4px 6px 7px; }
+.palco .adventure-actor__sprite { width: 64px; height: 64px; }
+.palco .adventure-actor__tag { min-height: 18px; font-size: 8px; }
+.adventure-actor--npc { border-color: #d9c46f55; }
+.adventure-actor--npc .adventure-actor__tag { color: #f0deb0; font-size: 10px; }
+.adventure-actor--bystander { opacity: .55; filter: saturate(.6); cursor: default; }
+.palco__badge { position: absolute; z-index: 5; top: 6px; left: 8px; display: flex; flex-direction: column; gap: 2px; padding: 5px 8px; background: #10140fd9; border: 1px solid #665132; max-width: 55%; }
+.palco__objective { position: absolute; z-index: 5; top: 6px; right: 8px; max-width: 42%; padding: 5px 8px; background: #10140fd9; border: 1px solid #3b4934; font-size: 11px; color: #e5d6a4; }
+.palco__objective > span { display: flex; align-items: center; gap: 5px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.palco__objective b { color: #ffdd91; font-weight: 600; }
+.palco__objective .adventure-objective__track { margin-top: 5px; }
+.palco__shelf { position: relative; z-index: 2; flex-shrink: 0; display: flex; gap: 6px; padding: 6px 10px 8px; overflow-x: auto; scrollbar-width: thin; background: linear-gradient(transparent, #0f120cbb); }
+.palco__shelf-item { display: flex; align-items: center; gap: 6px; padding: 6px 9px; min-height: 34px; max-width: 220px; flex-shrink: 0; background: #181b12e8; border: 2px solid #b49e65; color: #fff0c7; font-size: 12px; cursor: pointer; box-shadow: 2px 2px #1119; }
+.palco__shelf-item small { font-size: 10px; color: #bbc0aa; }
+.palco__shelf-item--exit { border-style: dashed; }
+.palco__shelf-item:hover:not(:disabled), .palco__shelf-item:focus-visible { background: #57492c; border-color: #ffe5a3; outline: none; }
+.palco__shelf-item.is-selected { background: #473c26; border-color: #f6cb6b; box-shadow: 0 0 0 2px #1a2115; }
+.palco__shelf-item:disabled { opacity: .45; cursor: not-allowed; }
+.palco__result { position: absolute; z-index: 6; left: 50%; bottom: 52px; transform: translateX(-50%); max-width: min(90%, 640px); padding: 8px 12px; background: #2b2a1cf2; border: 1px solid #7a6b3f; font-size: 13px; line-height: 1.5; color: #f0e9c3; animation: fadeIn .2s steps(3); }
+.palco .adventure-world__landmark { padding: 8px; font-size: 10px; }
+
+.dock__row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; max-width: 56rem; margin: 0 auto 8px; }
+.dock__btn { display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 6px 11px; border: 2px solid #58513a; background: #26291e; color: #eee6cf; font-size: 14px; cursor: pointer; box-shadow: inset 0 2px #ffffff09, 0 2px #0008; }
+.dock__btn small { font-size: 10px; color: #a9d7e7; margin-left: 2px; }
+.dock__btn--primary { border-color: #ba9650; background: #54432b; }
+.dock__btn.is-active { border-color: #f6cb6b; background: #473c26; }
+.dock__btn:hover:not(:disabled), .dock__btn:focus-visible { border-color: #ffe19d; background: #3d4028; outline: none; }
+.dock__btn:disabled { opacity: .45; cursor: not-allowed; }
+.dock__chip { display: inline-flex; align-items: center; gap: 5px; min-height: 40px; padding: 4px 10px; border: 2px solid #f6cb6b; background: #473c26; color: #ffe29a; font-size: 13px; }
+.dock__meio { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: #b3b9a4; }
+.dock__meio select { min-height: 36px; padding: 4px 6px; border: 2px solid #58513a; background: #0c1420; color: #fff; font-size: 13px; max-width: 180px; }
+.dock__hint { max-width: 56rem; margin: 0 auto 6px; font-size: 12px; color: #b3b9a4; }
+.dock__error { max-width: 56rem; margin: 0 auto 6px; padding: 7px 9px; font-size: 12px; color: #ffd1a8; background: #4b2620; border: 1px solid #c17551; }
+.dock__popover { position: absolute; z-index: 20; left: 12px; right: 12px; bottom: 100%; margin-bottom: 2px; max-width: 56rem; margin-inline: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 6px; padding: 8px; background: #141610f5; border: 2px solid #695333; box-shadow: 0 -4px 12px #000a; max-height: 46vh; overflow-y: auto; animation: fadeIn .12s steps(2); }
+.dock__card { display: flex; flex-direction: column; align-items: stretch; gap: 5px; padding: 9px; text-align: left; border: 1px solid #586a70; background: #18262a; cursor: pointer; min-height: 44px; }
+.dock__card:hover:not(:disabled), .dock__card:focus-visible { border-color: #ffe19d; background: #3d4028; outline: none; }
+.dock__card:disabled { opacity: .45; cursor: not-allowed; }
+.dock__card.is-locked { background: #1b1d1c; border-color: #3a3e38; }
+.dock__card-head { display: flex; gap: 6px; justify-content: space-between; align-items: center; flex-wrap: wrap; font-size: 9px; color: #d4e6e8; }
+.dock__card-head > span { color: #7ec5e4; font-size: 9px; white-space: nowrap; }
+.dock__card-body { font-size: 12px; line-height: 1.45; color: #b6c0ba; }
+.dock__card small { margin-top: auto; font-size: 11px; color: #d0b878; }
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+@media (max-width: 640px) {
+  .palco { height: clamp(180px, 28vh, 240px); margin: 6px 6px 0; }
+  .palco .adventure-world__party { padding: 34px 8px 6px; }
+  .palco .adventure-actor { width: 72px; padding: 3px; }
+  .palco .adventure-actor__sprite { width: 48px; height: 48px; }
+  .palco__objective { display: none; }
+  .palco__shelf { padding-bottom: 10px; }
+  .palco__shelf-item { min-height: 44px; }
+  .dock__row { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 2px; scrollbar-width: none; }
+  .dock__btn, .dock__chip { flex-shrink: 0; min-height: 44px; }
+  .dock__popover { position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; max-height: 50dvh; margin: 0; }
+  .dock__card { min-height: 44px; }
+}
