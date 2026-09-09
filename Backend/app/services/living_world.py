@@ -143,8 +143,23 @@ def registrar_pessoa(executor: "ToolExecutor", pessoa: dict) -> dict:
     except ValidationError as erro:
         return {"erro": str(erro)}
     mundo = executor.w_state.mundo
+    mercadoria_nova = [c for c in (regras.nome_canonico(n) for n in npc.mercadoria) if c][:8]
+
+    def _atualizar_mercadoria(existente: PessoaMundo) -> dict:
+        # Fase 1 (ADR-0033) — a única coisa que um recadastro pode mudar numa
+        # pessoa conhecida é o que ela vende (achado ao vivo: o modelo quis
+        # fazer de uma NPC da origem a mercadora da cena). Relações, memória
+        # e segredo continuam intocados.
+        if mercadoria_nova:
+            existente.mercadoria = mercadoria_nova
+            return {"mercadoria": mercadoria_nova}
+        return {}
+
     if npc.id in mundo.pessoas:
-        return {"existente": True, "aviso": "Memória e personalidade preservadas; use ações para mudar relações."}
+        return {
+            "existente": True, "aviso": "Memória e personalidade preservadas; use ações para mudar relações.",
+            **_atualizar_mercadoria(mundo.pessoas[npc.id]),
+        }
     # Achado ao vivo (Fase 0 do plano "jogo completo"): o modelo registrou
     # o mesmo NPC da origem com outro id ("ravi" vs "responsavel") e ele
     # apareceu duas vezes no painel. Nome igual no mesmo local é a mesma
@@ -156,14 +171,22 @@ def registrar_pessoa(executor: "ToolExecutor", pessoa: dict) -> dict:
     )
     if repetida is not None:
         aviso = f"{repetida.nome} já está registrada como '{repetida.id}'."
-        return {"existente": True, "id": repetida.id, "aviso": aviso}
-    if len(mundo.pessoas) >= 100 or npc.local != executor.w_state.local:
-        return {"erro": "Apresente pessoas apenas no local atual; limite de 100 por campanha."}
+        return {"existente": True, "id": repetida.id, "aviso": aviso, **_atualizar_mercadoria(repetida)}
+    if len(mundo.pessoas) >= 100:
+        return {"erro": "Limite de 100 pessoas por campanha."}
+    if npc.local != executor.w_state.local:
+        # Achado ao vivo (Fase 1): o modelo registrou o lojista com local
+        # "Loja de Suprimentos" — um lugar DENTRO da vila onde o herói está.
+        # Uma pessoa apresentada agora está aqui, por definição; o nome do
+        # cantinho vai para a descrição, não para o registro de local.
+        if npc.local and npc.local not in npc.descricao:
+            npc.descricao = f"{npc.descricao} ({npc.local})".strip()[:500]
+        npc.local = executor.w_state.local
     # O cadastro cria a pessoa, não resultados de ações ou relações conquistadas.
     if npc.raca not in regras.get_races_list():
         npc.raca = "Humano"  # o retrato do painel vem de /assets/races/<raca>.png
     # Mercadoria só com nomes do catálogo (nome canônico); o resto é descartado.
-    npc.mercadoria = [c for c in (regras.nome_canonico(n) for n in npc.mercadoria) if c][:8]
+    npc.mercadoria = mercadoria_nova
     npc.confianca = max(-30, min(30, (executor.heroi.reputacao_npcs or {}).get(npc.nome, 0)))
     npc.segredo_revelado = False
     npc.lembrancas = []

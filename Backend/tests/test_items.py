@@ -255,3 +255,17 @@ class TestToolsPorEstadoFase1:
 @pytest.mark.parametrize("nome", ["Equipamento"])
 def test_equipamento_modelo_vazio(nome):
     assert Equipamento().model_dump() == {"arma": None, "armadura": None, "escudo": None}
+
+    def test_recadastro_de_pessoa_conhecida_so_atualiza_a_mercadoria(self):
+        from tests.test_living_world import agir
+
+        ex = _executor(heroi=_heroi(), w_state=WorldState(local="Vila de Phandalin"))
+        self._mundo(ex, confianca=40, mercadoria=())
+        ex.w_state.mundo.pessoas["mercador"].lembrancas = ["ajudou na ponte"]
+        r, ok = agir(ex, "registrar_pessoa", pessoa={
+            "id": "outro", "nome": "bela", "local": "Vila de Phandalin", "objetivo": "x", "mercadoria": ["Antídoto"],
+        })
+        assert ok and r["existente"] and r["mercadoria"] == ["Antídoto"]
+        pessoa = ex.w_state.mundo.pessoas["mercador"]
+        assert pessoa.mercadoria == ["Antídoto"] and pessoa.confianca == 40 and pessoa.lembrancas == ["ajudou na ponte"]
+        assert "outro" not in ex.w_state.mundo.pessoas

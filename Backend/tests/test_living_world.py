@@ -297,3 +297,16 @@ def test_origem_do_modelo_sem_pessoa_ou_sem_saida_e_recusada(executor):
     with pytest.raises(ValueError):
         validar_mundo_inicial(sem_saida, local)
     assert validar_mundo_inicial(base["mundo_inicial"], local)  # a origem determinística continua válida
+
+
+def test_registrar_pessoa_em_sublocal_e_assimilada_ao_local_atual(executor):
+    # Achado ao vivo (Fase 1) — "Loja de Suprimentos" dentro da vila.
+    _, valido = agir(
+        executor, "registrar_pessoa",
+        pessoa={"id": "lojista", "nome": "Baldur", "local": "Loja de Suprimentos", "objetivo": "vender",
+                "descricao": "Barba longa.", "mercadoria": ["Antídoto"]},
+    )
+    assert valido
+    pessoa = executor.w_state.mundo.pessoas["lojista"]
+    assert pessoa.local == executor.w_state.local
+    assert "Loja de Suprimentos" in pessoa.descricao and pessoa.mercadoria == ["Antídoto"]
