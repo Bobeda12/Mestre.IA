@@ -52,8 +52,11 @@ ficha reservada, que o narrador só nomeia e apresenta quando o confronto chega.
 
 ## O que ficou registrado para depois
 
-- **Sprites dos monstros:** só 5 dos 27 arquétipos têm arte (`goblin`, `esqueleto`,
-  `kobold`, `lobo`, `bugbear`); os outros mostram a caveira. A arte vem de fora (Dungeon
-  Crawl CC0 ou geração por IA pixelizada), o que exige baixar arquivos — decisão do autor.
+- ~~Sprites dos monstros~~ — feito na mesma sessão, com a decisão do autor: baixei o pacote
+  Dungeon Crawl 32×32 (CC0, já creditado) e extraí um tile por arquétipo (28 de 28 com
+  arte; `docs/CREDITOS.md` lista tile por monstro). Mantidos em 32×32 como os retratos de
+  raça; o palco escala para 80 px. Confirmado no navegador: um combate com "Vharn, o
+  Devorador" (pele sobre a ficha do Dragão Jovem) e um Golem de Pedra mostra os dois
+  sprites novos, legíveis, com o dragão verde e o golem cinza no lugar da caveira.
 - O laço da simulação merece virar `Backend/evals/simulador.py`, com técnicas e talentos no
   herói de referência.
