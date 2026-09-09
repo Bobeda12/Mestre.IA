@@ -65,7 +65,7 @@ def memorias_relevantes(
     personagem_id: int,
     query: str,
     turno_atual: int,
-    k: int = 4,
+    k: int = 3,  # Fase 0 do plano "jogo completo": 4 -> 3, teto de tokens do provedor
     embed_fn: Callable[[str], list[float]] | None = None,
 ) -> list[str]:
     """Busca híbrida sobre os eventos do personagem — nunca de outro (o
