@@ -1,14 +1,15 @@
 import { useState } from 'react';
-import type { AcaoDireta, ArcoAtual, MundoPersistente, Progressao } from '../../lib/gameplay';
+import type { AcaoDireta, ArcoAtual, MundoPersistente } from '../../lib/gameplay';
 import { ACOES } from '../../lib/verbos';
 import PanelFrame from '../PanelFrame';
 import PixelIcon from '../PixelIcon';
 
 // Fase 6 ("uma tela só", ADR-0036) — a aba MISSÃO da ficha vira JORNADA e
 // absorve tudo que era "consulta" espalhado pela tela: o capítulo (arco)
-// e os conflitos que viviam no painel Mundo Vivo, o objetivo do jogador, os
-// fatos descobertos e a trilha de níveis 1–10 que ficava numa aba dentro
-// do palco. Especialização 3/7 não vem para cá: LevelUpModal já cobre.
+// e os conflitos que viviam no painel Mundo Vivo, e os fatos descobertos.
+// A trilha de níveis 1–10 (que passou por aqui na Fase 6) mudou de novo, pra
+// AbaPoderes.tsx, junto de técnicas/talentos/especializações — é sobre a
+// build do personagem, não sobre a missão em andamento.
 interface Props {
   quest: { nome_missao?: string; objetivo_missao?: string } | null;
   resumoJornada: string | null;
@@ -16,9 +17,7 @@ interface Props {
   setJornadaAberta: (aberta: boolean) => void;
   arco: ArcoAtual | null;
   mundo: MundoPersistente | null;
-  progressao: Progressao | null;
   marcos: string[];
-  nivel: number;
   ocupado: boolean;
   combate: boolean;
   aoAgir: (acao: AcaoDireta, rotulo: string) => void;
@@ -142,28 +141,6 @@ export default function AbaJornada(p: Props) {
               <span className="block text-[10px] text-gray-500">Fonte: {f.fonte}</span>
             </p>
           ))}
-        </Secao>
-      )}
-
-      {p.progressao && (
-        <Secao titulo={`Jornada 1–${p.progressao.nivel_maximo}`} icone="estrela">
-          <p className="text-[11px] text-rpg-gold font-rpg">{p.progressao.estilo || 'Explore, resolva situações e vença encontros para evoluir.'}</p>
-          <ol className="space-y-1">
-            {p.progressao.niveis.map(etapa => {
-              const atual = etapa.nivel === p.nivel;
-              const feito = etapa.nivel < p.nivel;
-              return (
-                <li key={etapa.nivel} aria-current={atual ? 'step' : undefined}
-                  className={`flex gap-2 border p-1.5 ${atual ? 'border-rpg-gold bg-rpg-gold/10 text-gray-100' : feito ? 'border-gray-600 text-gray-200' : 'border-gray-800 text-gray-500'}`}>
-                  <span className="font-pixel-title text-[10px] min-w-6 text-center pt-0.5 text-rpg-gold/80">{etapa.nivel}</span>
-                  <div className="min-w-0">
-                    <p className="text-[11px] font-rpg leading-snug">{etapa.descricao}</p>
-                    <p className="text-[10px] text-gray-500">{etapa.xp} XP{atual ? ' · Você está aqui' : feito ? ' · Conquistado' : ''}</p>
-                  </div>
-                </li>
-              );
-            })}
-          </ol>
         </Secao>
       )}
 

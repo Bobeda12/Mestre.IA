@@ -513,9 +513,55 @@ export default function CharacterCreation({ onCharacterCreated }: CharacterCreat
                                     >Confirmar Origem</PixelButton>
                                 </div>
                             )}
+                            {/* Melhorias pós-Fase-6, item A — antes disto o resultado do
+                                Oráculo só avisava "veja no Passo 4", onde história/objetivo
+                                ficavam espremidos nos mesmos campos manuais de identidade
+                                (textarea de ~80px, input de uma linha cortando o texto).
+                                Isto é a "Visão": o texto completo, formatado em parágrafos
+                                (mesmo padrão de FichaModal.tsx), editável antes de seguir. */}
                             {oraculoConfirmado && (
-                                <div className="border-t-2 border-gray-800 pt-3 text-sm text-emerald-400 flex items-center gap-2">
-                                    <PixelIcon name="estrela" size={14} /> Origem escrita pelo Oráculo — veja no Passo 4.
+                                <div className="border-t-2 border-gray-800 pt-4 space-y-4 animate-fade-in">
+                                    <p className="text-emerald-400 text-sm flex items-center gap-2">
+                                        <PixelIcon name="estrela" size={14} /> O Oráculo enxergou sua origem. Revise ou ajuste antes de seguir.
+                                    </p>
+
+                                    <div>
+                                        <label className="text-rpg-gold font-rpg block mb-1 text-sm">Sua história</label>
+                                        <div className="w-full bg-black/40 border-2 border-gray-700 p-3 max-h-64 overflow-y-auto custom-scrollbar space-y-2">
+                                            {history.split(/\n{2,}/).map((paragrafo, i) => (
+                                                <p key={i} className="text-sm text-gray-200 leading-relaxed">{paragrafo}</p>
+                                            ))}
+                                        </div>
+                                        <details className="mt-1">
+                                            <summary className="text-[10px] text-gray-500 cursor-pointer hover:text-gray-300">Editar texto</summary>
+                                            <textarea
+                                                className="w-full mt-1 bg-black/50 border-2 border-gray-600 p-2 text-white text-sm h-28 outline-none resize-none focus:border-rpg-gold"
+                                                value={history}
+                                                onChange={e => setHistory(e.target.value)}
+                                                maxLength={4000}
+                                            />
+                                        </details>
+                                    </div>
+
+                                    <div>
+                                        <label className="text-rpg-gold font-rpg block mb-1 text-sm">Origem</label>
+                                        <input type="text" className="w-full bg-black/50 border-2 border-gray-600 p-2 text-white text-sm outline-none focus:border-rpg-gold" value={background} onChange={e => setBackground(e.target.value)} maxLength={500} />
+                                    </div>
+
+                                    <div>
+                                        <label className="text-rpg-gold font-rpg block mb-1 text-sm">Objetivo de vida</label>
+                                        <textarea className="w-full bg-black/50 border-2 border-gray-600 p-2 text-white text-sm h-14 outline-none resize-none focus:border-rpg-gold" value={goal} onChange={e => setGoal(e.target.value)} maxLength={500} />
+                                    </div>
+
+                                    <div>
+                                        <label className="text-rpg-gold font-rpg block mb-1 text-sm flex items-center gap-1">
+                                            A frase que o mestre lembra
+                                            <span className="text-[10px] text-gray-500 font-sans normal-case">(aparece resumida em toda cena do jogo)</span>
+                                        </label>
+                                        <input type="text" className="w-full bg-black/50 border-2 border-gray-600 p-2 text-white text-sm outline-none focus:border-rpg-gold" value={resumoHistoria} onChange={e => setResumoHistoria(e.target.value)} maxLength={150} />
+                                    </div>
+
+                                    <p className="text-[11px] text-gray-500">Está bom assim? Use PRÓXIMO, embaixo, para seguir — ou ajuste qualquer campo acima antes.</p>
                                 </div>
                             )}
                         </div>
@@ -548,37 +594,49 @@ export default function CharacterCreation({ onCharacterCreated }: CharacterCreat
 
                     <div className="w-full h-px bg-gray-800 my-4"></div>
 
-                    {/* Campos de Profundidade (Novos) */}
-                    <div>
-                        <label className="text-rpg-gold font-rpg block mb-1">Alinhamento Moral</label>
-                        <select className="w-full bg-black/50 border-2 border-gray-600 p-2 text-white outline-none" value={alignment} onChange={e => setAlignment(e.target.value)}>
-                            <option value="Neutro">Neutro Verdadeiro</option>
-                            <option value="Leal e Bom">Leal e Bom (O Paladino)</option>
-                            <option value="Neutro e Bom">Neutro e Bom (O Benfeitor)</option>
-                            <option value="Caótico e Bom">Caótico e Bom (O Rebelde)</option>
-                            <option value="Leal e Neutro">Leal e Neutro (O Juiz)</option>
-                            <option value="Caótico e Neutro">Caótico e Neutro (O Espírito Livre)</option>
-                            <option value="Leal e Mau">Leal e Mau (O Tirano)</option>
-                            <option value="Neutro e Mau">Neutro e Mau (O Criminoso)</option>
-                            <option value="Caótico e Mau">Caótico e Mau (O Destruidor)</option>
-                        </select>
-                    </div>
+                    {/* Melhorias pós-Fase-6, item A — quando o Oráculo escreveu a
+                        origem (já revisada na "Visão" do Passo 2), estes campos
+                        não se repetem aqui: evita editar o mesmo texto em dois
+                        lugares e reduz o Passo 4 a identidade de verdade. */}
+                    {oraculoAtivo && oraculoConfirmado ? (
+                        <p className="text-xs text-gray-400 bg-black/30 border-2 border-gray-800 p-3">
+                            Origem, objetivo e história já foram definidos pelo Oráculo no Passo 2.
+                        </p>
+                    ) : (
+                        <>
+                            {/* Campos de Profundidade (Novos) */}
+                            <div>
+                                <label className="text-rpg-gold font-rpg block mb-1">Alinhamento Moral</label>
+                                <select className="w-full bg-black/50 border-2 border-gray-600 p-2 text-white outline-none" value={alignment} onChange={e => setAlignment(e.target.value)}>
+                                    <option value="Neutro">Neutro Verdadeiro</option>
+                                    <option value="Leal e Bom">Leal e Bom (O Paladino)</option>
+                                    <option value="Neutro e Bom">Neutro e Bom (O Benfeitor)</option>
+                                    <option value="Caótico e Bom">Caótico e Bom (O Rebelde)</option>
+                                    <option value="Leal e Neutro">Leal e Neutro (O Juiz)</option>
+                                    <option value="Caótico e Neutro">Caótico e Neutro (O Espírito Livre)</option>
+                                    <option value="Leal e Mau">Leal e Mau (O Tirano)</option>
+                                    <option value="Neutro e Mau">Neutro e Mau (O Criminoso)</option>
+                                    <option value="Caótico e Mau">Caótico e Mau (O Destruidor)</option>
+                                </select>
+                            </div>
 
-                    <div>
-                        <label className="text-rpg-gold font-rpg block mb-1">Profissão / Origem</label>
-                        <input type="text" className="w-full bg-black/50 border-2 border-gray-600 p-3 text-white outline-none focus:border-rpg-gold" placeholder="Ex: Soldado, Eremita, Nobre..." value={background} onChange={e => setBackground(e.target.value)} />
-                        <p className="text-[10px] text-gray-500 mt-1">Isso define onde você começa o jogo.</p>
-                    </div>
+                            <div>
+                                <label className="text-rpg-gold font-rpg block mb-1">Profissão / Origem</label>
+                                <input type="text" className="w-full bg-black/50 border-2 border-gray-600 p-3 text-white outline-none focus:border-rpg-gold" placeholder="Ex: Soldado, Eremita, Nobre..." value={background} onChange={e => setBackground(e.target.value)} />
+                                <p className="text-[10px] text-gray-500 mt-1">Isso define onde você começa o jogo.</p>
+                            </div>
 
-                    <div>
-                        <label className="text-rpg-gold font-rpg block mb-1">Objetivo de Vida</label>
-                        <input type="text" className="w-full bg-black/50 border-2 border-gray-600 p-3 text-white outline-none focus:border-rpg-gold" placeholder="Ex: Vingar meu clã..." value={goal} onChange={e => setGoal(e.target.value)} />
-                    </div>
+                            <div>
+                                <label className="text-rpg-gold font-rpg block mb-1">Objetivo de Vida</label>
+                                <input type="text" className="w-full bg-black/50 border-2 border-gray-600 p-3 text-white outline-none focus:border-rpg-gold" placeholder="Ex: Vingar meu clã..." value={goal} onChange={e => setGoal(e.target.value)} />
+                            </div>
 
-                    <div>
-                        <label className="text-rpg-gold font-rpg block mb-1">História Extra (Opcional)</label>
-                        <textarea className="w-full bg-black/50 border-2 border-gray-600 p-3 text-white h-20 outline-none resize-none focus:border-rpg-gold" placeholder="Detalhes adicionais..." value={history} onChange={e => setHistory(e.target.value)} />
-                    </div>
+                            <div>
+                                <label className="text-rpg-gold font-rpg block mb-1">História Extra (Opcional)</label>
+                                <textarea className="w-full bg-black/50 border-2 border-gray-600 p-3 text-white h-20 outline-none resize-none focus:border-rpg-gold" placeholder="Detalhes adicionais..." value={history} onChange={e => setHistory(e.target.value)} />
+                            </div>
+                        </>
+                    )}
                 </div>
             )}
 

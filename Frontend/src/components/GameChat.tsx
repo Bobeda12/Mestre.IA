@@ -36,6 +36,7 @@ import Palco from './jogo/Palco';
 import HudBarra from './jogo/HudBarra';
 import DockAcoes from './jogo/DockAcoes';
 import AbaJornada from './jogo/AbaJornada';
+import AbaPoderes from './jogo/AbaPoderes';
 import AbaRelacoes from './jogo/AbaRelacoes';
 import BalcaoMercador from './jogo/BalcaoMercador';
 import type { AliadoVisual, ArcoAtual, ArcoEncerrado, AcaoDireta, Cena, InimigoVisual, Progressao, MundoPersistente, Equipamento, ItemInfo, Selecao } from '../lib/gameplay';
@@ -49,6 +50,10 @@ const ABAS = [
   { id: 'status', rotulo: 'STATUS', icone: 'coracao' },
   { id: 'itens', rotulo: 'ITENS', icone: 'mochila' },
   { id: 'missao', rotulo: 'JORNADA', icone: 'pergaminho' },
+  // Item 10 da rodada de melhorias pós-Fase-6 — técnicas, talentos e a
+  // trilha de níveis viviam espalhados (popover de combate, ou em lugar
+  // nenhum); "PODERES" é onde consultar a build fora de combate.
+  { id: 'poderes', rotulo: 'PODERES', icone: 'estrela' },
   { id: 'relacoes', rotulo: 'RELAÇÕES', icone: 'rosto' },
   // Fase 3 do remaster UX (PLANO_REMASTER_UX.md) — "Bestiário": só os
   // monstros encontrados NESTA sessão (o backend não guarda um histórico
@@ -1306,13 +1311,15 @@ export default function GameChat() {
                   setJornadaAberta={setJornadaAberta}
                   arco={arcoAtual}
                   mundo={mundoPersistente}
-                  progressao={progressao}
                   marcos={marcos}
-                  nivel={nivel}
                   ocupado={loading || acaoTaticaEmCurso || gameOver}
                   combate={combatActive}
                   aoAgir={aoAgir}
                 />
+              )}
+
+              {abaAtiva === 'poderes' && (
+                <AbaPoderes progressao={progressao} nivel={nivel} />
               )}
 
               {/* Fase 2 do remaster UX — cards de NPC ganham "juice" de

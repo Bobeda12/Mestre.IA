@@ -131,7 +131,7 @@ export default function DockAcoes(p: Props) {
     : null;
 
   return (
-    <div ref={raiz} className="dock shrink-0 relative z-10 border-t border-gray-800 bg-gray-900 px-3 py-2 md:px-4">
+    <div ref={raiz} className="dock shrink-0 relative z-10 border-t border-gray-800/60 bg-gray-900 px-3 py-2 md:px-4">
       {p.erro && <p className="dock__error font-rpg" role="alert">{p.erro}</p>}
       {hint && <p className="dock__hint font-rpg">{hint}</p>}
 
@@ -198,6 +198,9 @@ export default function DockAcoes(p: Props) {
         </div>
       )}
 
+      {/* Item 9 — verbos e campo de texto agora leem como UMA peça
+          (`.dock__panel`), não duas caixas empilhadas com bordas diferentes. */}
+      <div className="dock__panel">
       {/* Linha 1 — os verbos do contexto. */}
       <div className="dock__row" role="toolbar" aria-label="Ações">
         {nomeSel && !p.combate && (
@@ -274,8 +277,10 @@ export default function DockAcoes(p: Props) {
         )}
       </div>
 
-      {/* Linha 2 — texto livre (ou a proposta do verbo social pendente). */}
-      <div className={`dock__input max-w-4xl mx-auto flex gap-2 bg-black/40 p-1.5 border-2 ${verboPendente ? 'border-rpg-gold' : 'border-gray-700 focus-within:border-rpg-gold'} transition-colors shadow-inner`}>
+      {/* Linha 2 — texto livre (ou a proposta do verbo social pendente).
+          Sem borda própria: a moldura já é a do `.dock__panel` em volta; só
+          uma linha divisória fina separa isto da fileira de verbos acima. */}
+      <div className={`flex gap-2 p-1.5 border-t transition-colors ${verboPendente ? 'border-rpg-gold' : 'border-[#3a3626] focus-within:border-rpg-gold/60'}`}>
         {verboPendente && (
           <button type="button" onClick={() => setVerboPendente(null)} aria-label="Cancelar proposta" className="self-center shrink-0 text-[10px] font-rpg uppercase tracking-widest text-rpg-gold px-2 py-1 border border-rpg-gold/50 hover:bg-rpg-gold/10">
             {ACOES[verboPendente.operacao]} ×
@@ -299,6 +304,7 @@ export default function DockAcoes(p: Props) {
         >
           <PixelIcon name="enviar" size={18} />
         </button>
+      </div>
       </div>
     </div>
   );

@@ -675,7 +675,13 @@ img[src^="/assets/backgrounds/"] {
 .palco__result { position: absolute; z-index: 6; left: 50%; bottom: 52px; transform: translateX(-50%); max-width: min(90%, 640px); padding: 8px 12px; background: #2b2a1cf2; border: 1px solid #7a6b3f; font-size: 13px; line-height: 1.5; color: #f0e9c3; animation: fadeIn .2s steps(3); }
 .palco .adventure-world__landmark { padding: 8px; font-size: 10px; }
 
-.dock__row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; max-width: 56rem; margin: 0 auto 8px; }
+/* Item 9 da rodada de melhorias pós-Fase-6 — antes, palco + verbos + caixa de
+   texto liam como 4 caixas empilhadas (moldura do palco, badge/objetivo,
+   fileira de botões 3D, caixa de texto com borda própria). `.dock__panel`
+   agrupa verbos e texto numa moldura só; o `.dock` em volta perde a borda
+   superior própria (o palco já fecha a cena com a dele, logo acima). */
+.dock__panel { max-width: 56rem; margin: 0 auto; border: 2px solid #58513a; background: #1a1c14; box-shadow: 0 0 0 2px #000a; }
+.dock__row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 8px 8px 6px; margin: 0; }
 .dock__btn { display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 6px 11px; border: 2px solid #58513a; background: #26291e; color: #eee6cf; font-size: 14px; cursor: pointer; box-shadow: inset 0 2px #ffffff09, 0 2px #0008; }
 .dock__btn small { font-size: 10px; color: #a9d7e7; margin-left: 2px; }
 .dock__btn--primary { border-color: #ba9650; background: #54432b; }

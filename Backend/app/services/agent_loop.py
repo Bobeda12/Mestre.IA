@@ -116,6 +116,17 @@ def executar_turno(
                 raise ErroMestre("O mestre ficou em silêncio — tente de novo em instantes.")
             return mensagem.content or "", executor.eventos, chamadas
 
+        # Fase 1 da rodada de melhorias pós-Fase-6 — "uma chamada por turno".
+        # O prompt (narrator.py) agora pede pra narrar NA MESMA resposta que
+        # chama a ferramenta, em vez de esperar um turno seguinte só pra
+        # narrar. Se o modelo fez isso (tool_calls + texto de verdade juntos),
+        # roda a(s) ferramenta(s) e encerra o turno aqui — sem chamar o
+        # modelo de novo. É exatamente a segunda chamada que estourava o
+        # teto de tokens/minuto do provedor gratuito (ver NARRATIVA_SEM_VOZ
+        # acima). Quando o modelo só chama a ferramenta sem texto (ainda
+        # comum, varia por provedor), o loop segue como antes.
+        texto_junto = (mensagem.content or "").strip()
+
         msgs.append(
             {
                 "role": "assistant",
@@ -146,6 +157,9 @@ def executar_turno(
             )
             chamadas.append(ChamadaFerramenta(tc.function.name, tc.function.arguments, sucesso))
             msgs.append({"role": "tool", "tool_call_id": tc.id, "content": json.dumps(resultado, ensure_ascii=False)})
+
+        if texto_junto:
+            return texto_junto, executor.eventos, chamadas
 
     return (
         "*(O mestre perdeu o fio da meada tentando decidir o que fazer — tente uma ação mais simples.)*",
@@ -260,6 +274,15 @@ def executar_turno_stream(
             msgs.append(
                 {"role": "tool", "tool_call_id": slot["id"], "content": json.dumps(resultado, ensure_ascii=False)}
             )
+
+        # Mesma lógica do `executar_turno` síncrono acima ("uma chamada por
+        # turno"): o texto já foi transmitido como "token" no chunk loop
+        # deste passo — se não veio vazio, o modelo narrou junto da
+        # ferramenta, e não precisa de outra chamada pra "terminar de
+        # narrar". Só continua o loop quando `conteudo` veio vazio (o modelo
+        # só chamou a ferramenta) ou quando ele encadeia mais ferramentas.
+        if conteudo.strip():
+            return
 
     # Etapa 10 (A-7) tirou o padrão `*(...)*` de todo frame de sistema
     # exceto este — ele ainda chegava como "token" (texto de narração),

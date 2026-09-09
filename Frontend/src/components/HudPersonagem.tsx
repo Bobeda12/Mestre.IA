@@ -79,7 +79,11 @@ export default function HudPersonagem({
         aria-label={`Abrir ficha completa de ${charName}`}
       >
         <div className="relative pixel-frame w-16 h-16 shrink-0 bg-black overflow-hidden group-focus-visible:ring-2 group-focus-visible:ring-rpg-gold">
-          <RetratoPixelado src={charImage} alt="" className="w-full h-full object-cover object-top" />
+          {/* Diferente dos painéis de retrato grandes (CharacterCreation/Prologo/FichaModal,
+              proporção próxima do busto gerado), este quadro é QUADRADO — `object-top` cortaria
+              o busto (retrato de 500×750) de um jeito que sobra vazio embaixo e a figura fica
+              "subida". `object-center` centraliza o recorte verticalmente no quadro. */}
+          <RetratoPixelado src={charImage} alt="" className="w-full h-full object-cover object-center" />
           {/* Item 9 — marcas de ferimento por percentual de vida, camada
               CSS por cima do canvas (RetratoPixelado.tsx já embrulha o
               canvas num `<div className="relative">`, então isto encaixa

@@ -98,6 +98,31 @@ def test_uma_chamada_de_ferramenta_depois_narrativa_final(monkeypatch):
     assert fake.chamadas == 2
 
 
+def test_ferramenta_e_narrativa_na_mesma_resposta_termina_em_uma_chamada(monkeypatch):
+    # Rodada de melhorias pós-Fase-6 ("uma chamada por turno") — quando o
+    # modelo já manda `content` junto com `tool_calls` na mesma mensagem
+    # (o prompt agora pede isso), o loop não deve fazer uma segunda chamada
+    # só pra "terminar de narrar": é exatamente essa segunda chamada que
+    # estourava o teto de tokens/minuto do provedor gratuito.
+    fake = _LLMFalso(
+        [
+            _MensagemFalsa(
+                content="Vocês chegam à floresta.",
+                tool_calls=[_ToolCallFalso("t1", "mover", '{"destino": "Floresta"}')],
+            ),
+        ]
+    )
+    monkeypatch.setattr(agent_loop, "chamar_com_fallback", fake)
+    executor = FakeExecutor({"mover": ({"local": "Floresta"}, True)})
+
+    narrativa, eventos, chamadas = agent_loop.executar_turno([], executor)
+
+    assert narrativa == "Vocês chegam à floresta."
+    assert eventos == ["evento de mover"]
+    assert len(chamadas) == 1
+    assert fake.chamadas == 1  # uma chamada só, não duas
+
+
 def test_mensagem_de_tool_call_nunca_manda_content_none(monkeypatch):
     # BYOK (Etapa 15) — achado ao vivo: quando o modelo chama uma ferramenta
     # sem escrever texto antes (`mensagem.content is None`, o caso comum),
@@ -323,6 +348,28 @@ def test_stream_tool_call_gera_tool_event_antes_da_narrativa_final():
     assert eventos[0].dados["texto"] == "🎲 rolar_teste deu certo."
     assert eventos[1].dados == "Você se esgueira."
     assert fake.chamadas == 2
+
+
+def test_stream_ferramenta_e_narrativa_no_mesmo_passo_termina_em_uma_chamada():
+    # Mesma lógica do teste síncrono acima, no caminho de streaming: texto e
+    # tool_calls chegam no MESMO passo (mesma chamada) — o loop não deve
+    # pedir um segundo passo só pra "terminar de narrar".
+    passo_1 = [
+        _ChunkFalso(_DeltaFalso(content="Vocês chegam ")),
+        _ChunkFalso(_DeltaFalso(tool_calls=[_DeltaToolCallFalso(0, id="t1", name="rolar_teste")])),
+        _ChunkFalso(_DeltaFalso(content="à floresta.", tool_calls=[_DeltaToolCallFalso(0, arguments='{"atributo": "destreza"}')])),
+    ]
+    fake = _StreamLLMFalso([passo_1])
+    executor = FakeExecutorEstruturado({"rolar_teste": ({"sucesso": True}, True)})
+
+    eventos = list(agent_loop.executar_turno_stream([], executor, chamar_fn=fake))
+
+    # Os deltas de texto já são transmitidos como "token" assim que chegam,
+    # no meio do próprio passo (antes da ferramenta rodar) — só depois de
+    # esgotar os chunks é que a ferramenta executa e o "tool_event" sai.
+    assert [e.tipo for e in eventos] == ["token", "token", "tool_event"]
+    assert "".join(e.dados for e in eventos if e.tipo == "token") == "Vocês chegam à floresta."
+    assert fake.chamadas == 1  # uma chamada só, não duas
 
 
 def test_stream_mensagem_de_tool_call_nunca_manda_content_none():

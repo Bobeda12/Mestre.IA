@@ -52,12 +52,12 @@ export default function HudBarra(p: Props) {
       )}
 
       <div className="flex items-center gap-1 shrink-0 font-pixel-title text-[9px] text-rpg-gold" title={`Nível ${p.nivel}`}>
-        <PixelIcon name="estrela" size={12} /> NV {p.nivel}
+        <PixelIcon name="estrela" size={14} /> NV {p.nivel}
       </div>
 
       {p.localAtual && (
         <div className="min-w-0 flex-1 flex items-baseline gap-2 border-l-2 border-gray-800 pl-2 md:pl-3">
-          <PixelIcon name="seta" size={11} className="rotate-90 opacity-60 shrink-0" />
+          <PixelIcon name="seta" size={12} className="rotate-90 opacity-60 shrink-0" />
           <span className="font-rpg text-sm md:text-base text-rpg-gold truncate">{p.localAtual}</span>
           {p.climaAtual && <span className="text-[11px] text-gray-400 italic truncate hidden md:inline">— {p.climaAtual}</span>}
           {p.horaDoDia != null && <span className="ml-auto shrink-0 text-[9px] text-gray-500 uppercase tracking-widest">{periodoDoDia(p.horaDoDia)}</span>}

@@ -110,8 +110,9 @@ def gerar_prologo_missao(
     NPCs têm interesses, medos, limites e informações incompletas, podendo cooperar ou discordar.
     O jogador pode ignorar tudo e seguir seu caminho. Sempre ofereça uma saída sem compromisso.
     Responda APENAS JSON com as mesmas chaves e formato deste exemplo, que é uma referência de
-    ESTRUTURA e uma alternativa em caso de falha, NÃO uma cena obrigatória:
-    {json.dumps(abertura, ensure_ascii=False)}
+    ESTRUTURA e uma alternativa em caso de falha, NÃO uma cena obrigatória — troque também o texto de
+    "intro_narrativa", que aqui está genérico de propósito, pra você não imitar a frase:
+    {json.dumps({**abertura, "intro_narrativa": "(3 parágrafos de prosa original — não copie este placeholder nem cite objetivo/história literalmente, absorva como pano de fundo)"}, ensure_ascii=False)}
     Pode substituir inteiramente lugar, pessoas, objetos, disputa e texto. mundo_inicial.cenas
     usa o NOME do local como chave; entidades usam seu id como chave; pessoas/conflitos também.
     Todo agente de conflito deve existir e todo alvo de bloqueio deve existir na cena correspondente.
@@ -603,7 +604,8 @@ Alinhamento: {heroi.alinhamento}{historia_resumo}
     "descansar" com "gancho_acampamento": puxe essa fala antes de seguir. Nunca invente recompensa,
     combate, item, inimigo ou habilidade fora das ferramentas.
 
-    Depois das ferramentas, narre em prosa seguindo [A VOZ DO MESTRE]: direto, com peso, um detalhe
+    Chame a(s) ferramenta(s) necessária(s) e, NA MESMA RESPOSTA, escreva a narração logo em seguida —
+    não espere um novo turno pra narrar, o jogador vê os dois juntos. Narre em prosa seguindo [A VOZ DO MESTRE]: direto, com peso, um detalhe
     sensorial escolhido. Só texto corrido — sem JSON, título, lista, bloco de código, CAIXA ALTA ou
     itálico; ênfase pela palavra. Única exceção: item, lugar ou achado importante que aparece pela
     primeira vez vai em **negrito**, no máximo uma ou duas vezes, nunca em diálogo nem em nomes já
