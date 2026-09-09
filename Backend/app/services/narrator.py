@@ -78,6 +78,38 @@ def chamar_mestre(msgs: list[dict], chamar_fn: Callable[..., Any] | None = None)
         raise ErroMestre("O mestre respondeu num formato que não consegui entender.") from e
 
 
+# Chaves de app.domain.living_world.MundoVivo — todas têm default, então um
+# merge parcial nunca deixa o modelo pydantic sem campo obrigatório.
+_CHAVES_MUNDO_INICIAL = (
+    "versao", "arcos", "minutos", "cenas", "pessoas", "conflitos",
+    "conhecimento", "tentativas", "objetivos", "especializacoes",
+)
+
+
+def _normalizar_mundo_inicial(roteiro: dict, mundo_padrao: dict) -> dict:
+    """Achado ao vivo (rodada de conserto): apesar do prompt pedir
+    mundo_inicial.cenas/pessoas/conflitos aninhados, o modelo às vezes
+    devolve essas chaves soltas no nível superior do JSON (irmãs de
+    local_inicial), deixando mundo_inicial só com versao/arcos. Em vez de
+    descartar um roteiro que só errou de "andar", aceita as duas formas:
+    qualquer chave de MundoVivo encontrada solta no topo é realocada para
+    dentro de mundo_inicial antes da validação.
+
+    Se o modelo não mandou mundo_inicial nem nenhuma chave solta (ex.:
+    resposta truncada), mantém o comportamento antigo: usa `mundo_padrao`
+    (o mundo determinístico de `criar_origem`), preservando o resto do
+    texto do modelo em vez de descartar o roteiro inteiro."""
+    mundo = roteiro.get("mundo_inicial")
+    mundo = dict(mundo) if isinstance(mundo, dict) else {}
+    achou_chave_solta = any(chave not in mundo and chave in roteiro for chave in _CHAVES_MUNDO_INICIAL)
+    if not mundo and not achou_chave_solta:
+        return mundo_padrao
+    for chave in _CHAVES_MUNDO_INICIAL:
+        if chave not in mundo and chave in roteiro:
+            mundo[chave] = roteiro[chave]
+    return mundo
+
+
 def gerar_prologo_missao(
     char: CharacterCreationRequest, chamar_fn: Callable[..., Any] | None = None, *, semente: int | None = None
 ) -> dict:
@@ -112,8 +144,12 @@ def gerar_prologo_missao(
     Responda APENAS JSON com as mesmas chaves e formato deste exemplo, que é uma referência de
     ESTRUTURA e uma alternativa em caso de falha, NÃO uma cena obrigatória:
     {json.dumps(abertura, ensure_ascii=False)}
-    Pode substituir inteiramente lugar, pessoas, objetos, disputa e texto. mundo_inicial.cenas
-    usa o NOME do local como chave; entidades usam seu id como chave; pessoas/conflitos também.
+    Pode substituir inteiramente lugar, pessoas, objetos, disputa e texto. IMPORTANTE: "cenas",
+    "pessoas", "conflitos", "arcos", "objetivos" e "minutos" NÃO são chaves de nível superior do
+    JSON — elas vivem DENTRO do objeto "mundo_inicial", exatamente como no exemplo acima (o
+    nível superior só tem local_inicial, clima_inicial, nome_missao, objetivo_missao,
+    intro_narrativa, opcoes, chaves, mundo_inicial, direcao). mundo_inicial.cenas usa o NOME do
+    local como chave; entidades usam seu id como chave; pessoas/conflitos também.
     Todo agente de conflito deve existir e todo alvo de bloqueio deve existir na cena correspondente.
     Objetos com propriedades movel/pesado/trancado/mecanismo/investigavel/inflamavel/cobertura/fragil
     permitem ações reais. Saídas têm tipo=saida e destino. Não crie itens recebidos sem ferramenta.
@@ -160,7 +196,7 @@ def gerar_prologo_missao(
         roteiro["local_inicial_descricao"] = None
     try:
         roteiro["mundo_inicial"] = validar_mundo_inicial(
-            roteiro.get("mundo_inicial", abertura["mundo_inicial"]), roteiro["local_inicial"]
+            _normalizar_mundo_inicial(roteiro, abertura["mundo_inicial"]), roteiro["local_inicial"]
         )
     except (ValueError, TypeError):
         return abertura
