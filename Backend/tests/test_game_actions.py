@@ -192,3 +192,38 @@ def test_clique_escolher_nivel(monkeypatch):
                                           "tipo_escolha": "talento", "opcao": "couro_duro", "turno_esperado": 1})
     assert r.status_code == 200, r.text
     assert r.json()["progressao"]["pendencias"] == [] and r.json()["progressao"]["talentos"][0]["id"] == "couro_duro"
+
+
+def test_clique_encerrar_arco_gera_desfecho_e_memoria(monkeypatch):
+    # Fase 4 do plano "jogo completo" — sem modelo (clients vazio), o desfecho é a lista de marcos.
+
+    sid = _partida(monkeypatch)
+    with SessionLocal() as db:
+        heroi = db.query(Personagem).filter_by(session_id=sid).one()
+        heroi.combat_state = CombatState().model_dump()
+        ws = WorldState.model_validate(heroi.world_state)
+        ws.local = heroi.world_state["local"]
+        # arco da origem não existe neste save montado à mão: cria um com conflito resolvido
+        from app.domain.living_world import Arco, CenaPersistente, ConflitoMundo, PessoaMundo
+        ws.mundo.cenas["Ponte"] = CenaPersistente(descricao="Uma ponte.")
+        ws.mundo.pessoas["guarda"] = PessoaMundo(id="guarda", nome="Guarda", local="Ponte", objetivo="cobrar")
+        ws.mundo.conflitos["pedagio"] = ConflitoMundo(
+            id="pedagio", nome="O pedágio", agente="guarda", local="Ponte", objetivo="cobrar", sinal="s",
+            consequencia="c", estado="resolvido",
+        )
+        ws.mundo.arcos = [Arco(id="arco_1", titulo="O pedágio da ponte", conflito_central="pedagio", turno_inicio=1)]
+        ws.turno = 12
+        ws.marcos = ["a", "b"]
+        heroi.world_state = ws.model_dump()
+        db.commit()
+    carga = client.post("/load_game", json={"session_id": sid}).json()
+    assert carga["arco"]["pode_encerrar"] is True
+    r = client.post("/game/action", json={"session_id": sid, "acao": "encerrar_arco", "turno_esperado": 12,
+                                          "rotulo": "Encerrar arco"})
+    assert r.status_code == 200, r.text
+    d = r.json()
+    assert d["arco"]["ativo"] is False and d["arco_encerrado"]["id"] == "arco_1"
+    assert d["arco_encerrado"]["texto"]
+    with SessionLocal() as db:
+        tipos = [e.tipo for e in db.query(EventoMemoria).filter_by(tipo="arco").all()]
+    assert "arco" in tipos

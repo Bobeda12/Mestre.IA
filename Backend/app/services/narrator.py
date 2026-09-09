@@ -241,6 +241,46 @@ def gerar_epitafio(
 LIMITE_EVENTOS_CRONICA = 60
 
 
+def gerar_desfecho_arco(
+    heroi: Personagem, arco: dict, eventos: list[str], chamar_fn: Callable[..., Any] | None = None
+) -> dict:
+    """Fase 4 (ADR-0035) — chamado uma vez quando `encerrar_arco` passou no
+    servidor; molde de `gerar_epitafio`: chamada isolada, JSON solto, só com
+    os eventos listados. Sem modelo, o desfecho é a lista de marcos."""
+    marcos = "\n".join(f"- {e}" for e in eventos) or "- Nenhum marco registrado."
+    padrao = {"titulo": arco["titulo"], "texto": "\n".join(eventos[-6:]) or f"{arco['titulo']} chegou ao fim."}
+    if chamar_fn is None and not llm_client.clients:
+        return padrao
+    rotulo = {"acordo": "um acordo negociado", "consequencia": "as consequências de não agir a tempo",
+              "vitoria_chefe": "a queda de quem estava por trás", "abandono": "o abandono pelo herói"}
+    prompt = f"""
+    {regras.get_biblia()}
+
+    O arco "{arco['titulo']}" da jornada de {heroi.nome} ({heroi.raca} {heroi.classe}) terminou por
+    {rotulo.get(arco['resultado'], 'um desfecho')}. Premissa: {arco['premissa']}
+
+    O que aconteceu neste arco, na ordem:
+    {marcos}
+
+    Siga [A VOZ DO MESTRE]; é [MOMENTO DE ALTO IMPACTO], pode crescer além do teto normal. Em segunda
+    pessoa. Baseie-se SÓ no que está listado — não invente eventos, pessoas ou lugares; se faltar
+    material, seja breve. Termine apontando que o mundo segue e o herói continua.
+
+    Responda APENAS JSON: {{"titulo": "título do capítulo, curto", "texto": "2 a 3 parágrafos"}}
+    """
+    try:
+        resultado = chamar_mestre([{"role": "user", "content": prompt}], chamar_fn=chamar_fn)
+    except ErroMestre as e:
+        print("ERRO NO DESFECHO DO ARCO:", e.mensagem)
+        return padrao
+    if not isinstance(resultado, dict):
+        return padrao
+    titulo = str(resultado.get("titulo") or arco["titulo"])
+    texto_ok = isinstance(resultado.get("texto"), str) and resultado["texto"].strip()
+    texto = resultado["texto"] if texto_ok else padrao["texto"]
+    return {"titulo": titulo.strip()[:100] or arco["titulo"], "texto": texto.strip()}
+
+
 def gerar_cronica(heroi: Personagem, eventos: list[str], chamar_fn: Callable[..., Any] | None = None) -> str:
     """Fase 7 — tece os eventos registrados (`services/memory.
     eventos_cronologicos`) num conto de fantasia em prosa. Diferente de
@@ -452,6 +492,22 @@ def montar_contexto(
         ", ".join(partes_inv) + f" | EQUIPADO arma={eq.get('arma') or '-'} armadura={eq.get('armadura') or '-'} "
         f"escudo={eq.get('escudo') or '-'} Defesa {heroi.defesa}"
     )
+    # Fase 4 (ADR-0035) — o arco atual e o que o servidor exige para fechá-lo.
+    from app.services.living_world import condicoes_arco
+
+    cond = condicoes_arco(w_state)
+    if cond.get("ativo"):
+        secao_arco = (
+            f"\n    [ARCO ATUAL] {cond['titulo']} — {cond['premissa'][:200]} | conflito central: "
+            f"{cond['conflito']} ({cond['estado_conflito']}) | turnos no arco: {cond['turnos']} | "
+            + ("pode encerrar agora: chame encerrar_arco se a cena pedir fechamento." if cond["pode_encerrar"]
+               else f"ainda aberto ({cond['motivo_bloqueio']}). Nunca narre o fim do arco antes de "
+                    "encerrar_arco devolver encerrado=true.")
+        )
+    else:
+        secao_arco = (
+            "\n    [ARCO] Nenhum arco ativo: quando um conflito registrado pedir peso de história, chame abrir_arco."
+        )
     secao_mundo = json.dumps(
         _compacto(painel_mundo(w_state, heroi.classe, privado=True)), ensure_ascii=False, separators=(",", ":")
     )
@@ -501,7 +557,7 @@ Ouro: {heroi.ouro}{secao_tracos}
 Alinhamento: {heroi.alinhamento}{historia_resumo}
     [INVENTÁRIO] {secao_inventario}{secao_aliados}
     [MISSÃO ATUAL] {q_state.nome_missao}: {q_state.objetivo_missao}
-    [CENA] {w_state.local} | {w_state.clima} | {motor.periodo_do_dia(w_state.hora_do_dia)}{secao_progressao}
+    [CENA] {w_state.local} | {w_state.clima} | {motor.periodo_do_dia(w_state.hora_do_dia)}{secao_progressao}{secao_arco}
     [MUNDO PERSISTENTE — INTENÇÕES PRIVADAS NÃO SÃO CONHECIMENTO DO HERÓI]
     {secao_mundo}
     Não há roteiro: a missão é interesse do jogador; aceite partidas, mudanças de lado e soluções

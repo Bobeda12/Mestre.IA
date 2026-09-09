@@ -56,7 +56,7 @@ export interface InimigoVisual {
 }
 
 export interface AcaoDireta {
-  acao: 'atacar' | 'defender' | 'esquivar' | 'investir' | 'esconder_se' | 'fugir' | 'usar_habilidade' | 'interagir' | 'descansar' | 'resistir' | 'agir_no_mundo' | 'intervir_conflito' | 'definir_objetivo' | 'escolher_especializacao' | 'equipar' | 'desequipar' | 'comerciar' | 'usar_item' | 'atacar_com_aliado' | 'escolher_nivel';
+  acao: 'atacar' | 'defender' | 'esquivar' | 'investir' | 'esconder_se' | 'fugir' | 'usar_habilidade' | 'interagir' | 'descansar' | 'resistir' | 'agir_no_mundo' | 'intervir_conflito' | 'definir_objetivo' | 'escolher_especializacao' | 'equipar' | 'desequipar' | 'comerciar' | 'usar_item' | 'atacar_com_aliado' | 'escolher_nivel' | 'encerrar_arco';
   alvo?: string;
   nivel_escolha?: number;
   tipo_escolha?: 'atributo' | 'talento' | 'especializacao';
@@ -92,6 +92,13 @@ export interface ItemInfo {
   preco_venda: number;
 }
 export interface Equipamento { arma?: string | null; armadura?: string | null; escudo?: string | null }
+/** Fase 4 (ADR-0035) — o arco atual, com o que o servidor exige para encerrar. */
+export interface ArcoAtual {
+  ativo: boolean; id?: string; titulo?: string; premissa?: string; conflito?: string; estado_conflito?: string;
+  turnos?: number; marcos?: number; resultado_esperado?: string; pode_encerrar?: boolean; motivo_bloqueio?: string;
+}
+export interface ArcoEncerrado { id: string; titulo: string; texto: string; resultado: string; recompensa: { xp: number; ouro: number; itens: string[] } }
+
 export interface MundoPersistente {
   local: string; descricao: string; entidades: EntidadeMundo[]; pessoas: PessoaMundo[];
   conflitos: {id: string; nome: string; sinal: string; progresso: number; etapas: number;

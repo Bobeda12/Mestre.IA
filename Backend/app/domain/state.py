@@ -64,6 +64,8 @@ class CombatState(BaseModel):
     # um request novo, então um aliado atacaria sem limite. Zerado em
     # `combat.finalizar_rodada`.
     aliados_agiram: list[str] = []
+    # Fase 4/5 — este combate é o do chefe do arco (marcado em iniciar_combate).
+    chefe_do_arco: bool = False
     acao_resolvida: bool = False
     cenario_id: str = ""
     progresso_objetivo: int = 0
@@ -138,6 +140,9 @@ class WorldState(BaseModel):
     # talentos escolhidos (ids de services/talents.py). JSON, sem migration.
     niveis_pendentes: list[int] = []
     talentos: list[str] = []
+    # Fase 4 (ADR-0035) — id do arco encerrado neste turno, esperando o
+    # desfecho por IA em routers/game.py; limpo depois de gerar.
+    arco_recem_encerrado: str | None = None
     # Relógios genéricos por nome. O único uso (urgência do Ato) saiu com
     # os Atos (Fase 0 do plano "jogo completo", ADR-0032); o campo fica
     # pra saves antigos carregarem sem erro e pra um relógio futuro caber

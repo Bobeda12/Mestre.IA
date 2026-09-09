@@ -3,7 +3,15 @@
 import random
 import secrets
 
-from app.domain.living_world import SAIDA_LIVRE, CenaPersistente, ConflitoMundo, EntidadeCena, MundoVivo, PessoaMundo
+from app.domain.living_world import (
+    SAIDA_LIVRE,
+    Arco,
+    CenaPersistente,
+    ConflitoMundo,
+    EntidadeCena,
+    MundoVivo,
+    PessoaMundo,
+)
 from app.infra.data_manager import regras
 
 
@@ -37,6 +45,13 @@ def validar_mundo_inicial(dados: dict, local: str) -> dict:
         conflito.progresso = conflito.intervencoes = 0
         conflito.estado = "ativo"
         conflito.proximo_avanco = conflito.intervalo
+    if len(mundo.arcos) > 1:
+        raise ValueError("Origem com mais de um arco.")
+    for arco in mundo.arcos:
+        if arco.conflito_central not in mundo.conflitos:
+            raise ValueError("Arco sem conflito central registrado.")
+        arco.estado, arco.resultado, arco.turno_inicio, arco.marcos_no_inicio = "ativo", "", 1, 0
+        arco.desfecho, arco.recompensa, arco.chefe_enfrentado = None, {}, False
     mundo.minutos = 0
     mundo.especializacoes = {}
     mundo.conhecimento = []
@@ -205,7 +220,12 @@ def criar_origem(char, semente: int | None = None) -> dict:
         conflito.efeito = "disputa"
         conflito.consequencia = f"{rival} anunciou a venda. Interessados começam a chegar e a negociação mudou."
         fala = f"{aliada} estende o contrato. ‘Não é só um prédio.’ {rival} responde: ‘Também não é só dinheiro.’"
+    arco = Arco(
+        id="arco_1", titulo=conflito.nome, premissa=f"{conflito.sinal} {conflito.objetivo}"[:600],
+        conflito_central=conflito.id, turno_inicio=1, marcos_no_inicio=0,
+    )
     mundo = MundoVivo(
+        arcos=[arco],
         cenas={lugar: cena},
         pessoas={npc_a.id: npc_a, npc_b.id: npc_b},
         conflitos={conflito.id: conflito},

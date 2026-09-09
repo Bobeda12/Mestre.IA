@@ -145,6 +145,10 @@ class ToolExecutor:
             self.c_state.ativo = False
             self.c_state.resultado = "vitoria"
             self.eventos.append("🏆 Combate vencido!")
+            from app.services.living_world import marcar_chefe_enfrentado
+
+            if self.c_state.chefe_do_arco:
+                marcar_chefe_enfrentado(self.w_state)
             return {"resultado": "vitoria", **self._conceder_xp(self.c_state.inimigos)}
         return {}
 
@@ -410,7 +414,7 @@ class ToolExecutor:
         saque = gerar_loot(inimigos_derrotados, rng_saque)
         extra: dict = {}
         if saque.ouro:
-            self.heroi.ouro += saque.ouro
+            self.heroi.ouro = (self.heroi.ouro or 0) + saque.ouro
             self.eventos.append(f"💰 Saque: {saque.ouro} de ouro. Total: {self.heroi.ouro}.")
             extra["ouro_saque"] = saque.ouro
         for nome_item in saque.itens:
@@ -967,6 +971,11 @@ class ToolExecutor:
                 return {"erro": "a ação deste turno já foi resolvida; narre o resultado e aguarde o jogador"}, False
             if self.heroi.hp_atual <= 0:
                 return {"erro": "herói inconsciente: aguarde o teste de morte"}, False
+        if nome == "encerrar_arco":
+            # Fase 4 — uma tentativa por turno: o modelo não fica insistindo.
+            if getattr(self, "_arco_tentado", False):
+                return {"erro": "já tentou encerrar o arco neste turno; narre e aguarde"}, False
+            self._arco_tentado = True
         if nome == "atacar_com_aliado" and args.get("aliado") in self.c_state.aliados_agiram:
             return {"erro": "esse aliado já agiu nesta rodada"}, False
         try:
@@ -1540,7 +1549,7 @@ _SO_EM_COMBATE = {
     "usar_habilidade", "interagir", "atacar_com_aliado",
 }
 _SO_FORA_DE_COMBATE = {
-    "comerciar", "desequipar",
+    "comerciar", "desequipar", "abrir_arco", "encerrar_arco",
     "mover", "descansar", "iniciar_combate", "recrutar_aliado", "concluir_objetivo",
     "atualizar_missao", "registrar_cena", "registrar_pessoa", "registrar_conflito",
     "intervir_conflito", "definir_objetivo", "registrar_vinculo", "gastar_ouro",

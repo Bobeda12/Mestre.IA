@@ -72,6 +72,8 @@ WORLD_DISPATCH: dict[str, Callable] = {
     "definir_objetivo": mundo.definir_objetivo,
     "escolher_especializacao": mundo.escolher_especializacao,
     "registrar_vinculo": mundo.registrar_vinculo,
+    "abrir_arco": mundo.abrir_arco,
+    "encerrar_arco": mundo.encerrar_arco,
 }
 WORLD_TOOLS = [
     _tool(
@@ -126,6 +128,21 @@ WORLD_TOOLS = [
         "na conversa atual. Não transforma alegações em fatos; a pessoa deve estar presente.",
         {"npc": S, "natureza": {"type": "string", "enum": ["promessa", "boato", "suspeita"]}, "texto": S},
         ["npc", "natureza", "texto"],
+    ),
+    _tool(
+        "abrir_arco",
+        "Quando um conflito registrado ganha peso de história e não há arco ativo, abra um arco com "
+        "título e premissa. É o capítulo atual da campanha; o servidor decide quando ele pode encerrar.",
+        {"titulo": S, "premissa": S, "conflito": {"type": "string", "description": "id do conflito central"}},
+        ["titulo", "premissa", "conflito"],
+    ),
+    _tool(
+        "encerrar_arco",
+        "Peça o fechamento do arco atual. Só passa se o servidor confirmar (turnos mínimos, fatos "
+        "registrados, conflito central resolvido/concretizado ou chefe enfrentado). Nunca narre um fim de "
+        "arco sem esta ferramenta devolver encerrado=true.",
+        {"resumo_proposto": S},
+        [],
     ),
     _tool(
         "escolher_especializacao",

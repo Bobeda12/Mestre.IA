@@ -92,8 +92,29 @@ class ConflitoMundo(BaseModel):
     desfecho: str = ""
 
 
+class Arco(BaseModel):
+    """Fase 4 do plano "jogo completo" (ADR-0035) — um conflito central que
+    vira capítulo. O servidor decide quando ele pode encerrar; a IA só
+    escreve o desfecho depois."""
+
+    id: str = Field(pattern=r"^[a-z0-9_-]{1,60}$")
+    titulo: str = Field(min_length=1, max_length=100)
+    premissa: str = Field(default="", max_length=600)
+    conflito_central: str = Field(default="", max_length=60)
+    chefe: str | None = None
+    chefe_enfrentado: bool = False
+    estado: Literal["ativo", "encerrado"] = "ativo"
+    resultado: Literal["", "acordo", "consequencia", "vitoria_chefe", "abandono"] = ""
+    turno_inicio: int = 1
+    turno_fim: int | None = None
+    marcos_no_inicio: int = 0
+    desfecho: dict | None = None
+    recompensa: dict = Field(default_factory=dict)
+
+
 class MundoVivo(BaseModel):
     versao: int = 1
+    arcos: list[Arco] = Field(default_factory=list)
     minutos: int = 0
     cenas: dict[str, CenaPersistente] = Field(default_factory=dict)
     pessoas: dict[str, PessoaMundo] = Field(default_factory=dict)

@@ -27,6 +27,7 @@ import { type FlutuanteHeroi } from './FloatingCombatText';
 import LootRevealOverlay, { type LootAtivo } from './LootRevealOverlay';
 import FichaModal from './FichaModal';
 import LevelUpModal from './LevelUpModal';
+import ArcoDesfechoOverlay from './ArcoDesfechoOverlay';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip';
 import HudPersonagem from './HudPersonagem';
 import CabecalhoRegiao from './CabecalhoRegiao';
@@ -35,7 +36,7 @@ import DetalheMonstroModal from './DetalheMonstroModal';
 import GuiaAventureiro from './GuiaAventureiro';
 import AdventureStage from './AdventureStage';
 import LivingWorld from './LivingWorld';
-import type { AliadoVisual, AcaoDireta, Cena, InimigoVisual, Progressao, MundoPersistente, Equipamento, ItemInfo } from '../lib/gameplay';
+import type { AliadoVisual, ArcoAtual, ArcoEncerrado, AcaoDireta, Cena, InimigoVisual, Progressao, MundoPersistente, Equipamento, ItemInfo } from '../lib/gameplay';
 
 // Etapa 14 (revisão) — a ficha virou menu de abas estilo JRPG. Antes tudo
 // (retrato, barras, atributos, missão, inventário) era uma pilha só numa
@@ -152,6 +153,8 @@ interface EstadoJogo {
   combat_active: boolean;
   inimigos?: InimigoVisual[];
   aliados?: AliadoVisual[];
+  arco?: ArcoAtual;
+  arco_encerrado?: ArcoEncerrado | null;
   missao?: unknown;
   // Sistema de progressão/encontros táticos (AdventureStage.tsx) — o
   // backend já manda estes três em todo `_resposta()` (routers/game.py),
@@ -318,6 +321,11 @@ export default function GameChat() {
   const [aliados, setAliados] = useState<AliadoVisual[]>([]);
   // Fase 3 (ADR-0034) — "decidir depois" só esconde até a próxima subida.
   const [levelUpAdiado, setLevelUpAdiado] = useState<number | null>(null);
+  // Fase 4 (ADR-0035) — arco atual e o desfecho a mostrar uma vez (o id visto
+  // na carga inicial não reabre o overlay).
+  const [arcoAtual, setArcoAtual] = useState<ArcoAtual | null>(null);
+  const [arcoEncerrado, setArcoEncerrado] = useState<ArcoEncerrado | null>(null);
+  const [arcoVisto, setArcoVisto] = useState<string | null>(null);
   const [catalogoItens, setCatalogoItens] = useState<Record<string, ItemInfo>>({});
   const [erroAcao, setErroAcao] = useState<string | null>(null);
   const [resultadoAcao, setResultadoAcao] = useState<string | null>(null);
@@ -557,6 +565,11 @@ export default function GameChat() {
     setInventory(d.inventory || []);
     if (d.equipamento !== undefined) setEquipamento(d.equipamento);
     if (d.aliados !== undefined) setAliados(d.aliados);
+    if (d.arco !== undefined) setArcoAtual(d.arco);
+    if (d.arco_encerrado !== undefined) {
+      if (inicial) setArcoVisto(d.arco_encerrado?.id ?? null);
+      setArcoEncerrado(d.arco_encerrado ?? null);
+    }
     if (d.catalogo_itens !== undefined) setCatalogoItens(d.catalogo_itens);
     setCombatActive(d.combat_active);
 
@@ -1444,6 +1457,9 @@ export default function GameChat() {
           Personagem": substitui o antigo modal de só-o-retrato (mesma
           informação de nome/raça/classe já cabe dentro da ficha inteira,
           não precisa dos dois). */}
+      {arcoEncerrado && arcoEncerrado.id !== arcoVisto && !combatActive && (
+        <ArcoDesfechoOverlay arco={arcoEncerrado} aoFechar={() => setArcoVisto(arcoEncerrado.id)} />
+      )}
       {(() => {
         const pendente = progressao?.pendencias?.[0];
         if (!pendente || combatActive || gameOver || levelUpAdiado === pendente.nivel) return null;
@@ -1745,7 +1761,7 @@ export default function GameChat() {
                     aoInspecionarHeroi={() => setFichaModalAberta(true)}
                 />
                 {mundoPersistente && <LivingWorld
-                    mundo={mundoPersistente} nivel={nivel} inventario={inventory} catalogo={catalogoItens} ouro={ouro}
+                    mundo={mundoPersistente} nivel={nivel} inventario={inventory} catalogo={catalogoItens} ouro={ouro} arco={arcoAtual}
                     ocupado={loading || acaoTaticaEmCurso || hpAtual <= 0} combate={combatActive}
                     aoAgir={aoAgir} aoIdeia={texto => sendAction(texto)}
                 />}

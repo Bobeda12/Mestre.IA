@@ -12,7 +12,7 @@ class GameAction(BaseModel):
         "atacar", "defender", "esquivar", "investir", "esconder_se", "fugir",
         "usar_habilidade", "interagir", "descansar", "usar_item", "resistir",
         "agir_no_mundo", "intervir_conflito", "definir_objetivo", "escolher_especializacao",
-        "equipar", "desequipar", "comerciar", "atacar_com_aliado", "escolher_nivel",
+        "equipar", "desequipar", "comerciar", "atacar_com_aliado", "escolher_nivel", "encerrar_arco",
     ]
     turno_esperado: int = Field(ge=1)
     alvo: str | None = Field(default=None, max_length=120)

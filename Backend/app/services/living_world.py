@@ -1,6 +1,7 @@
 """Mundo aberto: registro aditivo, ações compostas, conhecimento e agendas causais."""
 
 import json
+import random
 from typing import TYPE_CHECKING
 
 from pydantic import ValidationError
@@ -8,6 +9,7 @@ from pydantic import ValidationError
 from app.domain.eventos import DadosRolagem, EventoRolagem
 from app.domain.living_world import (
     SAIDA_LIVRE,
+    Arco,
     CenaPersistente,
     ConflitoMundo,
     Conhecimento,
@@ -683,3 +685,124 @@ def painel_mundo(w_state, classe: str, privado: bool = False) -> dict:
         "aptidao": {"nome": aptidao[0], "acoes": aptidao[1], "bonus": 2},
         "minutos": mundo.minutos,
     }
+
+
+# ---------------------------------------------------------------- arcos (Fase 4, ADR-0035)
+MIN_TURNOS_ARCO = 8
+MIN_MARCOS_ARCO = 2
+XP_ARCO_BASE = 60
+XP_ARCO_POR_NIVEL = 20
+
+
+def arco_ativo(mundo) -> Arco | None:
+    return next((a for a in mundo.arcos if a.estado == "ativo"), None)
+
+
+def condicoes_arco(w_state) -> dict:
+    """O que falta (ou não) para o arco ativo poder encerrar — verificável sem LLM."""
+    arco = arco_ativo(w_state.mundo)
+    if arco is None:
+        return {"ativo": False}
+    conflito = w_state.mundo.conflitos.get(arco.conflito_central)
+    turnos = w_state.turno - arco.turno_inicio
+    marcos = len(w_state.marcos) - arco.marcos_no_inicio
+    if arco.chefe_enfrentado:
+        resultado = "vitoria_chefe"
+    elif conflito is not None and conflito.estado == "resolvido":
+        resultado = "acordo"
+    elif conflito is not None and conflito.estado == "concretizado":
+        resultado = "consequencia"
+    else:
+        resultado = ""
+    faltas = []
+    if turnos < MIN_TURNOS_ARCO:
+        faltas.append(f"faltam {MIN_TURNOS_ARCO - turnos} turnos de jogo")
+    if marcos < MIN_MARCOS_ARCO:
+        faltas.append(f"faltam {MIN_MARCOS_ARCO - marcos} fatos registrados")
+    if not resultado:
+        faltas.append("o conflito central ainda está aberto (resolva, deixe concretizar ou enfrente o chefe)")
+    return {
+        "ativo": True, "id": arco.id, "titulo": arco.titulo, "premissa": arco.premissa,
+        "conflito": conflito.nome if conflito else "", "estado_conflito": conflito.estado if conflito else "",
+        "turnos": turnos, "marcos": marcos, "resultado_esperado": resultado,
+        "pode_encerrar": not faltas, "motivo_bloqueio": "; ".join(faltas), "chefe": arco.chefe,
+    }
+
+
+def abrir_arco(executor: "ToolExecutor", titulo: str, premissa: str, conflito: str) -> dict:
+    mundo = executor.w_state.mundo
+    if arco_ativo(mundo) is not None:
+        return {"erro": "Já existe um arco ativo; encerre-o antes de abrir outro."}
+    alvo = mundo.conflitos.get(conflito) or next(
+        (c for c in mundo.conflitos.values() if c.nome.lower() == conflito.strip().lower()), None
+    )
+    if alvo is None or alvo.estado != "ativo":
+        return {"erro": "O conflito central precisa existir e estar ativo.", "conflitos": list(mundo.conflitos)}
+    base = "".join(ch if ch.isalnum() else "_" for ch in titulo.lower())[:40].strip("_") or "arco"
+    id_ = f"{base}_{len(mundo.arcos) + 1}"
+    mundo.arcos = [*mundo.arcos, Arco(
+        id=id_, titulo=titulo[:100], premissa=premissa[:600], conflito_central=alvo.id,
+        turno_inicio=executor.w_state.turno, marcos_no_inicio=len(executor.w_state.marcos),
+    )]
+    executor.eventos.append(f"📖 Novo arco: {titulo}.")
+    return {"arco": id_, "titulo": titulo, "conflito_central": alvo.id}
+
+
+def encerrar_arco(executor: "ToolExecutor", resumo_proposto: str = "", abandonar: bool = False) -> dict:
+    """Só passa se o SERVIDOR confirmar: turnos mínimos, fatos registrados e o
+    conflito central resolvido/concretizado (ou o chefe enfrentado). Abandono
+    é decisão do jogador pela interface: encerra sem recompensa."""
+    from app.services.loot import recompensa_arco
+
+    w = executor.w_state
+    arco = arco_ativo(w.mundo)
+    if arco is None:
+        return {"erro": "Não há arco ativo."}
+    if executor.c_state.ativo:
+        return {"erro": "Encerre o combate antes de fechar o arco."}
+    cond = condicoes_arco(w)
+    resultado: str
+    if abandonar:
+        resultado = "abandono"
+    elif not cond["pode_encerrar"]:
+        return {"erro": f"arco ainda aberto: {cond['motivo_bloqueio']}", "encerrado": False}
+    else:
+        resultado = cond["resultado_esperado"]
+    arco.estado = "encerrado"
+    arco.resultado = resultado  # type: ignore[assignment]
+    arco.turno_fim = w.turno
+    recompensa: dict = {"xp": 0, "ouro": 0, "itens": []}
+    if resultado != "abandono":
+        nivel = executor.heroi.nivel or 1
+        saque = recompensa_arco(nivel, executor.rng or random.Random())
+        xp = XP_ARCO_BASE + XP_ARCO_POR_NIVEL * nivel
+        if resultado == "consequencia":
+            xp //= 2
+            saque.itens = []
+            saque.ouro //= 2
+        executor.heroi.ouro = (executor.heroi.ouro or 0) + saque.ouro
+        for item in saque.itens:
+            executor.heroi.inventario = [*executor.heroi.inventario, item]
+            executor.eventos.append(f"🎁 {executor.heroi.nome} recebe: {item}.")
+        if saque.ouro:
+            executor.eventos.append(f"💰 Recompensa do arco: {saque.ouro} de ouro. Total: {executor.heroi.ouro}.")
+        recompensa = {"xp": xp, "ouro": saque.ouro, "itens": saque.itens}
+    arco.recompensa = recompensa
+    rotulo = {"acordo": "um acordo", "consequencia": "consequências", "vitoria_chefe": "a queda do chefe",
+              "abandono": "abandono"}[resultado]
+    w.marcos = [*w.marcos, f"Arco encerrado: {arco.titulo} ({rotulo})."][-60:]
+    executor.eventos.append(f"📖 Arco encerrado: {arco.titulo} — {rotulo}.")
+    if resumo_proposto:
+        arco.premissa = arco.premissa  # a proposta do narrador não sobrescreve nada; vai para o desfecho
+    w.arco_recem_encerrado = arco.id
+    executor.q_state.nome_missao = "Seu próximo passo"
+    executor.q_state.objetivo_missao = "Escolha o que fazer depois de " + arco.titulo + "."
+    resultado_xp = executor._aplicar_xp(recompensa["xp"]) if recompensa["xp"] else {}
+    return {"encerrado": True, "arco": arco.id, "resultado": resultado, "recompensa": recompensa, **resultado_xp}
+
+
+def marcar_chefe_enfrentado(w_state) -> None:
+    """Chamado na vitória de combate (Fase 5 liga ao chefe do arco)."""
+    arco = arco_ativo(w_state.mundo)
+    if arco is not None and arco.chefe:
+        arco.chefe_enfrentado = True

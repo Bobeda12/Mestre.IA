@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { AcaoDireta, ItemInfo, MundoPersistente } from '../lib/gameplay';
+import type { AcaoDireta, ArcoAtual, ItemInfo, MundoPersistente } from '../lib/gameplay';
 import PixelIcon from './PixelIcon';
 import { getLocalImage } from '../lib/utils';
 
@@ -14,6 +14,8 @@ interface Props {
   /** Fase 1 (ADR-0033) — ficha dos itens do herói (preço de venda) e ouro atual, para o balcão do mercador. */
   catalogo?: Record<string, ItemInfo>;
   ouro?: number;
+  /** Fase 4 (ADR-0035) — o arco atual e o que falta para encerrar. */
+  arco?: ArcoAtual | null;
 }
 
 const ACOES: Record<string, string> = {
@@ -124,6 +126,18 @@ export default function LivingWorld(p: Props) {
         placeholder="Descreva sua intenção. Os controles são só sugestões."/></label>
       <button type="submit" disabled={p.ocupado || !ideia.trim()}>Tentar com o Mestre</button>
     </form>
+    {p.arco?.ativo && <div className="living-world__arc" aria-label="Arco atual">
+      <strong>Capítulo atual: {p.arco.titulo}</strong>
+      {p.arco.premissa && <p>{p.arco.premissa}</p>}
+      <small>Conflito central: {p.arco.conflito} ({p.arco.estado_conflito}) · {p.arco.turnos} turnos · {p.arco.marcos} fatos registrados</small>
+      <small>{p.arco.pode_encerrar ? 'O servidor confirma: este capítulo pode fechar.' : `Para fechar: ${p.arco.motivo_bloqueio}`}</small>
+      <div className="living-world__paths">
+        <button type="button" className="living-world__primary" disabled={p.ocupado || p.combate || !p.arco.pode_encerrar}
+          onClick={() => p.aoAgir({acao: 'encerrar_arco', operacao: 'encerrar'}, `Encerrar o capítulo: ${p.arco?.titulo}`)}>Encerrar capítulo</button>
+        <button type="button" disabled={p.ocupado || p.combate}
+          onClick={() => { if (window.confirm('Abandonar este capítulo? Sem recompensa; o mundo segue.')) p.aoAgir({acao: 'encerrar_arco', operacao: 'abandonar'}, `Abandonar o capítulo: ${p.arco?.titulo}`); }}>Abandonar</button>
+      </div>
+    </div>}
     <details><summary>O mundo continua</summary>
       {p.mundo.conflitos.length === 0 && <p>Nenhum conflito conhecido neste local.</p>}
       {p.mundo.conflitos.map(c => <article key={c.id} className="living-world__conflict">

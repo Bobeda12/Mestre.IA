@@ -32,9 +32,9 @@ from app.services.guardrail import (
     opcoes_padrao,
     validar_narrativa,
 )
-from app.services.living_world import migrar_mundo, painel_mundo
+from app.services.living_world import condicoes_arco, migrar_mundo, painel_mundo
 from app.services.memory import contexto_recente
-from app.services.narrator import gerar_epitafio, montar_contexto
+from app.services.narrator import gerar_desfecho_arco, gerar_epitafio, montar_contexto
 from app.services.progression import migrar_equipamento, migrar_progressao, painel_progressao
 from app.services.tools import ToolExecutor, sincronizar_aliados, tools_para
 
@@ -147,6 +147,15 @@ def _resposta(heroi: Personagem, c_state: CombatState, q_state: QuestLog, **extr
         "mundo": painel_mundo(mundo, heroi.classe),
         "cena": painel_cena(c_state, mundo),
         "marcos": mundo.marcos,
+        # Fase 4 (ADR-0035) — o arco atual (condições para encerrar) e o
+        # último desfecho gerado, para o overlay do frontend.
+        "arco": condicoes_arco(mundo),
+        "arco_encerrado": next(
+            ({"id": a.id, "titulo": a.desfecho["titulo"], "texto": a.desfecho["texto"], "resultado": a.resultado,
+              "recompensa": a.recompensa}
+             for a in reversed(mundo.mundo.arcos) if a.estado == "encerrado" and a.desfecho),
+            None,
+        ),
         "local": mundo.local,
         "clima": mundo.clima,
         "turno_mundo": mundo.turno,
@@ -225,6 +234,30 @@ def regras_xp_proximo_nivel(nivel: int) -> int | None:
     """`None` no nível máximo — não existe "próximo limiar" pra mostrar na
     barra de XP do HUD (Fase 3)."""
     return rules_engine.XP_POR_NIVEL.get(nivel + 1)
+
+
+def _persistir_desfecho_arco(
+    db: Session, heroi: Personagem, w_state: WorldState, chave: ChaveUsuario | None
+) -> None:
+    """Fase 4 (ADR-0035) — quando `encerrar_arco` passou no servidor neste
+    turno, gera o desfecho por IA uma vez, grava no arco e na memória de
+    longo prazo (tipo "arco" vira capítulo na Crônica). Mesmo padrão de
+    `_persistir_epitafio_se_confirmado`."""
+    if not w_state.arco_recem_encerrado:
+        return
+    arco = next((a for a in w_state.mundo.arcos if a.id == w_state.arco_recem_encerrado), None)
+    w_state.arco_recem_encerrado = None
+    if arco is None or arco.desfecho is not None:
+        return
+    eventos = w_state.marcos[arco.marcos_no_inicio:]
+    arco.desfecho = gerar_desfecho_arco(
+        heroi, arco.model_dump(), eventos, chamar_fn=chave.chamar_fn if chave else None
+    )
+    memory.registrar_evento(
+        db, heroi.id, w_state.turno, "arco",
+        f"Capítulo encerrado — {arco.desfecho['titulo']}: {arco.desfecho['texto'][:400]}",
+        embed_fn=chave.embed_fn if chave else None,
+    )
 
 
 def _persistir_epitafio_se_confirmado(
@@ -306,6 +339,7 @@ def game_action(
     db: Session = Depends(get_db),
 ) -> dict:
     """Um clique é uma ação resolvida pelo juiz; disponível mesmo sem conexão com o narrador."""
+    chave = None  # sem chave do jogador aqui: o desfecho de arco (Fase 4) usa a cadeia do servidor
     heroi = _buscar_personagem(db, current_user, action.session_id, "Sessão não encontrada.")
     w_state = WorldState.model_validate(heroi.world_state or {})
     c_state = CombatState.model_validate(heroi.combat_state or {})
@@ -363,6 +397,8 @@ def game_action(
                           "proposta": action.proposta}
         elif action.acao == "definir_objetivo":
             argumentos = {"objetivo": action.proposta}
+        elif action.acao == "encerrar_arco":
+            argumentos = {"resumo_proposto": action.proposta, "abandonar": action.operacao == "abandonar"}
         elif action.acao == "escolher_nivel":
             argumentos = {
                 "nivel": action.nivel_escolha or 0, "tipo": action.tipo_escolha or "", "escolha": action.opcao or "",
@@ -394,6 +430,7 @@ def game_action(
     heroi.historico_chat = [*(heroi.historico_chat or []),
                            {"role": "user", "content": texto_acao},
                            {"role": "assistant", "content": narrativa}]
+    _persistir_desfecho_arco(db, heroi, w_state, chave)
     sincronizar_aliados(heroi, c_state)
     heroi.combat_state = c_state.model_dump()
     heroi.quest_log = q_state.model_dump()
@@ -564,6 +601,7 @@ async def chat_endpoint(
     # Reatribuição, não mutação in-place: é assim que o SQLAlchemy detecta
     # a mudança numa coluna JSON. Ver Lição 03.
     heroi.historico_chat = novo_hist
+    _persistir_desfecho_arco(db, heroi, w_state, chave)
     sincronizar_aliados(heroi, c_state)  # Fase 3 — HP de aliado em combate precisa sobreviver ao turno
     heroi.combat_state = c_state.model_dump()
     heroi.world_state = w_state.model_dump()
@@ -787,6 +825,7 @@ def chat_stream_endpoint(
         novo_hist.append({"role": "user", "content": user_input.action})
         novo_hist.append({"role": "assistant", "content": narrativa})
         heroi.historico_chat = novo_hist
+        _persistir_desfecho_arco(db, heroi, w_state, chave)
         sincronizar_aliados(heroi, c_state)  # Fase 3 — HP de aliado em combate precisa sobreviver ao turno
         heroi.combat_state = c_state.model_dump()
         heroi.world_state = w_state.model_dump()
