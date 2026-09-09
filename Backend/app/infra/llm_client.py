@@ -17,6 +17,7 @@ serviços (`services/agent_loop.py`) precisam levantá-lo sem importar de
 ADR-0003 (routers → services → domain/infra)."""
 
 import contextlib
+import logging
 import time
 from collections.abc import Iterator
 from typing import Any
@@ -81,6 +82,8 @@ def _parse_modelo(espec: str) -> tuple[str, str]:
         raise ValueError(f"Especificação de modelo inválida (esperado 'provedor:modelo'): {espec!r}")
     return provedor, modelo
 
+
+logger = logging.getLogger(__name__)
 
 CADEIA: list[tuple[str, str]] = [_parse_modelo(espec) for espec in settings.cadeia_llm]
 
@@ -203,6 +206,13 @@ def chamar_com_fallback(msgs: list[dict], tools: list[dict] | None = None, tool_
             ultimo_erro = e
             continue
         except openai.APIStatusError as e:
+            # Fase 0 do plano "jogo completo" — o log do httpx só mostra o
+            # status; o CORPO é o que diz se foi teto de tokens, chave
+            # extra na mensagem ou uma chamada de ferramenta malformada
+            # que o próprio modelo gerou (`tool_use_failed` na Groq).
+            logger.warning(
+                "provedor=%s modelo=%s status=%s corpo=%s", provedor, modelo, e.status_code, str(e.body)[:300]
+            )
             ultimo_erro = e
             continue
     raise ErroMestre(

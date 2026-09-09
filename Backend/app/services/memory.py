@@ -24,7 +24,17 @@ from app.services import hybrid_search
 
 
 def contexto_recente(historico: list[dict], n: int = 4) -> list[dict]:
-    return list(historico)[-n:]
+    """Últimas `n` mensagens do histórico, só com `role` e `content`.
+
+    Achado ao vivo (Fase 0 do plano "jogo completo", 08/09/2026): a mensagem
+    do prólogo é gravada em `historico_chat` com uma chave extra `opcoes`
+    (`routers/character.py`, para o frontend), e ela ia inteira para o
+    modelo. O Gemini ignora chaves desconhecidas; o Groq responde 400
+    ("property 'opcoes' is unsupported") — e como o Groq é o primeiro elo
+    da cadeia, TODO turno de um herói novo caía no fallback. O histórico
+    pode carregar o que o frontend precisar; o que vai ao modelo é só o
+    contrato da API."""
+    return [{"role": m["role"], "content": m.get("content", "")} for m in list(historico)[-n:]]
 
 
 def registrar_evento(

@@ -36,7 +36,7 @@ from app.services.living_world import migrar_mundo, painel_mundo
 from app.services.memory import contexto_recente
 from app.services.narrator import gerar_epitafio, montar_contexto
 from app.services.progression import migrar_progressao, painel_progressao
-from app.services.tools import ToolExecutor, sincronizar_aliados
+from app.services.tools import ToolExecutor, sincronizar_aliados, tools_para
 
 router = APIRouter(tags=["game"])
 
@@ -470,7 +470,9 @@ async def chat_endpoint(
                 turno_span(personagem_id=heroi.id, usuario_id=current_user.id, turno=w_state.turno),
                 medir("agente", personagem_id=heroi.id, turno=w_state.turno),
             ):
-                narrativa, eventos_ferramentas, _chamadas = executar_turno(msgs, executor, chamar_fn=chave.chamar_fn)
+                narrativa, eventos_ferramentas, _chamadas = executar_turno(
+                    msgs, executor, chamar_fn=chave.chamar_fn, tools=tools_para(c_state)
+                )
         except ErroMestre as e:
             # Etapa 10 (A-7) — a mensagem de erro é um campo próprio, não
             # texto embutido em `narrativa` com `*(...)*`: o histórico
@@ -654,7 +656,9 @@ def chat_stream_endpoint(
                 turno_span(personagem_id=heroi.id, usuario_id=current_user.id, turno=w_state.turno),
                 medir("agente", personagem_id=heroi.id, turno=w_state.turno),
             ):
-                for evento in executar_turno_stream(msgs, executor, chamar_fn=chave.chamar_fn_stream):
+                for evento in executar_turno_stream(
+                    msgs, executor, chamar_fn=chave.chamar_fn_stream, tools=tools_para(c_state)
+                ):
                     if evento.tipo == "token":
                         pedacos.append(evento.dados)
                         yield _sse("token", {"texto": evento.dados})

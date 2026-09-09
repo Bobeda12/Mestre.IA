@@ -1334,3 +1334,38 @@ TOOLS_SCHEMA.extend([
         },
     },
 ])
+
+
+# Fase 0 do plano "jogo completo" (08/09/2026) — ferramentas por estado.
+#
+# Achado ao vivo: a chave do Groq no plano gratuito tem teto de 8.000
+# tokens POR MINUTO no modelo principal, e uma chamada de turno com as 30
+# ferramentas (~7k tokens só de schema) mais o prompt (~3-4k) não cabe em
+# nenhuma. O Mundo Vivo acrescentou 8 ferramentas e um bloco de prompt, e
+# foi o que empurrou o turno para além do teto: todo turno caía no Gemini,
+# que estoura 429 no laço de 6 passos, e a narrativa voltava vazia.
+#
+# Mandar só o que faz sentido no estado atual corta ~40% em combate e
+# ~25% fora dele, e ainda tira do modelo a tentação de `mover` no meio da
+# luta ou `atacar` numa conversa. `_DESPACHO` continua completo — o filtro
+# é só do que o NARRADOR enxerga; `/game/action` chama o que quiser.
+_SO_EM_COMBATE = {
+    "atacar", "investir", "esquivar", "defender", "esconder_se", "fugir",
+    "usar_habilidade", "interagir", "atacar_com_aliado",
+}
+_SO_FORA_DE_COMBATE = {
+    "mover", "descansar", "iniciar_combate", "recrutar_aliado", "concluir_objetivo",
+    "atualizar_missao", "registrar_cena", "registrar_pessoa", "registrar_conflito",
+    "intervir_conflito", "definir_objetivo", "registrar_vinculo", "gastar_ouro",
+    "consultar_regra", "ajustar_reputacao_npc",
+}
+# Decisões do JOGADOR nunca são ferramenta do narrador (o painel e
+# `/game/action` são o único caminho) — mesma regra que a Fase 3 aplica ao
+# level-up.
+_NUNCA_PARA_O_NARRADOR = {"escolher_especializacao"}
+
+
+def tools_para(c_state: CombatState) -> list[dict]:
+    """Subconjunto de `TOOLS_SCHEMA` que o narrador recebe neste turno."""
+    ocultas = _NUNCA_PARA_O_NARRADOR | (_SO_FORA_DE_COMBATE if c_state.ativo else _SO_EM_COMBATE)
+    return [t for t in TOOLS_SCHEMA if t["function"]["name"] not in ocultas]

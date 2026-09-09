@@ -281,6 +281,18 @@ def gerar_cronica(heroi: Personagem, eventos: list[str], chamar_fn: Callable[...
         return "\n\n".join(eventos)
 
 
+def _compacto(obj):
+    """Tira campos vazios ("", [], {}, None) do painel do mundo antes de
+    ele entrar no prompt — Fase 0 do plano "jogo completo": o bloco pesava
+    ~800 tokens com metade em `"lembrancas":[]`, `"pista":""` e afins, e o
+    teto de tokens por minuto do provedor gratuito não perdoa."""
+    if isinstance(obj, dict):
+        return {k: _compacto(v) for k, v in obj.items() if v not in ("", [], {}, None)}
+    if isinstance(obj, list):
+        return [_compacto(v) for v in obj]
+    return obj
+
+
 def montar_contexto(
     heroi: Personagem,
     w_state: WorldState,
@@ -418,9 +430,22 @@ def montar_contexto(
         f"{heroi.classe}: proficiências em {proficiencias_txt}"
     )
 
+    secao_mundo = json.dumps(
+        _compacto(painel_mundo(w_state, heroi.classe, privado=True)), ensure_ascii=False, separators=(",", ":")
+    )
     progressao = painel_progressao(heroi, c_state)
     ficha_tatica = {campo: progressao[campo] for campo in ("estilo", "recurso", "habilidades")}
     cena_tatica = painel_cena(c_state, w_state)
+    # Fase 0 do plano "jogo completo" — técnicas de classe e cenário tático
+    # só fazem sentido com combate ativo (as ferramentas que os usam nem
+    # são enviadas fora dele, ver `tools.tools_para`); fora de combate eram
+    # ~550 tokens de painel de exploração e Foco que o modelo não usa.
+    secao_tatica = (
+        f"[TÉCNICAS DA CLASSE] {json.dumps(ficha_tatica, ensure_ascii=False)}\n"
+        f"    [CENÁRIO INTERATIVO] {json.dumps(cena_tatica, ensure_ascii=False)}"
+        if c_state.ativo
+        else ""
+    )
 
     return f"""
     {secao_tom_mestre(heroi.temperamento_mestre)}
@@ -434,9 +459,9 @@ Alinhamento: {heroi.alinhamento}{historia_resumo}
     [MISSÃO ATUAL] {q_state.nome_missao}: {q_state.objetivo_missao}
     [CENA] {w_state.local} | {w_state.clima} | {motor.periodo_do_dia(w_state.hora_do_dia)}
     [MUNDO PERSISTENTE — INTENÇÕES PRIVADAS NÃO SÃO CONHECIMENTO DO HERÓI]
-    {json.dumps(painel_mundo(w_state, heroi.classe, privado=True), ensure_ascii=False)}
+    {secao_mundo}
     Não há sequência obrigatória de cenas. A missão é um interesse do jogador; aceite partidas,
-    mudanças de lado, objetivos pessoais e soluções imprevistas. Atos legados são só anotações.
+    mudanças de lado, objetivos pessoais e soluções imprevistas.
     Registre cenas com registrar_cena, pessoas com registrar_pessoa e conflitos com registrar_conflito
     ANTES de apresentá-los como reais. Cadastro não apaga alterações nem ressuscita pessoas.
     Ao chegar a local vazio, registre elementos coerentes; não invente recursos para garantir sucesso.
@@ -452,8 +477,7 @@ Alinhamento: {heroi.alinhamento}{historia_resumo}
     Narre resultados reais e nunca reverta uma consequência para salvar uma trama.
     {secao_combate}
 
-    [TÉCNICAS DA CLASSE] {json.dumps(ficha_tatica, ensure_ascii=False)}
-    [CENÁRIO INTERATIVO] {json.dumps(cena_tatica, ensure_ascii=False)}
+    {secao_tatica}
     Se a intenção corresponder a uma técnica, use "usar_habilidade" com o id
     exato e um alvo válido. Respeite nível, Foco e disponibilidade; nunca invente
     técnicas nem efeitos. Use "interagir" com o id de uma interação

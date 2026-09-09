@@ -5,12 +5,27 @@ from collections.abc import Callable
 from app.domain.living_world import ConflitoMundo, EntidadeCena, PessoaMundo
 from app.services import living_world as mundo
 
+# Chaves que só o Pydantic usa — o servidor revalida tudo com o modelo de
+# verdade em `registrar_*`, então mandá-las ao LLM é só custo de token
+# (Fase 0 do plano "jogo completo": o teto de tokens por minuto do provedor
+# gratuito fez cada byte de schema contar).
+_SO_PYDANTIC = {"$defs", "title", "default", "maxLength", "minLength", "maximum", "minimum", "pattern", "maxItems"}
+# Campos que o SERVIDOR preenche ou zera no registro (`registrar_pessoa`
+# reseta memória e clampa confiança; relógios e descobertas são estado de
+# jogo) — o narrador não decide nenhum deles, então não os enxerga.
+_CAMPOS_DO_SERVIDOR = {
+    "segredo_revelado", "confianca", "lembrancas", "promessas",  # PessoaMundo
+    "progresso", "proximo_avanco", "estado_relogio", "intervencoes", "desfecho",  # ConflitoMundo
+    "descoberto", "bloqueado_por", "recolhido",  # EntidadeCena
+    "turno",  # Conhecimento
+}
+
 
 def _expandir(schema: dict, raiz: dict | None = None) -> dict:
     raiz = raiz or schema
     if "$ref" in schema:
         return _expandir(raiz["$defs"][schema["$ref"].split("/")[-1]], raiz)
-    return {
+    saida = {
         k: (
             _expandir(v, raiz)
             if isinstance(v, dict)
@@ -19,8 +34,21 @@ def _expandir(schema: dict, raiz: dict | None = None) -> dict:
             else v
         )
         for k, v in schema.items()
-        if k not in {"$defs", "title"}
+        if k not in _SO_PYDANTIC
     }
+    propriedades = saida.get("properties")
+    if isinstance(propriedades, dict):
+        propriedades = {k: v for k, v in propriedades.items() if k not in _CAMPOS_DO_SERVIDOR}
+        saida["properties"] = propriedades
+        obrigatorios = saida.get("required")
+        if isinstance(obrigatorios, list):
+            saida["required"] = [k for k in obrigatorios if k in propriedades]
+    # `anyOf: [{type: X}, {type: null}]` (Optional) vira só `type: X`
+    if isinstance(saida.get("anyOf"), list):
+        tipos = [o for o in saida["anyOf"] if o.get("type") != "null"]
+        if len(tipos) == 1:
+            saida = {**{k: v for k, v in saida.items() if k != "anyOf"}, **tipos[0]}
+    return saida
 
 
 def _tool(nome, descricao, propriedades, obrigatorios):

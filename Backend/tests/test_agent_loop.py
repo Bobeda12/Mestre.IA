@@ -421,3 +421,76 @@ def test_stream_limite_de_passos_estourado_gera_evento_de_erro():
     assert eventos[-1].tipo == "erro"
     assert "perdeu o fio" in eventos[-1].dados
     assert fake.chamadas == 3
+
+
+def test_tools_recebidas_sao_repassadas_ao_modelo():
+    # Fase 0 do plano "jogo completo" — o router filtra as ferramentas por
+    # estado; o laço precisa mandar exatamente o que recebeu.
+    vistas = []
+
+    from types import SimpleNamespace
+
+    def fake(msgs, tools=None, tool_choice="auto"):
+        vistas.append(tools)
+        mensagem = SimpleNamespace(content="Fim.", tool_calls=None)
+        return SimpleNamespace(choices=[SimpleNamespace(message=mensagem)])
+
+    subconjunto = [{"type": "function", "function": {"name": "so_esta", "parameters": {}}}]
+    agent_loop.executar_turno([], FakeExecutor({}), chamar_fn=fake, tools=subconjunto)
+    assert vistas == [subconjunto]
+
+
+def test_narrador_indisponivel_depois_de_ferramenta_nao_perde_o_turno():
+    # Fase 0 do plano "jogo completo" — achado ao vivo: a 1ª chamada passa e
+    # chama a ferramenta, a 2ª (narrar) morre em 429. O turno segue só com o
+    # juiz em vez de ser descartado.
+    roteiro = iter([_RespostaFalsa(_MensagemFalsa(tool_calls=[_ToolCallFalso("t1", "mover", '{"destino": "X"}')]))])
+
+    def fake(msgs, tools=None, tool_choice="auto"):
+        try:
+            return next(roteiro)
+        except StopIteration:
+            raise ErroMestre("todos os modelos falharam") from None
+
+    executor = FakeExecutor({"mover": ({"local": "X"}, True)})
+    narrativa, eventos, chamadas = agent_loop.executar_turno([], executor, chamar_fn=fake)
+    assert eventos == ["evento de mover"]
+    assert narrativa == agent_loop.NARRATIVA_SEM_VOZ
+    assert [c.nome for c in chamadas] == ["mover"]
+
+
+def test_narrador_indisponivel_na_primeira_chamada_continua_sendo_erro():
+    import pytest
+
+    def fake(msgs, tools=None, tool_choice="auto"):
+        raise ErroMestre("todos os modelos falharam")
+
+    with pytest.raises(ErroMestre):
+        agent_loop.executar_turno([], FakeExecutor({}), chamar_fn=fake)
+
+
+def test_stream_narrador_indisponivel_depois_de_ferramenta_vira_token_nao_erro():
+    tc = _DeltaToolCallFalso(0, id="t1", name="mover", arguments='{"destino": "X"}')
+    fake = _StreamLLMFalso([[_ChunkFalso(_DeltaFalso(tool_calls=[tc]))], ErroMestre("todos falharam")])
+    executor = FakeExecutor({"mover": ({"local": "X"}, True)})
+    eventos = list(agent_loop.executar_turno_stream([], executor, chamar_fn=fake))
+    assert all(e.tipo != "erro" for e in eventos)
+    assert eventos[-1].tipo == "token" and eventos[-1].dados == agent_loop.NARRATIVA_SEM_VOZ
+
+
+def test_resposta_vazia_sem_ferramenta_e_erro_nao_turno_vazio():
+    import pytest
+
+    fake = _LLMFalso([_MensagemFalsa(content="")])
+    with pytest.raises(ErroMestre):
+        agent_loop.executar_turno([], FakeExecutor({}), chamar_fn=fake)
+
+
+def test_resposta_vazia_depois_de_ferramenta_degrada_para_o_juiz():
+    fake = _LLMFalso([
+        _MensagemFalsa(tool_calls=[_ToolCallFalso("t1", "mover", '{"destino": "X"}')]),
+        _MensagemFalsa(content="   "),
+    ])
+    executor = FakeExecutor({"mover": ({"local": "X"}, True)})
+    narrativa, eventos, chamadas = agent_loop.executar_turno([], executor, chamar_fn=fake)
+    assert narrativa == agent_loop.NARRATIVA_SEM_VOZ and eventos == ["evento de mover"]

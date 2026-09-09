@@ -268,3 +268,16 @@ def test_registrar_pessoa_com_raca_desconhecida_cai_em_humano(executor):
     )
     assert valido
     assert executor.w_state.mundo.pessoas["ferreira"].raca == "Anão"
+
+
+def test_registrar_pessoa_com_mesmo_nome_no_mesmo_local_nao_duplica(executor):
+    # Achado ao vivo — o modelo recadastrou um NPC da origem com outro id.
+    existente = next(iter(executor.w_state.mundo.pessoas.values()))
+    antes = len(executor.w_state.mundo.pessoas)
+    resultado, valido = agir(
+        executor, "registrar_pessoa",
+        pessoa={"id": "outro-id", "nome": existente.nome.upper(), "local": executor.w_state.local,
+                "objetivo": "qualquer coisa"},
+    )
+    assert valido and resultado["existente"] is True and resultado["id"] == existente.id
+    assert len(executor.w_state.mundo.pessoas) == antes

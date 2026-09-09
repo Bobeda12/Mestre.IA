@@ -5,6 +5,7 @@ ida e volta com o modelo e o despacho de ferramentas via `tools.ToolExecutor`
 — zero regra de jogo aqui, isso é `rules_engine.py`/`combat.py`."""
 
 import json
+import logging
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from typing import Any, Literal, Protocol
@@ -12,6 +13,21 @@ from typing import Any, Literal, Protocol
 from app.domain.eventos import EventoRolagem
 from app.infra.llm_client import ErroMestre, chamar_com_fallback, chamar_stream_com_fallback
 from app.services.tools import TOOLS_SCHEMA
+
+logger = logging.getLogger(__name__)
+
+# Fase 0 do plano "jogo completo" (08/09/2026) — degradação honesta. Achado
+# ao vivo com as chaves gratuitas do autor: a PRIMEIRA chamada do turno
+# passa (o modelo escolhe a ferramenta certa — rolar_teste, mover,
+# iniciar_combate), o juiz resolve, e a SEGUNDA chamada, a que narra, morre
+# em 429 nos dois provedores (teto de tokens por minuto). Antes, o turno
+# inteiro era descartado (rollback) e o jogador via "erro" com o mundo
+# intacto — a ação que o dado já tinha decidido sumia. Agora, se pelo
+# menos uma ferramenta rodou, o turno termina com esta linha no lugar da
+# prosa e os eventos do juiz: o estado persiste, o jogador vê o que
+# aconteceu, e a tese do projeto ("o juiz não precisa do narrador para
+# funcionar") vira comportamento observável, não frase de ADR.
+NARRATIVA_SEM_VOZ = "O mestre engole as palavras por um instante. O mundo, não:"
 
 
 def _extra_content(obj: Any) -> dict | None:
@@ -52,6 +68,7 @@ def executar_turno(
     executor: ExecutorFerramentas,
     max_passos: int = 6,
     chamar_fn: Callable[..., Any] | None = None,
+    tools: list[dict] | None = None,
 ) -> tuple[str, list[str], list[ChamadaFerramenta]]:
     """Devolve (narrativa final, eventos das ferramentas, chamadas feitas).
     `msgs` é mutado (mensagens de assistant/tool são anexadas) — é uma lista
@@ -69,13 +86,34 @@ def executar_turno(
     default vinculado no cabeçalho capturaria a função original na
     definição do módulo, antes de qualquer monkeypatch."""
     chamar_fn = chamar_fn or chamar_com_fallback
+    # `tools` (Fase 0 do plano "jogo completo"): o router passa
+    # `tools.tools_para(c_state)` — só as ferramentas do estado atual, por
+    # causa do teto de tokens por minuto do provedor. `None` = todas
+    # (evals e testes antigos).
+    tools = TOOLS_SCHEMA if tools is None else tools
     chamadas: list[ChamadaFerramenta] = []
 
     for _passo in range(max_passos):
-        resp = chamar_fn(msgs, tools=TOOLS_SCHEMA, tool_choice="auto")
+        try:
+            resp = chamar_fn(msgs, tools=tools, tool_choice="auto")
+        except ErroMestre:
+            if not chamadas:
+                raise
+            logger.warning("narrador indisponível após %d ferramenta(s); turno segue só com o juiz", len(chamadas))
+            return NARRATIVA_SEM_VOZ, executor.eventos, chamadas
         mensagem = resp.choices[0].message
 
         if not mensagem.tool_calls:
+            texto = (mensagem.content or "").strip()
+            if not texto:
+                # Achado ao vivo (Fase 0 do plano "jogo completo"): um modelo
+                # de fallback devolveu 200 com conteúdo vazio e nenhuma
+                # ferramenta — isso virava um turno vazio persistido. Vazio
+                # é falha do narrador, não narração.
+                if chamadas:
+                    logger.warning("modelo devolveu resposta vazia após %d ferramenta(s)", len(chamadas))
+                    return NARRATIVA_SEM_VOZ, executor.eventos, chamadas
+                raise ErroMestre("O mestre ficou em silêncio — tente de novo em instantes.")
             return mensagem.content or "", executor.eventos, chamadas
 
         msgs.append(
@@ -102,6 +140,10 @@ def executar_turno(
 
         for tc in mensagem.tool_calls:
             resultado, sucesso = executor.executar(tc.function.name, tc.function.arguments)
+            logger.info(
+                "ferramenta passo=%d nome=%s ok=%s args=%s", _passo + 1, tc.function.name, sucesso,
+                (tc.function.arguments or "")[:160],
+            )
             chamadas.append(ChamadaFerramenta(tc.function.name, tc.function.arguments, sucesso))
             msgs.append({"role": "tool", "tool_call_id": tc.id, "content": json.dumps(resultado, ensure_ascii=False)})
 
@@ -130,6 +172,7 @@ def executar_turno_stream(
     executor: ExecutorFerramentas,
     max_passos: int = 6,
     chamar_fn: Callable[..., Any] | None = None,
+    tools: list[dict] | None = None,
 ) -> Iterator[EventoStream]:
     """Mesma orquestração de `executar_turno` (chame ferramentas até
     terminar, ou até `max_passos`), em streaming (Etapa 7, ADR-0012) — não
@@ -142,13 +185,15 @@ def executar_turno_stream(
     ainda em montagem não interessa ao jogador, só o resultado final dela
     (o "tool_event", emitido depois que `executor.executar` já rodou)."""
     chamar_fn = chamar_fn or chamar_stream_com_fallback
+    tools = TOOLS_SCHEMA if tools is None else tools
+    ferramentas_rodaram = 0
 
     for _passo in range(max_passos):
         conteudo = ""
         chamadas_parciais: dict[int, dict[str, Any]] = {}
 
         try:
-            for chunk in chamar_fn(msgs, tools=TOOLS_SCHEMA, tool_choice="auto"):
+            for chunk in chamar_fn(msgs, tools=tools, tool_choice="auto"):
                 delta = chunk.choices[0].delta
                 if delta.content:
                     conteudo += delta.content
@@ -168,6 +213,14 @@ def executar_turno_stream(
                     if extra:
                         slot["extra"] = extra
         except ErroMestre as e:
+            if ferramentas_rodaram:
+                # Mesma degradação do `executar_turno` síncrono (ver
+                # `NARRATIVA_SEM_VOZ`): o juiz já resolveu, o turno persiste.
+                logger.warning(
+                    "narrador indisponível após %d ferramenta(s); turno segue só com o juiz", ferramentas_rodaram
+                )
+                yield EventoStream("token", NARRATIVA_SEM_VOZ)
+                return
             yield EventoStream("erro", e.mensagem)
             return
 
@@ -196,6 +249,11 @@ def executar_turno_stream(
         for slot in chamadas_parciais.values():
             len_antes = len(executor.eventos)
             resultado, _sucesso = executor.executar(slot["nome"], slot["args"])
+            ferramentas_rodaram += 1
+            logger.info(
+                "ferramenta passo=%d nome=%s ok=%s args=%s",
+                _passo + 1, slot["nome"], _sucesso, (slot["args"] or "")[:160],
+            )
             for evento in executor.eventos[len_antes:]:
                 if isinstance(evento, EventoRolagem) and evento.dados is not None:
                     yield EventoStream("tool_event", {"texto": str(evento), **evento.dados.to_dict()})

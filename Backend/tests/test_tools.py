@@ -830,3 +830,27 @@ class TestExecutar:
         resultado, sucesso = _executor(rng=RngFixo([10])).executar("gastar_ouro", '{"qtd": 3}')
         assert sucesso is True
         assert resultado["ouro_restante"] == 7
+
+
+class TestToolsPorEstado:
+    # Fase 0 do plano "jogo completo" — o narrador só recebe as ferramentas
+    # do estado atual (teto de tokens por minuto do provedor gratuito).
+    def _nomes(self, c_state):
+        from app.services.tools import tools_para
+        return {t["function"]["name"] for t in tools_para(c_state)}
+
+    def test_em_combate_nao_ve_mover_nem_registrar_cena(self):
+        nomes = self._nomes(CombatState(ativo=True))
+        assert "atacar" in nomes and "fugir" in nomes and "usar_item" in nomes and "aplicar_dano" in nomes
+        assert "agir_no_mundo" in nomes  # negociar no meio da luta continua possível
+        assert not {"mover", "descansar", "registrar_cena", "iniciar_combate"} & nomes
+
+    def test_fora_de_combate_nao_ve_atacar(self):
+        nomes = self._nomes(CombatState(ativo=False))
+        assert {"mover", "registrar_cena", "registrar_pessoa", "iniciar_combate", "rolar_teste"} <= nomes
+        assert not {"atacar", "esquivar", "fugir", "usar_habilidade", "atacar_com_aliado"} & nomes
+
+    def test_decisao_do_jogador_nunca_e_ferramenta_do_narrador(self):
+        for ativo in (True, False):
+            assert "escolher_especializacao" not in self._nomes(CombatState(ativo=ativo))
+        assert "escolher_especializacao" in ToolExecutor._DESPACHO  # a rota /game/action continua servida

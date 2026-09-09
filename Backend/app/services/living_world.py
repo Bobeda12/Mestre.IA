@@ -145,6 +145,18 @@ def registrar_pessoa(executor: "ToolExecutor", pessoa: dict) -> dict:
     mundo = executor.w_state.mundo
     if npc.id in mundo.pessoas:
         return {"existente": True, "aviso": "Memória e personalidade preservadas; use ações para mudar relações."}
+    # Achado ao vivo (Fase 0 do plano "jogo completo"): o modelo registrou
+    # o mesmo NPC da origem com outro id ("ravi" vs "responsavel") e ele
+    # apareceu duas vezes no painel. Nome igual no mesmo local é a mesma
+    # pessoa — a existente vence, com as relações que já conquistou.
+    nome_normalizado = npc.nome.strip().lower()
+    repetida = next(
+        (p for p in mundo.pessoas.values() if p.nome.strip().lower() == nome_normalizado and p.local == npc.local),
+        None,
+    )
+    if repetida is not None:
+        aviso = f"{repetida.nome} já está registrada como '{repetida.id}'."
+        return {"existente": True, "id": repetida.id, "aviso": aviso}
     if len(mundo.pessoas) >= 100 or npc.local != executor.w_state.local:
         return {"erro": "Apresente pessoas apenas no local atual; limite de 100 por campanha."}
     # O cadastro cria a pessoa, não resultados de ações ou relações conquistadas.

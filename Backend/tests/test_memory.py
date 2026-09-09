@@ -219,3 +219,18 @@ class TestAtualizarResumoRolante:
         assert atualizou is True
         assert len(chamadas) == 1
         assert "resumo via chave do jogador" in heroi.resumo_rolante["fatos_estabelecidos"]
+
+
+def test_contexto_recente_manda_so_role_e_content_ao_modelo():
+    # Fase 0 do plano "jogo completo" — o Groq rejeita chaves extras na
+    # mensagem (`opcoes` do prólogo); só o contrato da API vai ao modelo.
+    from app.services.memory import contexto_recente
+
+    historico = [
+        {"role": "assistant", "content": "Prólogo.", "opcoes": ["a", "b"]},
+        {"role": "user", "content": "Olho ao redor.", "turno_index": 3},
+    ]
+    assert contexto_recente(historico, n=4) == [
+        {"role": "assistant", "content": "Prólogo."},
+        {"role": "user", "content": "Olho ao redor."},
+    ]
