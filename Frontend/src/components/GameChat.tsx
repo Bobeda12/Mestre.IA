@@ -29,17 +29,17 @@ import LevelUpModal from './LevelUpModal';
 import ArcoDesfechoOverlay from './ArcoDesfechoOverlay';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip';
 import HudPersonagem from './HudPersonagem';
-import CabecalhoRegiao from './CabecalhoRegiao';
 import PixelTooltip from './PixelTooltip';
 import DetalheMonstroModal from './DetalheMonstroModal';
 import GuiaAventureiro from './GuiaAventureiro';
 import Palco from './jogo/Palco';
+import HudBarra from './jogo/HudBarra';
 import DockAcoes from './jogo/DockAcoes';
 import AbaJornada from './jogo/AbaJornada';
 import AbaRelacoes from './jogo/AbaRelacoes';
 import BalcaoMercador from './jogo/BalcaoMercador';
 import type { AliadoVisual, ArcoAtual, ArcoEncerrado, AcaoDireta, Cena, InimigoVisual, Progressao, MundoPersistente, Equipamento, ItemInfo, Selecao } from '../lib/gameplay';
-import { alvoValido } from '../lib/gameplay';
+import { alvoValido, periodoDoDia } from '../lib/gameplay';
 
 // Etapa 14 (revisão) — a ficha virou menu de abas estilo JRPG. Antes tudo
 // (retrato, barras, atributos, missão, inventário) era uma pilha só numa
@@ -62,18 +62,6 @@ const ABAS = [
 // e os botões perto de setConfigAberta/setManualAberto mais abaixo.
 
 type AbaFicha = (typeof ABAS)[number]['id'];
-
-// Pendência do remaster UX resolvida (PLANO_REMASTER_UX.md, item 2) —
-// espelha `rules_engine.periodo_do_dia` (Backend/app/services/
-// rules_engine.py): mesmos limiares, só que do lado que exibe, não do que
-// decide. `w_state.hora_do_dia` é a fonte da verdade; isto só traduz.
-function periodoDoDia(hora: number): string {
-  const h = ((hora % 24) + 24) % 24;
-  if (h < 6) return 'madrugada';
-  if (h < 12) return 'manhã';
-  if (h < 18) return 'tarde';
-  return 'noite';
-}
 
 // Ordem e siglas dos atributos, na mesma sequência da ficha de criação.
 const ATRIBUTOS = [
@@ -1154,7 +1142,7 @@ export default function GameChat() {
           {/* Item 1 da rodada de polish pós-remaster — "a barra lateral deve
               concentrar tudo do herói": retrato + nome + HP/XP/Ouro (com
               barras) juntos, extraídos pra HudPersonagem.tsx. Local/Clima
-              saiu daqui (foi pro topo central, CabecalhoRegiao.tsx). */}
+              saiu daqui (foi pro topo central, jogo/HudBarra.tsx). */}
           <HudPersonagem
               charName={charName}
               charRace={charRace}
@@ -1448,66 +1436,27 @@ export default function GameChat() {
           ficava visível sem escurecer ao lado da ficha. */}
       <div className={`flex-1 min-w-0 flex flex-col min-h-0 relative bg-[#050505] ${horaDoDia != null ? `periodo-${periodoDoDia(horaDoDia).replace('ã', 'a')}` : ''}`}>
         {/* Item 1+2 da rodada de polish pós-remaster — a faixa antiga de
-            vitais (HP/nível/defesa) virou CabecalhoRegiao.tsx (Local/Clima
+            vitais (HP/nível/defesa) virou jogo/HudBarra.tsx (Local/Clima
             + pílula de HP compacta): HP/XP/Ouro detalhados agora moram na
             sidebar (HudPersonagem.tsx), mas a pílula de HP continua fora
             dela — decisão de HUD híbrido aprovada com o usuário, porque no
             mobile a ficha é `fixed` e cobre a tela inteira: sem uma pílula
             aqui, fechar a ficha durante combate apagaria a vida da tela. */}
-        <div className="shrink-0 flex items-center gap-1 px-2 pt-2 bg-black/60">
-            {/* Rodada de conserto — o HUD de combate (antes `absolute`)
-                cobria este botão inteiro em combate, deixando o jogador sem
-                gesto nenhum pra reabrir a ficha; corrigido tirando o HUD do
-                posicionamento absoluto. Uma tentativa anterior desta mesma
-                correção deixava o botão SEMPRE visível (mesmo com a ficha
-                aberta) — no mobile, com a gaveta aberta, a faixa de vitais
-                fica espremida numa fatia estreita ao lado dela E por baixo
-                do fundo escurecido (mesmo z-index da faixa, maior que o
-                dela): o botão ficava semi-invisível e o clique caía no
-                fundo, fechando a ficha em vez de abrir configurações. Só
-                aparece com a ficha FECHADA — quando ela está aberta, os
-                mesmos botões já existem no cabeçalho da própria ficha. */}
-            {!showSidebar && (
-                <button
-                    onClick={() => setShowSidebar(true)}
-                    aria-label="Abrir ficha do personagem"
-                    className="shrink-0 p-1 border-2 border-gray-700 hover:border-rpg-gold text-gray-300 hover:text-rpg-gold transition-colors focus-visible:outline-none focus-visible:border-rpg-gold"
-                ><PixelIcon name="menu" size={16}/></button>
-            )}
-            {!showSidebar && (
-                <button
-                    onClick={() => setManualAberto(true)}
-                    aria-label="Abrir manual do jogo"
-                    title="Manual do Jogo"
-                    className="shrink-0 p-1 border-2 border-gray-700 hover:border-rpg-gold text-gray-300 hover:text-rpg-gold transition-colors focus-visible:outline-none focus-visible:border-rpg-gold"
-                ><PixelIcon name="dado" size={16}/></button>
-            )}
-            {!showSidebar && (
-                <button
-                    onClick={() => setGuiaAberto(true)}
-                    aria-label="Abrir guia do aventureiro"
-                    title="Guia do Aventureiro"
-                    className="shrink-0 w-[26px] h-[26px] flex items-center justify-center border-2 border-gray-700 hover:border-rpg-gold font-pixel-title text-[9px] text-gray-300 hover:text-rpg-gold transition-colors focus-visible:outline-none focus-visible:border-rpg-gold"
-                >?</button>
-            )}
-            {!showSidebar && (
-                <button
-                    onClick={() => setConfigAberta(true)}
-                    aria-label="Abrir configurações"
-                    title="Configurações"
-                    className="shrink-0 p-1 border-2 border-gray-700 hover:border-rpg-gold text-gray-300 hover:text-rpg-gold transition-colors focus-visible:outline-none focus-visible:border-rpg-gold"
-                ><PixelIcon name="config" size={16}/></button>
-            )}
-        </div>
-        <CabecalhoRegiao
-            localAtual={localAtual}
-            climaAtual={climaAtual}
-            horaDoDia={horaDoDia}
-            periodoDoDia={periodoDoDia}
+        <HudBarra
+            showSidebar={showSidebar}
+            setShowSidebar={setShowSidebar}
+            setManualAberto={setManualAberto}
+            setGuiaAberto={setGuiaAberto}
+            setConfigAberta={setConfigAberta}
             hpAtual={hpAtual}
             hpMax={hpMax}
             wasDamaged={wasDamaged}
             flutuantesHeroiHp={flutuantesHeroi.filter(f => f.alvo === 'hp')}
+            foco={progressao?.recurso}
+            nivel={nivel}
+            localAtual={localAtual}
+            climaAtual={climaAtual}
+            horaDoDia={horaDoDia}
         />
 
         {/* Convite pra reivindicar (Etapa 10, A-1) — aparece só pro

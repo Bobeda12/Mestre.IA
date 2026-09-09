@@ -138,3 +138,13 @@ export interface Selecao { tipo: 'inimigo' | 'pessoa' | 'objeto'; id: string }
 
 /** Sentinela do backend (`domain/living_world.SAIDA_LIVRE`): saída sem destino fixo. */
 export const SAIDA_LIVRE = 'Estrada livre';
+
+/** Fase 6 (ADR-0036) — espelha `rules_engine.periodo_do_dia` (Backend): mesmos
+ *  limiares, só que do lado que exibe, não do que decide. Usado por HudBarra. */
+export function periodoDoDia(hora: number): string {
+  const h = ((hora % 24) + 24) % 24;
+  if (h < 6) return 'madrugada';
+  if (h < 12) return 'manhã';
+  if (h < 18) return 'tarde';
+  return 'noite';
+}

@@ -11,7 +11,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/t
 // remaster (PixelActionCard.tsx, SistemaFeedbackToast.tsx,
 // StatusEffectIcons.tsx). Retrato + nome + HP/XP/Ouro (com barras) no lugar
 // do card de retrato antigo da sidebar — Local/Clima saiu daqui pro topo
-// central (CabecalhoRegiao.tsx), e uma pílula compacta só de HP continua
+// central (jogo/HudBarra.tsx), e uma pílula compacta só de HP continua
 // visível fora da ficha (inline em GameChat.tsx), pro combate no mobile não
 // perder a vida de vista quando a ficha fecha (decisão de HUD híbrido,
 // aprovada com o usuário — ver o comentário em GameChat.tsx:1347 que
