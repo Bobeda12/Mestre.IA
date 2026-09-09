@@ -1,25 +1,37 @@
 {
   "Nivel_1": {
     "Goblin": {
-      "hp": 7, "ac": 15, "forca": 8, "destreza": 14,
+      "hp": 7,
+      "ac": 15,
+      "forca": 8,
+      "destreza": 14,
       "ataque": "Cimitarra (+4 para acertar, 1d6+2 dano)",
       "comportamento": "Covarde. Ataca e foge (Ação Ardilosa).",
       "xp": 50
     },
     "Esqueleto": {
-      "hp": 13, "ac": 13, "forca": 10, "destreza": 14,
+      "hp": 13,
+      "ac": 13,
+      "forca": 10,
+      "destreza": 14,
       "ataque": "Espada Curta (+4 para acertar, 1d6+2 dano)",
       "comportamento": "Mente vazia. Segue ordens até ser destruído.",
       "xp": 50
     },
     "Lobo": {
-      "hp": 11, "ac": 13, "forca": 12, "destreza": 15,
+      "hp": 11,
+      "ac": 13,
+      "forca": 12,
+      "destreza": 15,
       "ataque": "Mordida (+4 para acertar, 2d4+2 dano)",
       "comportamento": "Alcatéia. Ganha vantagem se tiver aliado perto.",
       "xp": 50
     },
     "Kobold": {
-      "hp": 5, "ac": 12, "forca": 7, "destreza": 15,
+      "hp": 5,
+      "ac": 12,
+      "forca": 7,
+      "destreza": 15,
       "ataque": "Adaga (+4 para acertar, 1d4+2 dano)",
       "comportamento": "Ataca em grupo. Foge se estiver sozinho.",
       "xp": 25
@@ -27,19 +39,28 @@
   },
   "Nivel_2": {
     "Orc": {
-      "hp": 15, "ac": 13, "forca": 16, "destreza": 12,
+      "hp": 15,
+      "ac": 13,
+      "forca": 16,
+      "destreza": 12,
       "ataque": "Machado Grande (+5 para acertar, 1d12+3 dano)",
       "comportamento": "Agressivo. Avança e ataca sem hesitar.",
       "xp": 100
     },
     "Aranha Gigante": {
-      "hp": 18, "ac": 14, "forca": 14, "destreza": 16,
+      "hp": 18,
+      "ac": 14,
+      "forca": 14,
+      "destreza": 16,
       "ataque": "Mordida Venenosa (+5 para acertar, 2d6+3 dano)",
       "comportamento": "Emboscada. Ataca de surpresa a partir de uma teia; recua se ferida.",
       "xp": 100
     },
     "Capitão Bandido": {
-      "hp": 16, "ac": 14, "forca": 12, "destreza": 14,
+      "hp": 16,
+      "ac": 14,
+      "forca": 12,
+      "destreza": 14,
       "ataque": "Espada Curta (+4 para acertar, 1d6+2 dano)",
       "comportamento": "Calculista. Foge se estiver em desvantagem numérica.",
       "xp": 100
@@ -47,19 +68,28 @@
   },
   "Nivel_3": {
     "Ogro": {
-      "hp": 34, "ac": 11, "forca": 19, "destreza": 8,
+      "hp": 34,
+      "ac": 11,
+      "forca": 19,
+      "destreza": 8,
       "ataque": "Porrete Grande (+6 para acertar, 2d8+4 dano)",
       "comportamento": "Bruto simples. Ataca o alvo mais próximo, sem tática.",
       "xp": 200
     },
     "Harpia": {
-      "hp": 21, "ac": 12, "forca": 12, "destreza": 13,
+      "hp": 21,
+      "ac": 12,
+      "forca": 12,
+      "destreza": 13,
       "ataque": "Garras (+5 para acertar, 2d4+2 dano)",
       "comportamento": "Cruel. Sobrevoa e ataca alvos feridos primeiro.",
       "xp": 200
     },
     "Múmia": {
-      "hp": 30, "ac": 14, "forca": 16, "destreza": 8,
+      "hp": 30,
+      "ac": 14,
+      "forca": 16,
+      "destreza": 8,
       "ataque": "Punho Amaldiçoado (+5 para acertar, 2d6+3 dano)",
       "comportamento": "Implacável. Nunca recua, avança devagar e sem pressa.",
       "xp": 200
@@ -67,27 +97,175 @@
   },
   "Nivel_4": {
     "Troll": {
-      "hp": 48, "ac": 15, "forca": 18, "destreza": 13,
+      "hp": 48,
+      "ac": 15,
+      "forca": 18,
+      "destreza": 13,
       "ataque": "Garras (+7 para acertar, 2d6+4 dano)",
       "comportamento": "Regenera. Volta a atacar mesmo gravemente ferido.",
       "xp": 400
     },
     "Espectro": {
-      "hp": 32, "ac": 12, "forca": 6, "destreza": 13,
+      "hp": 32,
+      "ac": 12,
+      "forca": 6,
+      "destreza": 13,
       "ataque": "Toque Drenante (+6 para acertar, 3d6 dano)",
       "comportamento": "Etéreo. Ignora terreno, ataca e some entre os turnos.",
       "xp": 400
     }
   },
+  "Nivel_5": {
+    "Gnoll Líder": {
+      "hp": 36,
+      "ac": 15,
+      "forca": 16,
+      "destreza": 14,
+      "ataque": "Machado Gnoll (+5 para acertar, 2d6+3 dano)",
+      "comportamento": "Matilha. Comanda os outros; ganha vantagem se tiver aliado perto.",
+      "xp": 450
+    },
+    "Urso-Coruja": {
+      "hp": 42,
+      "ac": 13,
+      "forca": 20,
+      "destreza": 12,
+      "ataque": "Bico e Garras (+6 para acertar, 2d6+3 dano)",
+      "comportamento": "Fúria cega. Ataca o alvo mais próximo, nunca recua.",
+      "xp": 700
+    },
+    "Carniçal Cinzento": {
+      "hp": 34,
+      "ac": 12,
+      "forca": 13,
+      "destreza": 15,
+      "ataque": "Garras Paralisantes (+5 para acertar, 2d6+2 dano)",
+      "comportamento": "Faminto. Ataca os feridos primeiro.",
+      "xp": 450
+    }
+  },
+  "Nivel_6": {
+    "Wight": {
+      "hp": 42,
+      "ac": 14,
+      "forca": 15,
+      "destreza": 14,
+      "ataque": "Espada Longa Drenante (+6 para acertar, 2d8+2 dano)",
+      "comportamento": "Frio e calculista. Recua para as sombras quando ferido.",
+      "xp": 700
+    },
+    "Minotauro": {
+      "hp": 48,
+      "ac": 14,
+      "forca": 18,
+      "destreza": 11,
+      "ataque": "Machado Grande (+6 para acertar, 2d8+3 dano)",
+      "comportamento": "Investida. Avança com tudo; nunca recua.",
+      "xp": 700
+    },
+    "Manticora": {
+      "hp": 46,
+      "ac": 14,
+      "forca": 17,
+      "destreza": 16,
+      "ataque": "Espinhos da Cauda (+5 para acertar, 2d6+3 dano)",
+      "comportamento": "Predadora. Ataca de longe e recua quando abaixo de 30% de HP.",
+      "xp": 700
+    }
+  },
+  "Nivel_7": {
+    "Elemental de Fogo": {
+      "hp": 52,
+      "ac": 13,
+      "forca": 10,
+      "destreza": 17,
+      "ataque": "Toque Ardente (+6 para acertar, 2d6+4 dano)",
+      "comportamento": "Incendiário. Ignora terreno; ataca quem estiver mais perto.",
+      "xp": 1100
+    },
+    "Cavaleiro Negro": {
+      "hp": 50,
+      "ac": 16,
+      "forca": 18,
+      "destreza": 11,
+      "ataque": "Espada Longa (+7 para acertar, 2d8+3 dano)",
+      "comportamento": "Disciplinado. Defende quando ferido, ataca quando o alvo hesita.",
+      "xp": 1100
+    },
+    "Gigante da Colina": {
+      "hp": 62,
+      "ac": 13,
+      "forca": 21,
+      "destreza": 8,
+      "ataque": "Clava Gigante (+7 para acertar, 2d10+4 dano)",
+      "comportamento": "Bruto lento. Ataca o maior alvo; nunca recua.",
+      "xp": 1800
+    }
+  },
+  "Nivel_8": {
+    "Vampiro Jovem": {
+      "hp": 58,
+      "ac": 15,
+      "forca": 18,
+      "destreza": 18,
+      "ataque": "Garras (+7 para acertar, 2d8+3 dano)",
+      "comportamento": "Sedutor e cruel. Ataca os feridos; some entre os turnos.",
+      "xp": 1800
+    },
+    "Hidra Menor": {
+      "hp": 66,
+      "ac": 15,
+      "forca": 20,
+      "destreza": 12,
+      "ataque": "Mordidas (+7 para acertar, 2d10+4 dano)",
+      "comportamento": "Regenera. Volta a atacar mesmo gravemente ferida.",
+      "xp": 2300
+    },
+    "Golem de Pedra": {
+      "hp": 64,
+      "ac": 15,
+      "forca": 22,
+      "destreza": 9,
+      "ataque": "Punho de Pedra (+8 para acertar, 2d10+4 dano)",
+      "comportamento": "Mente vazia. Segue ordens até ser destruído.",
+      "xp": 2300
+    }
+  },
+  "Chefe_Elite": {
+    "Lich Menor": {
+      "hp": 72,
+      "ac": 16,
+      "forca": 11,
+      "destreza": 16,
+      "ataque": "Toque Gélido (+8 para acertar, 3d8+3 dano)",
+      "comportamento": "Calculista. Recua para as sombras quando abaixo de 30% de HP.",
+      "xp": 3000
+    },
+    "Dragão Adulto Jovem": {
+      "hp": 88,
+      "ac": 18,
+      "forca": 23,
+      "destreza": 10,
+      "ataque": "Presas e Fogo (+9 para acertar, 3d10+4 dano)",
+      "comportamento": "Territorial. Recua para o ar quando abaixo de 30% de HP e ataca de longe.",
+      "xp": 3900
+    }
+  },
   "Chefe": {
     "Bugbear": {
-      "hp": 27, "ac": 16, "forca": 15, "destreza": 14,
+      "hp": 27,
+      "ac": 16,
+      "forca": 15,
+      "destreza": 14,
       "ataque": "Maça Estrela (+4 para acertar, 2d8+2 dano)",
       "comportamento": "Brutal. Tenta matar com um golpe surpresa.",
       "xp": 200
     },
     "Dragão Jovem": {
-      "hp": 78, "ac": 18, "forca": 19, "destreza": 10,
+      "hp": 78,
+      "ac": 18,
+      "forca": 19,
+      "destreza": 10,
       "ataque": "Garras e Presas (+8 para acertar, 2d10+4 dano)",
       "comportamento": "Territorial. Recua para o ar quando abaixo de 30% de HP e ataca de longe.",
       "xp": 700

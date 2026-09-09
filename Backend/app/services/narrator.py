@@ -500,6 +500,12 @@ def montar_contexto(
         secao_arco = (
             f"\n    [ARCO ATUAL] {cond['titulo']} — {cond['premissa'][:200]} | conflito central: "
             f"{cond['conflito']} ({cond['estado_conflito']}) | turnos no arco: {cond['turnos']} | "
+            + (
+                f"chefe reservado: {cond['chefe']} (dê a ele nome e presença ligados ao conflito; ao enfrentá-lo, "
+                "iniciar_combate com chefe=true; aparece uma vez) | "
+                if cond.get("chefe") and not cond.get("chefe_enfrentado")
+                else ""
+            )
             + ("pode encerrar agora: chame encerrar_arco se a cena pedir fechamento." if cond["pode_encerrar"]
                else f"ainda aberto ({cond['motivo_bloqueio']}). Nunca narre o fim do arco antes de "
                     "encerrar_arco devolver encerrado=true.")

@@ -108,11 +108,24 @@ export interface MundoPersistente {
   aptidao: {nome: string; acoes: string[]; bonus: number}; minutos: number;
 }
 
+/** Arquétipos do bestiário com sprite em /assets/monstros (slug sem acento). Fase 5: a lista
+ *  cresce conforme a arte entra; quem não tem arte cai na caveira. */
+export const SPRITES_MONSTROS = new Set([
+  'bugbear', 'esqueleto', 'kobold', 'goblin', 'lobo',
+]);
+
+export function slugMonstro(nome: string): string {
+  return nome.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+}
+
 /** The name remains the exact server target; only the visual uses an archetype. */
 export function spriteInimigo(inimigo: InimigoVisual): string {
+  const candidatos = [inimigo.arquetipo, inimigo.nome].filter(Boolean).map(n => slugMonstro(n as string));
+  const direto = candidatos.find(s => SPRITES_MONSTROS.has(s));
+  if (direto) return `/assets/monstros/${direto}.png`;
   const nome = `${inimigo.arquetipo ?? ''} ${inimigo.nome}`.toLowerCase();
-  const sprite = ['bugbear', 'esqueleto', 'kobold', 'goblin', 'lobo'].find(tipo => nome.includes(tipo));
-  return sprite ? `/assets/monstros/${sprite}.png` : '/assets/icons/caveira.png';
+  const parcial = [...SPRITES_MONSTROS].find(tipo => nome.includes(tipo));
+  return parcial ? `/assets/monstros/${parcial}.png` : '/assets/icons/caveira.png';
 }
 
 export function alvoValido(selecionado: string | null, inimigos: InimigoVisual[]): string | undefined {

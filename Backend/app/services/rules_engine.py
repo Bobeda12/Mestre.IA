@@ -278,12 +278,14 @@ BANDA_POR_NIVEL: dict[int, list[str]] = {
     2: ["Nivel_1", "Nivel_2"],
     3: ["Nivel_2", "Nivel_3"],
     4: ["Nivel_3", "Nivel_4"],
-    5: ["Nivel_4", "Chefe"],
-    6: ["Nivel_4", "Chefe"],
-    7: ["Nivel_4", "Chefe"],
-    8: ["Chefe"],
-    9: ["Chefe"],
-    10: ["Chefe"],
+    # Fase 5 do plano "jogo completo": bandas dedicadas até o 8 e elite no
+    # topo — a escala artificial de HP/ataque de `combat.iniciar_combate` saiu.
+    5: ["Nivel_4", "Nivel_5"],
+    6: ["Nivel_5", "Nivel_6"],
+    7: ["Nivel_6", "Nivel_7"],
+    8: ["Nivel_7", "Nivel_8"],
+    9: ["Nivel_8", "Chefe_Elite"],
+    10: ["Nivel_8", "Chefe_Elite"],
 }
 
 

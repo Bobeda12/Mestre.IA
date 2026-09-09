@@ -85,7 +85,12 @@ class DataManager:
     def get_monstros_chefe(self) -> list[str]:
         """Etapa 11 (B-9) — quem é "chefe" vira um dos gatilhos de momento de
         alto impacto na narração (narrator.py:montar_contexto)."""
-        return list(self.monsters.get("Chefe", {}).keys())
+        return [*self.monsters.get("Chefe", {}).keys(), *self.monsters.get("Chefe_Elite", {}).keys()]
+
+    def chefes_para_nivel(self, nivel: int) -> list[str]:
+        """Fase 5 — o chefe do arco: fichas de 'Chefe' até o nível 5, 'Chefe_Elite' depois."""
+        banda = "Chefe" if nivel <= 5 else "Chefe_Elite"
+        return list(self.monsters.get(banda, {}).keys()) or self.get_monstros_chefe()
 
     def get_monstros_por_banda(self, banda: str) -> list[str]:
         """Bestiário por banda de nível (Nivel_1..Nivel_4, Chefe) — usado pelo

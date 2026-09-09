@@ -845,12 +845,18 @@ class ToolExecutor:
         self.eventos.append(f"🤝 Reputação com {npc}: {atual:+d} → {novo:+d} ({motivo or 'sem motivo informado'}).")
         return {"npc": npc, "reputacao": novo}
 
-    def iniciar_combate(self, inimigos: list[str], cenario: str | None = None) -> dict:
+    def iniciar_combate(self, inimigos: list[str], cenario: str | None = None, chefe: bool = False) -> dict:
         if self.c_state.ativo:
             return {"erro": "já há um combate ativo"}
+        from app.services.living_world import arco_ativo
+
+        arco = arco_ativo(self.w_state.mundo)
+        reservado = arco.chefe if (chefe and arco is not None and arco.chefe and not arco.chefe_enfrentado) else None
         novo, eventos, dano_surpresa = combat.iniciar_combate(
-            inimigos, self.heroi.atributos, self.heroi.defesa, self.rng, nivel_heroi=self._nivel()
+            inimigos, self.heroi.atributos, self.heroi.defesa, self.rng, nivel_heroi=self._nivel(),
+            chefe_reservado=reservado,
         )
+        novo.chefe_do_arco = reservado is not None
         from app.services.encounters import preparar_encontro
 
         preparar_encontro(novo, self.w_state, cenario)
@@ -1400,6 +1406,12 @@ TOOLS_SCHEMA: list[dict] = [*WORLD_TOOLS,
                     "cenario": {
                         "type": "string", "enum": ["duelo", "emboscada", "ritual", "resgate", "cerco", "cacada"],
                         "description": "Tipo coerente com a cena; ritual e resgate só quando já existem na história.",
+                    },
+                    "chefe": {
+                        "type": "boolean",
+                        "description": (
+                            "true SÓ no confronto com o chefe do arco ([ARCO ATUAL]); o servidor usa a ficha reservada."
+                        ),
                     },
                 },
                 "required": ["inimigos"],

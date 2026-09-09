@@ -1,14 +1,138 @@
 {
   "_nota": "Saque por banda do bestiário (services/loot.py). 'ouro' é notação de dado; 'chance_item' em %; 'itens' são nomes do catálogo (items.json/weapons.json). 'arco' é a recompensa de fim de arco por faixa de nível (Fase 4).",
-  "Nivel_1": {"ouro": "1d6", "chance_item": 25, "itens": ["Poção de Cura", "Tocha", "Adaga", "Frasco de Óleo"]},
-  "Nivel_2": {"ouro": "2d6", "chance_item": 35, "itens": ["Poção de Cura", "Poção de Foco", "Espada Curta", "Armadura de Couro", "Antídoto"]},
-  "Nivel_3": {"ouro": "3d6", "chance_item": 45, "itens": ["Poção de Cura", "Poção de Foco", "Óleo de Lâmina", "Cimitarra", "Escudo", "Armadura de Escamas"]},
-  "Nivel_4": {"ouro": "3d6+5", "chance_item": 55, "itens": ["Poção de Cura Maior", "Poção de Foco", "Espada Longa", "Martelo de Guerra", "Cota de Malha"]},
-  "Chefe": {"ouro": "4d6+10", "chance_item": 100, "itens": ["Poção de Cura Maior", "Cota de Malha", "Espada Longa", "Machado Grande", "Arco Longo"]},
+  "Nivel_1": {
+    "ouro": "1d6",
+    "chance_item": 25,
+    "itens": [
+      "Poção de Cura",
+      "Tocha",
+      "Adaga",
+      "Frasco de Óleo"
+    ]
+  },
+  "Nivel_2": {
+    "ouro": "2d6",
+    "chance_item": 35,
+    "itens": [
+      "Poção de Cura",
+      "Poção de Foco",
+      "Espada Curta",
+      "Armadura de Couro",
+      "Antídoto"
+    ]
+  },
+  "Nivel_3": {
+    "ouro": "3d6",
+    "chance_item": 45,
+    "itens": [
+      "Poção de Cura",
+      "Poção de Foco",
+      "Óleo de Lâmina",
+      "Cimitarra",
+      "Escudo",
+      "Armadura de Escamas"
+    ]
+  },
+  "Nivel_4": {
+    "ouro": "3d6+5",
+    "chance_item": 55,
+    "itens": [
+      "Poção de Cura Maior",
+      "Poção de Foco",
+      "Espada Longa",
+      "Martelo de Guerra",
+      "Cota de Malha"
+    ]
+  },
+  "Chefe": {
+    "ouro": "4d6+10",
+    "chance_item": 100,
+    "itens": [
+      "Poção de Cura Maior",
+      "Cota de Malha",
+      "Espada Longa",
+      "Machado Grande",
+      "Arco Longo"
+    ]
+  },
   "arco": {
-    "1": {"ouro": "3d6+10", "itens": ["Poção de Cura", "Poção de Foco"]},
-    "3": {"ouro": "5d6+20", "itens": ["Poção de Cura Maior", "Armadura de Escamas"]},
-    "5": {"ouro": "6d6+40", "itens": ["Poção de Cura Maior", "Cota de Malha"]},
-    "8": {"ouro": "8d6+80", "itens": ["Poção de Cura Maior", "Armadura de Placas"]}
+    "1": {
+      "ouro": "3d6+10",
+      "itens": [
+        "Poção de Cura",
+        "Poção de Foco"
+      ]
+    },
+    "3": {
+      "ouro": "5d6+20",
+      "itens": [
+        "Poção de Cura Maior",
+        "Armadura de Escamas"
+      ]
+    },
+    "5": {
+      "ouro": "6d6+40",
+      "itens": [
+        "Poção de Cura Maior",
+        "Cota de Malha"
+      ]
+    },
+    "8": {
+      "ouro": "8d6+80",
+      "itens": [
+        "Poção de Cura Maior",
+        "Armadura de Placas"
+      ]
+    }
+  },
+  "Nivel_5": {
+    "ouro": "4d6+10",
+    "chance_item": 60,
+    "itens": [
+      "Poção de Cura Maior",
+      "Poção de Foco",
+      "Óleo de Lâmina",
+      "Armadura de Escamas",
+      "Espada Longa"
+    ]
+  },
+  "Nivel_6": {
+    "ouro": "5d6+15",
+    "chance_item": 65,
+    "itens": [
+      "Poção de Cura Maior",
+      "Cota de Malha",
+      "Martelo de Guerra",
+      "Arco Longo"
+    ]
+  },
+  "Nivel_7": {
+    "ouro": "6d6+25",
+    "chance_item": 70,
+    "itens": [
+      "Poção de Cura Maior",
+      "Poção de Foco",
+      "Machado Grande",
+      "Escudo"
+    ]
+  },
+  "Nivel_8": {
+    "ouro": "7d6+40",
+    "chance_item": 75,
+    "itens": [
+      "Poção de Cura Maior",
+      "Armadura de Placas",
+      "Rapier"
+    ]
+  },
+  "Chefe_Elite": {
+    "ouro": "8d6+80",
+    "chance_item": 100,
+    "itens": [
+      "Armadura de Placas",
+      "Poção de Cura Maior",
+      "Machado Grande",
+      "Arco Longo"
+    ]
   }
 }

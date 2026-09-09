@@ -86,6 +86,7 @@ def iniciar_combate(
     ca_heroi: int,
     rng: random.Random | None = None,
     nivel_heroi: int = 1,
+    chefe_reservado: str | None = None,
 ) -> tuple[CombatState, list[str], int]:
     """Cria o combate a partir do bestiário real.
 
@@ -109,6 +110,15 @@ def iniciar_combate(
     # iniciativa abaixo precisa da destreza do arquétipo de verdade, não
     # de um nome inventado que não existe em data/monsters.json.
     pares: list[tuple[Inimigo, str]] = []
+    # Fase 5 (ADR-0035) — o chefe do arco: ficha reservada por `abrir_arco`,
+    # fora do orçamento e das bandas do nível; o primeiro nome proposto
+    # pelo narrador vira a pele dele.
+    if chefe_reservado and regras.get_monster(chefe_reservado):
+        pele = str(nomes_propostos[0]).strip()[:80] if nomes_propostos else None
+        inimigo_chefe = _criar_inimigo(chefe_reservado, nome_exibicao=pele or None)
+        if inimigo_chefe:
+            pares.append((inimigo_chefe, chefe_reservado))
+            nomes_propostos = list(nomes_propostos)[1:]
     bandas = motor.desafio_sugerido(nivel_heroi)
     candidatos = [c for banda in bandas for c in regras.get_monstros_por_banda(banda)]
     # Encontros solo curtos: orçamento impede tropas inteiras ou chefes
@@ -152,11 +162,6 @@ def iniciar_combate(
         contagens[inimigo.nome] = contagens.get(inimigo.nome, 0) + 1
         if contagens[inimigo.nome] > 1:
             inimigo.nome += f" {contagens[inimigo.nome]}"
-        # O bestiário termina no nível 5; elites escalam até 10 sem perder a identidade.
-        escala = max(0, nivel_heroi - 5)
-        inimigo.hp += escala * 5
-        inimigo.max_hp = inimigo.hp
-        inimigo.bonus_ataque += escala // 2
         inimigo.intencao = intencao_inimiga(inimigo, 1)
     inimigos = [i for i, _ in pares]
     foco = limite_foco(nivel_heroi)

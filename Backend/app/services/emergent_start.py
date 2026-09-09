@@ -223,6 +223,7 @@ def criar_origem(char, semente: int | None = None) -> dict:
     arco = Arco(
         id="arco_1", titulo=conflito.nome, premissa=f"{conflito.sinal} {conflito.objetivo}"[:600],
         conflito_central=conflito.id, turno_inicio=1, marcos_no_inicio=0,
+        chefe=rng.choice(regras.chefes_para_nivel(1)),  # Fase 5
     )
     mundo = MundoVivo(
         arcos=[arco],

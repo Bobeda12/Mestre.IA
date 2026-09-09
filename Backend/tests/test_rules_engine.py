@@ -185,7 +185,7 @@ class TestDesafioSugerido:
         assert desafio_sugerido(1) == ["Nivel_1"]
 
     def test_nivel_5_sugere_nivel_4_e_chefe(self):
-        assert desafio_sugerido(5) == ["Nivel_4", "Chefe"]
+        assert desafio_sugerido(5) == ["Nivel_4", "Nivel_5"]
 
     def test_nivel_fora_do_intervalo_cai_para_a_banda_mais_proxima(self):
         assert desafio_sugerido(0) == desafio_sugerido(1)

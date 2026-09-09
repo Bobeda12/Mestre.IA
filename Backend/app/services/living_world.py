@@ -730,6 +730,7 @@ def condicoes_arco(w_state) -> dict:
         "conflito": conflito.nome if conflito else "", "estado_conflito": conflito.estado if conflito else "",
         "turnos": turnos, "marcos": marcos, "resultado_esperado": resultado,
         "pode_encerrar": not faltas, "motivo_bloqueio": "; ".join(faltas), "chefe": arco.chefe,
+        "chefe_enfrentado": arco.chefe_enfrentado,
     }
 
 
@@ -744,8 +745,12 @@ def abrir_arco(executor: "ToolExecutor", titulo: str, premissa: str, conflito: s
         return {"erro": "O conflito central precisa existir e estar ativo.", "conflitos": list(mundo.conflitos)}
     base = "".join(ch if ch.isalnum() else "_" for ch in titulo.lower())[:40].strip("_") or "arco"
     id_ = f"{base}_{len(mundo.arcos) + 1}"
+    # Fase 5 — o chefe do arco é sorteado aqui (semente + nº do arco), não
+    # pelo narrador: ele só dá nome e presença quando o confronto chegar.
+    sorteio = random.Random(f"{executor.w_state.semente_aventura}:{len(mundo.arcos) + 1}:chefe")
+    chefe = sorteio.choice(regras.chefes_para_nivel(executor.heroi.nivel or 1))
     mundo.arcos = [*mundo.arcos, Arco(
-        id=id_, titulo=titulo[:100], premissa=premissa[:600], conflito_central=alvo.id,
+        id=id_, titulo=titulo[:100], premissa=premissa[:600], conflito_central=alvo.id, chefe=chefe,
         turno_inicio=executor.w_state.turno, marcos_no_inicio=len(executor.w_state.marcos),
     )]
     executor.eventos.append(f"📖 Novo arco: {titulo}.")
