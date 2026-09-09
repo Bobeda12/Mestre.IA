@@ -12,7 +12,7 @@ class GameAction(BaseModel):
         "atacar", "defender", "esquivar", "investir", "esconder_se", "fugir",
         "usar_habilidade", "interagir", "descansar", "usar_item", "resistir",
         "agir_no_mundo", "intervir_conflito", "definir_objetivo", "escolher_especializacao",
-        "equipar", "desequipar", "comerciar",
+        "equipar", "desequipar", "comerciar", "atacar_com_aliado",
     ]
     turno_esperado: int = Field(ge=1)
     alvo: str | None = Field(default=None, max_length=120)
@@ -31,3 +31,4 @@ class GameAction(BaseModel):
     # juiz resolve continua sendo `acao` + argumentos.
     rotulo: str | None = Field(default=None, max_length=80)
     slot: Literal["arma", "armadura", "escudo"] | None = None
+    aliado: str | None = Field(default=None, max_length=80)

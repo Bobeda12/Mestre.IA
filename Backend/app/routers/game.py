@@ -169,7 +169,12 @@ def _resposta(heroi: Personagem, c_state: CombatState, q_state: QuestLog, **extr
         # de combate; o HP em combate vem sincronizado de volta pra cá em
         # `sincronizar_aliados`, chamado antes desta função). Sem consumidor
         # no frontend ainda — nenhuma fase pediu HUD de aliado até aqui.
-        "aliados": heroi.aliados,
+        # Fase 2 do plano "jogo completo" — o palco desenha os companheiros:
+        # raça (retrato) e se já atacou nesta rodada (botão travado).
+        "aliados": [
+            {**a, "raca": a.get("raca", "Humano"), "ja_agiu": a["nome"] in c_state.aliados_agiram}
+            for a in (heroi.aliados or [])
+        ],
         # Fase 8 da revisão de gameplay (Etapa 12/13) — a ferramenta
         # `ajustar_reputacao_npc` (Etapa 5) já existe e já entra no
         # contexto do narrador; nunca teve um consumidor no frontend até
@@ -314,6 +319,8 @@ def game_action(
     if (action.acao in {"atacar", "investir", "usar_habilidade"} and action.alvo
             and action.alvo not in {i.nome for i in c_state.inimigos if i.hp > 0}):
         raise HTTPException(status_code=400, detail="Escolha um inimigo vivo como alvo.")
+    if action.acao == "atacar_com_aliado" and action.aliado not in {a.nome for a in c_state.aliados if a.hp > 0}:
+        raise HTTPException(status_code=400, detail="Esse aliado não está de pé neste combate.")
 
     migrar_progressao(heroi, w_state)
     migrar_mundo(w_state, heroi)
@@ -356,6 +363,8 @@ def game_action(
                           "proposta": action.proposta}
         elif action.acao == "definir_objetivo":
             argumentos = {"objetivo": action.proposta}
+        elif action.acao == "atacar_com_aliado":
+            argumentos = {"aliado": action.aliado or "", "alvo": action.alvo}
         elif action.acao == "equipar":
             argumentos = {"item": action.item or ""}
         elif action.acao == "desequipar":

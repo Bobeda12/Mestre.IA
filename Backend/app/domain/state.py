@@ -59,6 +59,11 @@ class CombatState(BaseModel):
     foco_max: int = 3
     rodada: int = 1
     efeitos_heroi: dict[str, int] = {}
+    # Fase 2 do plano "jogo completo" — aliados que já atacaram nesta rodada.
+    # Era um `set` por request no ToolExecutor; via /game/action cada clique é
+    # um request novo, então um aliado atacaria sem limite. Zerado em
+    # `combat.finalizar_rodada`.
+    aliados_agiram: list[str] = []
     acao_resolvida: bool = False
     cenario_id: str = ""
     progresso_objetivo: int = 0

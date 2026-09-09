@@ -519,6 +519,10 @@ img[src^="/assets/backgrounds/"] {
 .adventure-actor { position: relative; display: flex; flex-direction: column; width: clamp(92px, 10vw, 132px); flex-shrink: 0; padding: 5px 7px 9px; border: 2px solid transparent; background: #10140e99; text-align: center; align-items: stretch; cursor: pointer; transition: border-color .1s steps(2), background .1s steps(2); }
 .adventure-actor:hover:not(:disabled), .adventure-actor:focus-visible { border-color: #fff0ae; outline: 2px solid #111; background: #182019cc; }
 .adventure-actor--hero { border-color: #81b39466; }
+.adventure-actor--ally { border-color: #6fa7d966; cursor: default; }
+.adventure-actor__ally-attack { margin-top: 4px; font-size: 8px; padding: 4px 6px; border: 2px solid #6fa7d9; background: #14283a; color: #dbeeff; cursor: pointer; }
+.adventure-actor__ally-attack:disabled { opacity: .45; cursor: not-allowed; }
+.adventure-actor__ally-attack:hover:not(:disabled) { background: #1f3d58; border-color: #fff0ae; }
 .adventure-actor--selected { border-color: #f6cb6b; background: #473c26bd; box-shadow: 0 0 0 2px #1a2115; }
 .adventure-actor--selected::before { content: '▼'; position: absolute; top: -24px; left: calc(50% - 7px); color: #ffe29a; font-size: 18px; text-shadow: 2px 2px #191810; animation: actorCursor .9s steps(2) infinite; }
 .adventure-actor--dead { filter: grayscale(1); opacity: .45; }

@@ -412,7 +412,11 @@ def montar_contexto(
     aliados_vivos = [a for a in (heroi.aliados or []) if a["hp"] > 0]
     secao_aliados = (
         "\n    [ALIADOS PRESENTES] "
-        + ", ".join(f"{a['nome']}, o(a) {a['classe']} (HP {a['hp']}/{a['hp_max']})" for a in aliados_vivos)
+        + ", ".join(
+            f"{a['nome']}, {a.get('raca', 'Humano')} {a['classe']} (HP {a['hp']}/{a['hp_max']})"
+            + (" — já agiu nesta rodada" if a["nome"] in c_state.aliados_agiram else "")
+            for a in aliados_vivos
+        )
         if aliados_vivos
         else ""
     )

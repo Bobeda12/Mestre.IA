@@ -34,7 +34,7 @@ import DetalheMonstroModal from './DetalheMonstroModal';
 import GuiaAventureiro from './GuiaAventureiro';
 import AdventureStage from './AdventureStage';
 import LivingWorld from './LivingWorld';
-import type { AcaoDireta, Cena, InimigoVisual, Progressao, MundoPersistente, Equipamento, ItemInfo } from '../lib/gameplay';
+import type { AliadoVisual, AcaoDireta, Cena, InimigoVisual, Progressao, MundoPersistente, Equipamento, ItemInfo } from '../lib/gameplay';
 
 // Etapa 14 (revisão) — a ficha virou menu de abas estilo JRPG. Antes tudo
 // (retrato, barras, atributos, missão, inventário) era uma pilha só numa
@@ -150,6 +150,7 @@ interface EstadoJogo {
   catalogo_itens?: Record<string, ItemInfo>;
   combat_active: boolean;
   inimigos?: InimigoVisual[];
+  aliados?: AliadoVisual[];
   missao?: unknown;
   // Sistema de progressão/encontros táticos (AdventureStage.tsx) — o
   // backend já manda estes três em todo `_resposta()` (routers/game.py),
@@ -313,6 +314,7 @@ export default function GameChat() {
   const [acaoTaticaEmCurso, setAcaoTaticaEmCurso] = useState(false);
   // Fase 1 (ADR-0033)
   const [equipamento, setEquipamento] = useState<Equipamento>({});
+  const [aliados, setAliados] = useState<AliadoVisual[]>([]);
   const [catalogoItens, setCatalogoItens] = useState<Record<string, ItemInfo>>({});
   const [erroAcao, setErroAcao] = useState<string | null>(null);
   const [resultadoAcao, setResultadoAcao] = useState<string | null>(null);
@@ -551,6 +553,7 @@ export default function GameChat() {
     }
     setInventory(d.inventory || []);
     if (d.equipamento !== undefined) setEquipamento(d.equipamento);
+    if (d.aliados !== undefined) setAliados(d.aliados);
     if (d.catalogo_itens !== undefined) setCatalogoItens(d.catalogo_itens);
     setCombatActive(d.combat_active);
 
@@ -902,6 +905,7 @@ export default function GameChat() {
           escolha: acao.escolha,
           item: acao.item,
           slot: acao.slot,
+          aliado: acao.aliado,
           rotulo,
           tipo: 'curto',
         },
@@ -1717,6 +1721,7 @@ export default function GameChat() {
                     progressao={progressao}
                     marcos={marcos}
                     inimigos={enemies}
+                    aliados={aliados}
                     escondido={heroiEscondido}
                     bonusDefesa={heroiBonusCa}
                     danos={danosFlutuantes}

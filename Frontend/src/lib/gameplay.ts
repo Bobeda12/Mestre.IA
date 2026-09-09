@@ -27,6 +27,16 @@ export interface Cena {
   interacoes: { id: string; nome: string; descricao: string }[];
 }
 
+/** Fase 2 do plano "jogo completo" — companheiro no palco (roster de `Personagem.aliados`). */
+export interface AliadoVisual {
+  nome: string;
+  classe: string;
+  raca?: string;
+  hp: number;
+  hp_max: number;
+  ja_agiu?: boolean;
+}
+
 export interface InimigoVisual {
   nome: string;
   hp: number;
@@ -40,8 +50,9 @@ export interface InimigoVisual {
 }
 
 export interface AcaoDireta {
-  acao: 'atacar' | 'defender' | 'esquivar' | 'investir' | 'esconder_se' | 'fugir' | 'usar_habilidade' | 'interagir' | 'descansar' | 'resistir' | 'agir_no_mundo' | 'intervir_conflito' | 'definir_objetivo' | 'escolher_especializacao' | 'equipar' | 'desequipar' | 'comerciar' | 'usar_item';
+  acao: 'atacar' | 'defender' | 'esquivar' | 'investir' | 'esconder_se' | 'fugir' | 'usar_habilidade' | 'interagir' | 'descansar' | 'resistir' | 'agir_no_mundo' | 'intervir_conflito' | 'definir_objetivo' | 'escolher_especializacao' | 'equipar' | 'desequipar' | 'comerciar' | 'usar_item' | 'atacar_com_aliado';
   alvo?: string;
+  aliado?: string;
   item?: string;
   slot?: 'arma' | 'armadura' | 'escudo';
   habilidade?: string;

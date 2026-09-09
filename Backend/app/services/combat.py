@@ -399,6 +399,7 @@ def _avancar_efeitos(efeitos: dict[str, int]) -> dict[str, int]:
 
 def finalizar_rodada(c_state: CombatState) -> None:
     c_state.rodada += 1
+    c_state.aliados_agiram = []  # Fase 2 — cada aliado ataca uma vez por rodada
     c_state.efeitos_heroi = _avancar_efeitos(c_state.efeitos_heroi)
     for inimigo in c_state.inimigos:
         inimigo.efeitos = _avancar_efeitos(inimigo.efeitos)

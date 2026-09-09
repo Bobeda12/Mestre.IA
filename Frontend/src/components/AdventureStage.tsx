@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { AcaoDireta, Cena, InimigoVisual, Progressao } from '../lib/gameplay';
+import type { AcaoDireta, AliadoVisual, Cena, InimigoVisual, Progressao } from '../lib/gameplay';
 import { alvoValido, spriteInimigo } from '../lib/gameplay';
 import { getLocalImage } from '../lib/utils';
 import PixelIcon, { type PixelIconName } from './PixelIcon';
@@ -22,6 +22,7 @@ interface Props {
   progressao: Progressao | null;
   marcos: string[];
   inimigos: InimigoVisual[];
+  aliados?: AliadoVisual[];
   escondido: boolean;
   bonusDefesa: number;
   danos: { id: number; valor: number; idx: number }[];
@@ -76,6 +77,28 @@ export default function AdventureStage(p: Props) {
             <span className="adventure-actor__life font-rpg">{p.hp}/{p.hpMax} PV</span>
             <PixelBar value={p.hp} max={p.hpMax} segments={8} colorClass="bg-emerald-500" />
           </button>
+          {/* Fase 2 do plano "jogo completo" — companheiros recrutados no palco, com PV e
+              ataque por botão (uma vez por rodada; o juiz resolve sem LLM). */}
+          {(p.aliados ?? []).map(aliado => (
+            <div key={`aliado:${aliado.nome}`}
+              className={`adventure-actor adventure-actor--ally ${aliado.hp <= 0 ? 'adventure-actor--dead' : ''}`}
+              aria-label={`${aliado.nome}, aliado, ${aliado.hp}/${aliado.hp_max} PV`}>
+              <span className="adventure-actor__tag font-pixel-title">{aliado.hp <= 0 ? 'CAÍDO' : p.combate ? (aliado.ja_agiu ? 'JÁ AGIU' : 'PRONTO') : 'ALIADO'}</span>
+              <img className="adventure-actor__sprite" src={getLocalImage('races', aliado.raca || 'Humano')} alt="" draggable={false} />
+              <span className="adventure-actor__shadow" aria-hidden="true" />
+              <span className="adventure-actor__name font-rpg">{aliado.nome}</span>
+              <span className="adventure-actor__life font-rpg">{aliado.hp}/{aliado.hp_max} PV</span>
+              <PixelBar value={aliado.hp} max={aliado.hp_max} segments={8} colorClass="bg-sky-500" />
+              {p.combate && aliado.hp > 0 && (
+                <button type="button" className="adventure-actor__ally-attack font-pixel-title"
+                  disabled={bloqueado || aliado.ja_agiu || !alvo}
+                  title={!alvo ? 'Escolha um inimigo primeiro' : aliado.ja_agiu ? 'Já atacou nesta rodada' : `${aliado.nome} ataca ${alvo}`}
+                  onClick={() => alvo && p.aoAgir({ acao: 'atacar_com_aliado', aliado: aliado.nome, alvo }, `${aliado.nome} ataca ${alvo}`)}>
+                  ATACAR
+                </button>
+              )}
+            </div>
+          ))}
           <div className="adventure-world__opponents">
             {p.inimigos.map((inimigo, indice) => (
               <button type="button" key={inimigo.nome}

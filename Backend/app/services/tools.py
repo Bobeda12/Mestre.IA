@@ -45,7 +45,6 @@ class ToolExecutor:
         self.rng = rng
         self.eventos: list[str] = []
         self._acao_gasta = False
-        self._aliados_acionados: set[str] = set()
         self.c_state.bonus_especializacao = sum(
             escolha == "combatente" for escolha in w_state.mundo.especializacoes.values()
         )
@@ -831,13 +830,15 @@ class ToolExecutor:
     HP_ALIADO_MIN = 4
     HP_ALIADO_MAX = 20
 
-    def recrutar_aliado(self, nome: str, classe: str, hp: int) -> dict:
+    def recrutar_aliado(self, nome: str, classe: str, hp: int, raca: str = "Humano") -> dict:
         aliados = self.heroi.aliados or []
         if any(a["nome"] == nome for a in aliados):
             return {"erro": f"'{nome}' já é um aliado"}
         hp_clampado = max(self.HP_ALIADO_MIN, min(self.HP_ALIADO_MAX, hp))
+        if raca not in regras.get_races_list():
+            raca = "Humano"  # retrato no palco vem de /assets/races/<raca>.png (Fase 2)
         registro = {
-            "nome": nome, "classe": classe, "hp": hp_clampado, "hp_max": hp_clampado,
+            "nome": nome, "classe": classe, "raca": raca, "hp": hp_clampado, "hp_max": hp_clampado,
             "lealdade": 50, "inventario": [],
         }
         self.heroi.aliados = [*aliados, registro]
@@ -909,8 +910,8 @@ class ToolExecutor:
                 return {"erro": "a ação deste turno já foi resolvida; narre o resultado e aguarde o jogador"}, False
             if self.heroi.hp_atual <= 0:
                 return {"erro": "herói inconsciente: aguarde o teste de morte"}, False
-        if nome == "atacar_com_aliado" and args.get("aliado") in self._aliados_acionados:
-            return {"erro": "esse aliado já agiu neste turno"}, False
+        if nome == "atacar_com_aliado" and args.get("aliado") in self.c_state.aliados_agiram:
+            return {"erro": "esse aliado já agiu nesta rodada"}, False
         try:
             resultado = metodo(self, **args)
         except TypeError as e:
@@ -930,7 +931,7 @@ class ToolExecutor:
                     minutos = 480 if args.get("tipo") == "longo" else 60
                 avancar_tempo(self, minutos, atualizar_hora=nome not in {"mover", "descansar"})
             if nome == "atacar_com_aliado":
-                self._aliados_acionados.add(args.get("aliado", ""))
+                self.c_state.aliados_agiram = [*self.c_state.aliados_agiram, args.get("aliado", "")]
         return resultado, "erro" not in resultado
 
 
@@ -1121,6 +1122,7 @@ TOOLS_SCHEMA: list[dict] = [*WORLD_TOOLS,
                         "type": "integer",
                         "description": "PV inicial aproximado, condizente com a cena (ex: 8 a 15 para um NPC comum).",
                     },
+                    "raca": {"type": "string", "description": "Raça do catálogo (Humano, Elfo, Anão...)."},
                 },
                 "required": ["nome", "classe", "hp"],
             },

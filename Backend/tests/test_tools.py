@@ -35,7 +35,7 @@ def _heroi(**overrides) -> Personagem:
 def _registro_aliado(nome: str, hp: int = 10, hp_max: int = 10, classe: str = "Batedor") -> dict:
     """Mesma forma de `Personagem.aliados` (Fase 3) — só pra não repetir o
     dict inteiro em cada teste."""
-    return {"nome": nome, "classe": classe, "hp": hp, "hp_max": hp_max, "lealdade": 50, "inventario": []}
+    return {"nome": nome, "classe": classe, "raca": "Humano", "hp": hp, "hp_max": hp_max, "lealdade": 50, "inventario": []}
 
 
 def _executor(heroi=None, c_state=None, w_state=None, q_state=None, rng=None) -> ToolExecutor:
@@ -683,7 +683,7 @@ class TestRecrutarAliado:
         resultado = executor.recrutar_aliado("Bob", "Batedor", 12)
         assert resultado == {"nome": "Bob", "classe": "Batedor", "hp": 12}
         assert heroi.aliados == [
-            {"nome": "Bob", "classe": "Batedor", "hp": 12, "hp_max": 12, "lealdade": 50, "inventario": []}
+            {"nome": "Bob", "classe": "Batedor", "raca": "Humano", "hp": 12, "hp_max": 12, "lealdade": 50, "inventario": []}
         ]
 
     def test_hp_e_clampado_num_intervalo_razoavel(self):
@@ -854,3 +854,48 @@ class TestToolsPorEstado:
         for ativo in (True, False):
             assert "escolher_especializacao" not in self._nomes(CombatState(ativo=ativo))
         assert "escolher_especializacao" in ToolExecutor._DESPACHO  # a rota /game/action continua servida
+
+
+class TestAliadoUmaVezPorRodada:
+    # Fase 2 do plano "jogo completo" — a contagem era por request; via
+    # /game/action cada clique é um request novo.
+    def _cenario(self):
+        from app.domain.state import Aliado
+
+        heroi = _heroi(aliados=[_registro_aliado("Bob")])
+        c_state = CombatState(
+            ativo=True,
+            inimigos=[Inimigo(nome="Goblin", hp=50, max_hp=50, ca=5, bonus_ataque=0, dano_dado="1d4")],
+            aliados=[Aliado(nome="Bob", hp=10, max_hp=10, ca=12, bonus_ataque=3, dano_dado="1d6")],
+        )
+        return heroi, c_state
+
+    def test_segundo_executor_na_mesma_rodada_e_recusado(self):
+        heroi, c_state = self._cenario()
+        _, ok = _executor(heroi=heroi, c_state=c_state, rng=RngFixo([15, 3])).executar(
+            "atacar_com_aliado", '{"aliado": "Bob", "alvo": "Goblin"}'
+        )
+        assert ok and c_state.aliados_agiram == ["Bob"]
+        resultado, ok = _executor(heroi=heroi, c_state=c_state, rng=RngFixo([15, 3])).executar(
+            "atacar_com_aliado", '{"aliado": "Bob", "alvo": "Goblin"}'
+        )
+        assert ok is False and "já agiu" in resultado["erro"]
+
+    def test_finalizar_rodada_libera_o_aliado(self):
+        from app.services import combat
+
+        heroi, c_state = self._cenario()
+        c_state.aliados_agiram = ["Bob"]
+        combat.finalizar_rodada(c_state)
+        assert c_state.aliados_agiram == []
+        _, ok = _executor(heroi=heroi, c_state=c_state, rng=RngFixo([15, 3])).executar(
+            "atacar_com_aliado", '{"aliado": "Bob", "alvo": "Goblin"}'
+        )
+        assert ok
+
+    def test_recrutar_guarda_raca_valida(self):
+        heroi = _heroi(aliados=[])
+        ex = _executor(heroi=heroi)
+        ex.recrutar_aliado("Ana", "Curandeira", 10, raca="Elfo")
+        ex.recrutar_aliado("Ulm", "Batedor", 10, raca="Marciano")
+        assert heroi.aliados[0]["raca"] == "Elfo" and heroi.aliados[1]["raca"] == "Humano"

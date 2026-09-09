@@ -146,3 +146,30 @@ def test_rotulo_do_botao_vira_a_fala_do_jogador_no_historico(monkeypatch):
         heroi = db.query(Personagem).filter_by(session_id=sid).one()
         falas = [m["content"] for m in heroi.historico_chat if m["role"] == "user"]
     assert falas[-1] == "Atacar Sentinela"
+
+
+def test_clique_atacar_com_aliado_uma_vez_por_rodada(monkeypatch):
+    # Fase 2 do plano "jogo completo".
+    from app.domain.state import Aliado
+
+    sid = _partida(monkeypatch)
+    with SessionLocal() as db:
+        heroi = db.query(Personagem).filter_by(session_id=sid).one()
+        heroi.aliados = [{"nome": "Bob", "classe": "Batedor", "raca": "Elfo", "hp": 10, "hp_max": 10, "lealdade": 50,
+                          "inventario": []}]
+        cs = CombatState.model_validate(heroi.combat_state)
+        cs.aliados = [Aliado(nome="Bob", hp=10, max_hp=10, ca=12, bonus_ataque=3, dano_dado="1d6")]
+        heroi.combat_state = cs.model_dump()
+        db.commit()
+    carga = client.post("/load_game", json={"session_id": sid}).json()
+    assert carga["aliados"][0]["raca"] == "Elfo" and carga["aliados"][0]["ja_agiu"] is False
+    payload = {"session_id": sid, "acao": "atacar_com_aliado", "aliado": "Bob", "alvo": "Sentinela",
+               "turno_esperado": 1}
+    r = client.post("/game/action", json=payload)
+    assert r.status_code == 200, r.text
+    assert r.json()["aliados"][0]["ja_agiu"] is True
+    r2 = client.post("/game/action", json={**payload, "turno_esperado": r.json()["turno_mundo"]})
+    assert r2.status_code == 400 and "já agiu" in r2.json()["detail"]
+    r3 = client.post("/game/action", json={"session_id": sid, "acao": "atacar_com_aliado", "aliado": "Ninguém",
+                                             "alvo": "Sentinela", "turno_esperado": r.json()["turno_mundo"]})
+    assert r3.status_code == 400
