@@ -89,10 +89,22 @@ teste ao vivo não vai precisar de reprodução offline para saber o que acontec
   ferramenta certa nos três turnos (`rolar_teste`, `mover`, `iniciar_combate`); quando o
   provedor responde, a prosa vem inteira; quando não, o turno persiste com os eventos.
   Um save com o mundo zerado no banco ganha a cena do local ao recarregar.
-- **Não confirmado ao vivo nesta sessão:** o visual do painel (retrato por raça, bolha do
-  rótulo) — o painel do navegador não renderizou nesta sessão (a janela do app estava
-  atrás de outra); a criação de personagem foi percorrida até o passo 4 pelo DOM. Fica
-  para a abertura da Fase 1.
+- No navegador (fim da sessão): criação de personagem completa até o jogo, painel do mundo
+  com retratos por raça, clique em "Examinar" virando fala do jogador no chat.
+
+## Segunda rodada de cortes (mesma sessão)
+
+O provedor conta os tokens dele, não os meus: o primeiro corte deixou o turno em ~9.300 pela
+conta do Groq (o log passou a mostrar o corpo do erro: "Requested 9346"). Segunda rodada,
+sem tirar regra nenhuma: descrições de ferramenta 40% mais curtas, os dois blocos de
+instrução do prompt reescritos mais densos, instruções de combate só em combate, três
+mensagens de histórico em vez de quatro, uma seção situacional da bíblia em vez de duas,
+textos longos do mundo truncados no prompt (o save guarda tudo) e três memórias por turno.
+Resultado medido pela conta do Groq: o pior turno passou de ~9.300 para dentro do teto de
+8.000. Confirmação no navegador, que voltou a renderizar no fim da sessão: o painel "Ao seu
+redor" mostra os dois NPCs com retratos de raças diferentes e os objetos da cena; clicar
+"Examinar" num objeto grava no chat "VOCÊ — Examinar: Bilhete sem assinatura" e, em seguida,
+a resposta do juiz.
 
 ## O que ficou registrado para depois
 
@@ -103,7 +115,11 @@ teste ao vivo não vai precisar de reprodução offline para saber o que acontec
 - `WorldState.relogios` ficou sem uso; sai na Fase 4 se nenhum relógio novo aparecer.
 - Cenários táticos e cenas do Mundo Vivo são dois sistemas de "lugar" que coexistem.
 
+- O mundo inicial proposto pelo modelo às vezes vem magro (uma banca e ninguém). O validador
+  passou a exigir pelo menos uma pessoa e uma saída; sem isso, cai na origem determinística.
+
 ## Próximo passo
 
 Fase 1 do plano: economia e itens (catálogo com tags, equipar, loot por banda, mercador).
-Abrir a fase confirmando no navegador o que ficou pendente acima.
+Toda ferramenta nova entra no conjunto certo de `tools_para` e o total de tokens é medido
+antes e depois — o teto do provedor não perdoa.

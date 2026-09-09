@@ -11,6 +11,14 @@ def validar_mundo_inicial(dados: dict, local: str) -> dict:
     mundo = MundoVivo.model_validate(dados)
     if local not in mundo.cenas or len(mundo.cenas) > 8 or len(mundo.pessoas) > 8 or len(mundo.conflitos) > 4:
         raise ValueError("Origem sem cena coerente ou maior que o limite inicial.")
+    # Achado ao vivo (Fase 0 do plano "jogo completo"): o modelo propôs uma
+    # origem com uma banca e ninguém. Sem pessoa não há conversa nem
+    # conflito; sem saída o herói nasce preso. Magra demais = cai na origem
+    # determinística (quem chama trata o ValueError).
+    if not any(p.local == local for p in mundo.pessoas.values()):
+        raise ValueError("Origem sem nenhuma pessoa no local inicial.")
+    if not any(e.tipo == "saida" for e in mundo.cenas[local].entidades.values()):
+        raise ValueError("Origem sem nenhuma saída no local inicial.")
     for cena in mundo.cenas.values():
         if len(cena.entidades) > 20 or any(chave != entidade.id for chave, entidade in cena.entidades.items()):
             raise ValueError("Entidades iniciais inválidas.")

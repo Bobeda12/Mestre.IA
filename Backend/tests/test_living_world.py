@@ -281,3 +281,19 @@ def test_registrar_pessoa_com_mesmo_nome_no_mesmo_local_nao_duplica(executor):
     )
     assert valido and resultado["existente"] is True and resultado["id"] == existente.id
     assert len(executor.w_state.mundo.pessoas) == antes
+
+
+def test_origem_do_modelo_sem_pessoa_ou_sem_saida_e_recusada(executor):
+    # Achado ao vivo — o modelo propôs "Mercado de Pedra" com uma banca e ninguém.
+    base = criar_origem(executor.heroi, 5)
+    local = base["local_inicial"]
+    sem_pessoas = {**base["mundo_inicial"], "pessoas": {}}
+    with pytest.raises(ValueError):
+        validar_mundo_inicial(sem_pessoas, local)
+    cenas = {k: dict(v) for k, v in base["mundo_inicial"]["cenas"].items()}
+    so_objetos = {k: e for k, e in cenas[local]["entidades"].items() if e["tipo"] != "saida"}
+    cenas[local] = {**cenas[local], "entidades": so_objetos}
+    sem_saida = {**base["mundo_inicial"], "cenas": cenas}
+    with pytest.raises(ValueError):
+        validar_mundo_inicial(sem_saida, local)
+    assert validar_mundo_inicial(base["mundo_inicial"], local)  # a origem determinística continua válida
