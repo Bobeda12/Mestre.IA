@@ -6,6 +6,9 @@ por quem chama)."""
 
 import json
 
+import httpx
+import openai
+
 from app.domain.character import CharacterCreationRequest
 from app.domain.memoria import ResumoRolante
 from app.domain.state import CombatState, QuestLog, WorldState
@@ -180,6 +183,23 @@ class _ClienteFalso:
         return self._resposta
 
 
+class _ClienteQueFalha:
+    """Simula um provedor recusando o pedido (400) — mesmo formato de erro
+    usado por tests/test_llm_client.py para testar a cadeia de fallback."""
+
+    def __init__(self) -> None:
+        self.chat = self
+
+    @property
+    def completions(self):
+        return self
+
+    def create(self, **_kwargs):
+        req = httpx.Request("POST", "https://example.com/x")
+        resp = httpx.Response(400, request=req)
+        raise openai.APIStatusError("recusado", response=resp, body=None)
+
+
 class TestGerarPrologoMissaoLocalInicial:
     def test_sem_ia_tem_local_coerente_e_saida_livre(self, monkeypatch):
         monkeypatch.setattr(llm_client, "clients", {})
@@ -289,6 +309,94 @@ class TestGerarPrologoMissaoLocalInicial:
         roteiro = gerar_prologo_missao(_personagem_criacao(), semente=5)
 
         assert roteiro["intro_narrativa"] == "Primeiro parágrafo.\n\nSegundo parágrafo."
+
+    def test_disposicao_fora_do_vocabulario_e_substituida_em_vez_de_derrubar_tudo(self, monkeypatch):
+        # Terceiro achado ao vivo (Groq): o modelo escreveu "cauteloso" numa
+        # pessoa em vez de um dos 4 valores do vocabulário fechado
+        # (reservado/cooperativo/hostil/ausente) — isso derruba a validação
+        # Pydantic ANTES de validar_mundo_inicial rodar sua própria lógica
+        # (é um ValueError igual, então o roteiro inteiro — prosa original
+        # incluída — era descartado por um campo secundário de um NPC.)
+        from app.services.emergent_start import criar_origem
+        corpo = criar_origem(_personagem_criacao(), 9)
+        alguma_pessoa = next(iter(corpo["mundo_inicial"]["pessoas"].values()))
+        alguma_pessoa["disposicao"] = "cauteloso"
+        intro_original = "Um texto original, só a disposição de um NPC veio fora do vocabulário."
+        corpo["intro_narrativa"] = intro_original
+        monkeypatch.setattr(llm_client, "clients", {llm_client.CADEIA[0][0]: _ClienteFalso(corpo)})
+
+        roteiro = gerar_prologo_missao(_personagem_criacao(), semente=5)
+
+        assert roteiro["intro_narrativa"] == intro_original
+        disposicoes = {p["disposicao"] for p in roteiro["mundo_inicial"]["pessoas"].values()}
+        assert disposicoes <= {"reservado", "cooperativo", "hostil", "ausente"}
+
+    def test_propriedade_de_entidade_fora_do_vocabulario_e_descartada(self, monkeypatch):
+        from app.services.emergent_start import criar_origem
+        corpo = criar_origem(_personagem_criacao(), 9)
+        local = corpo["local_inicial"]
+        alguma_entidade = next(iter(corpo["mundo_inicial"]["cenas"][local]["entidades"].values()))
+        alguma_entidade["propriedades"] = ["movel", "reluzente"]  # "reluzente" não existe no vocabulário
+        intro_original = "Outro texto original, só uma propriedade de entidade veio inventada."
+        corpo["intro_narrativa"] = intro_original
+        monkeypatch.setattr(llm_client, "clients", {llm_client.CADEIA[0][0]: _ClienteFalso(corpo)})
+
+        roteiro = gerar_prologo_missao(_personagem_criacao(), semente=5)
+
+        assert roteiro["intro_narrativa"] == intro_original
+
+    def test_primeiro_provedor_falhando_ainda_usa_o_proximo_da_cadeia(self, monkeypatch):
+        # Achado ao vivo (rodada de melhorias pós-Fase-6): sem chamar_fn, o
+        # prólogo usava chamar_modelo_unico (só o 1º elo de CADEIA, sem
+        # fallback) — um 400/429 nesse elo único derrubava o prólogo
+        # inteiro mesmo com o resto da cadeia disponível. Agora usa
+        # chamar_com_fallback, o mesmo caminho resiliente do turno de jogo.
+        provedores = {p for p, _m in llm_client.CADEIA}
+        if len(provedores) < 2:
+            import pytest
+            pytest.skip("cadeia configurada com um provedor só neste ambiente")
+        primeiro_provedor = llm_client.CADEIA[0][0]
+        segundo_provedor = next(p for p, _m in llm_client.CADEIA if p != primeiro_provedor)
+        from app.services.emergent_start import criar_origem
+        corpo = criar_origem(_personagem_criacao(), 9)
+        intro_original = "Texto original — só chegou porque o fallback tentou o próximo provedor."
+        corpo["intro_narrativa"] = intro_original
+        monkeypatch.setattr(
+            llm_client, "clients",
+            {primeiro_provedor: _ClienteQueFalha(), segundo_provedor: _ClienteFalso(corpo)},
+        )
+
+        roteiro = gerar_prologo_missao(_personagem_criacao(), semente=5)
+
+        assert roteiro["intro_narrativa"] == intro_original
+
+    def test_id_com_acento_vira_slug_valido_em_vez_de_derrubar_tudo(self, monkeypatch):
+        # Quarto achado ao vivo (Groq): o modelo escreveu "ferreiro_anão"
+        # como id de pessoa — o schema exige `^[a-z0-9_-]{1,60}$` (sem
+        # acento). Igual aos casos de enum: um ValueError do Pydantic
+        # descartava o roteiro inteiro por causa de um id secundário.
+        from app.services.emergent_start import criar_origem
+        corpo = criar_origem(_personagem_criacao(), 9)
+        pessoas = corpo["mundo_inicial"]["pessoas"]
+        chave_antiga = next(iter(pessoas))
+        pessoa = pessoas.pop(chave_antiga)
+        pessoa["id"] = "ferreiro_anão"
+        pessoas["ferreiro_anão"] = pessoa
+        # Um conflito referenciando o id antigo precisa acompanhar a troca.
+        for conflito in corpo["mundo_inicial"]["conflitos"].values():
+            if conflito.get("agente") == chave_antiga:
+                conflito["agente"] = "ferreiro_anão"
+        intro_original = "Um texto original, só o id de uma pessoa veio com acento."
+        corpo["intro_narrativa"] = intro_original
+        monkeypatch.setattr(llm_client, "clients", {llm_client.CADEIA[0][0]: _ClienteFalso(corpo)})
+
+        roteiro = gerar_prologo_missao(_personagem_criacao(), semente=5)
+
+        assert roteiro["intro_narrativa"] == intro_original
+        ids = {p["id"] for p in roteiro["mundo_inicial"]["pessoas"].values()}
+        assert all(id_.replace("_", "").replace("-", "").isascii() for id_ in ids)
+        agentes = {c["agente"] for c in roteiro["mundo_inicial"]["conflitos"].values()}
+        assert agentes <= set(roteiro["mundo_inicial"]["pessoas"])
 
     def test_mundo_inicial_ja_aninhado_continua_funcionando(self, monkeypatch):
         from app.services.emergent_start import criar_origem

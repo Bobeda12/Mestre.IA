@@ -186,13 +186,27 @@ def chamar_modelo_unico(
         raise ErroMestre(f"O serviço de IA recusou o pedido (código {e.status_code}).") from e
 
 
-def chamar_com_fallback(msgs: list[dict], tools: list[dict] | None = None, tool_choice: str | dict = "auto") -> Any:
+def chamar_com_fallback(
+    msgs: list[dict],
+    tools: list[dict] | None = None,
+    tool_choice: str | dict = "auto",
+    response_format: dict | None = None,
+) -> Any:
     """Tenta cada elo de `CADEIA` em ordem, pulando qualquer provedor sem
     chave configurada. Por elo, `tenacity` cobre até 2 tentativas com
     backoff curto para erro transitório (rate limit, timeout, conexão)
     antes de desistir dele e cair para o próximo — é isto que transforma o
     limite de free tier de CADA PROVEDOR numa vantagem de arquitetura em
-    vez de um turno perdido (ADR-0008/ADR-0024)."""
+    vez de um turno perdido (ADR-0008/ADR-0024).
+
+    `response_format` (rodada de melhorias pós-Fase-6) — achado ao vivo: o
+    prólogo/epitáfio (`services/narrator.py:chamar_mestre`) usavam
+    `chamar_modelo_unico`, que tenta só o PRIMEIRO elo da cadeia — um 400
+    ou 429 nesse único provedor derrubava a chamada inteira, sem tentar o
+    resto da cadeia (que `chamar_com_fallback` já cobre pra todo turno de
+    jogo). Isso fazia o prólogo cair no fallback determinístico (que cita o
+    objetivo do jogador literalmente) por um motivo que nada tinha a ver
+    com o conteúdo gerado."""
     if not clients:
         raise ErroMestre(_SEM_PROVEDOR)
     ultimo_erro: Exception | None = None
@@ -201,7 +215,7 @@ def chamar_com_fallback(msgs: list[dict], tools: list[dict] | None = None, tool_
         if cliente is None:
             continue  # provedor sem chave configurada — pulado, não é uma falha
         try:
-            return _chamar_modelo(cliente, provedor, modelo, msgs, tools, tool_choice)
+            return _chamar_modelo(cliente, provedor, modelo, msgs, tools, tool_choice, response_format)
         except _ERROS_TRANSITORIOS as e:
             ultimo_erro = e
             continue

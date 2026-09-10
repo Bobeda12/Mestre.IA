@@ -1,4 +1,6 @@
 import json
+import re
+import unicodedata
 from collections.abc import Callable
 from typing import Any
 
@@ -10,7 +12,6 @@ from app.infra import llm_client
 from app.infra.data_manager import regras
 from app.infra.db import Personagem
 from app.infra.llm_client import ErroMestre
-from app.infra.settings import settings
 from app.services import rules_engine as motor
 from app.services.emergent_start import criar_origem, validar_mundo_inicial
 from app.services.encounters import painel_cena
@@ -49,15 +50,20 @@ def secao_tom_mestre(temperamento: str) -> str:
 
 def chamar_mestre(msgs: list[dict], chamar_fn: Callable[..., Any] | None = None) -> dict:
     """Chama o LLM e devolve o JSON já decodificado, ou levanta ErroMestre
-    (nunca engole o erro em silêncio — ver ADR-0002, Etapa 1). A tradução de
-    erro de API para `ErroMestre` mora em `chamar_modelo_unico`
-    (app/infra/llm_client.py) — o mesmo caminho usado por qualquer outra
-    chamada única do projeto, não uma cópia local.
+    (nunca engole o erro em silêncio — ver ADR-0002, Etapa 1).
 
     `chamar_fn` (rodada de conserto, BYOK) — quando o chamador tem a chave
     do jogador (`ChaveUsuario.chamar_fn`), esta chamada de prólogo/epitáfio
     usa ela em vez da cadeia do servidor. Sem isso, "trouxe minha chave"
-    cobria os turnos de jogo mas não a criação de personagem nem a morte."""
+    cobria os turnos de jogo mas não a criação de personagem nem a morte.
+
+    Achado ao vivo (rodada de melhorias pós-Fase-6) — sem `chamar_fn`, esta
+    função usava `chamar_modelo_unico(settings.cadeia_llm[0], ...)`: só o
+    PRIMEIRO elo da cadeia, sem fallback pros demais provedores/modelos.
+    Um 400 ou 429 nesse elo único (visto ao vivo, repetidas vezes) derrubava
+    o prólogo inteiro — mesmo com o resto da cadeia disponível e ocioso.
+    Agora usa `chamar_com_fallback`, o mesmo caminho resiliente que todo
+    turno de jogo já usa (ADR-0008/ADR-0024)."""
     if chamar_fn is not None:
         resp = chamar_fn(msgs, response_format={"type": "json_object"})
     else:
@@ -66,12 +72,7 @@ def chamar_mestre(msgs: list[dict], chamar_fn: Callable[..., Any] | None = None)
                 "O mestre está sem acesso à IA — falta configurar ao menos uma chave de API "
                 "no servidor (GROQ_API_KEY ou GEMINI_API_KEY)."
             )
-        # `gerar_prologo_missao` e `gerar_epitafio` (Fase 7) são os únicos
-        # caminhos que ainda usam JSON solto — nenhum dos dois tem estado de
-        # jogo pra chamar ferramenta, são chamadas únicas e isoladas. O
-        # turno de jogo (routers/game.py) usa services/agent_loop.py + tool
-        # calling nativo desde a Etapa 4.
-        resp = llm_client.chamar_modelo_unico(settings.cadeia_llm[0], msgs, response_format={"type": "json_object"})
+        resp = llm_client.chamar_com_fallback(msgs, response_format={"type": "json_object"})
 
     try:
         return json.loads(resp.choices[0].message.content)
@@ -169,6 +170,157 @@ def _reparar_lacunas_mundo_inicial(mundo: dict, local: str) -> dict:
     mundo["pessoas"] = pessoas
     mundo["conflitos"] = conflitos_validos
     mundo["arcos"] = arcos_validos
+    return mundo
+
+
+# Terceiro achado ao vivo (Groq): o modelo às vezes inventa um sinônimo
+# plausível para um campo de vocabulário fechado — "cauteloso" em vez de
+# "reservado" para disposição de uma pessoa, por exemplo. `MundoVivo.
+# model_validate` (Pydantic) rejeita isso como `ValueError` (a mesma
+# exceção que `validar_mundo_inicial` levanta à mão), e o roteiro inteiro
+# — prosa original incluída — era descartado por um valor de enum errado
+# numa pessoa secundária. Cada tupla é (valor válido mais neutro, todos os
+# valores válidos) — espelha exatamente os `Literal[...]` de
+# domain/living_world.py; se o schema lá mudar, isto precisa acompanhar.
+_ENUM_PADRAO_E_VALIDOS: dict[str, tuple[str, tuple[str, ...]]] = {
+    "disposicao": ("reservado", ("reservado", "cooperativo", "hostil", "ausente")),
+    "tipo_entidade": ("objeto", ("objeto", "saida", "obstaculo", "animal")),
+    "estado_entidade": ("intacto", ("intacto", "aberto", "bloqueado", "destruido", "movido", "aceso", "apagado")),
+    "efeito_conflito": ("disputa", ("disputa", "bloquear", "partir")),
+}
+_PROPRIEDADES_VALIDAS = {
+    "movel", "pesado", "fragil", "inflamavel", "trancado", "mecanismo", "cobertura", "investigavel", "coletavel",
+}
+
+
+def _sanitizar_enum(valor: object, chave: str) -> str:
+    padrao, validos = _ENUM_PADRAO_E_VALIDOS[chave]
+    return valor if isinstance(valor, str) and valor in validos else padrao
+
+
+def _sanitizar_enums_mundo_inicial(mundo: dict) -> dict:
+    """Substitui qualquer valor de vocabulário fechado inválido pelo padrão
+    mais neutro, em vez de deixar `validar_mundo_inicial` rejeitar o
+    roteiro inteiro por causa de um campo secundário."""
+    mundo = dict(mundo)
+    pessoas = {}
+    for chave, pessoa in (mundo.get("pessoas") or {}).items():
+        if not isinstance(pessoa, dict):
+            continue
+        pessoas[chave] = {**pessoa, "disposicao": _sanitizar_enum(pessoa.get("disposicao"), "disposicao")}
+    mundo["pessoas"] = pessoas
+
+    cenas = {}
+    for nome_cena, cena in (mundo.get("cenas") or {}).items():
+        if not isinstance(cena, dict):
+            continue
+        entidades = {}
+        for chave_ent, entidade in (cena.get("entidades") or {}).items():
+            if not isinstance(entidade, dict):
+                continue
+            props = entidade.get("propriedades")
+            entidades[chave_ent] = {
+                **entidade,
+                "tipo": _sanitizar_enum(entidade.get("tipo"), "tipo_entidade"),
+                "estado": _sanitizar_enum(entidade.get("estado"), "estado_entidade"),
+                "propriedades": [p for p in props if p in _PROPRIEDADES_VALIDAS] if isinstance(props, list) else [],
+            }
+        cenas[nome_cena] = {**cena, "entidades": entidades}
+    mundo["cenas"] = cenas
+
+    conflitos = {}
+    for chave_c, conflito in (mundo.get("conflitos") or {}).items():
+        if not isinstance(conflito, dict):
+            continue
+        conflitos[chave_c] = {**conflito, "efeito": _sanitizar_enum(conflito.get("efeito"), "efeito_conflito")}
+    mundo["conflitos"] = conflitos
+    return mundo
+
+
+# Quarto achado ao vivo (Groq): o modelo às vezes usa acento/espaço no "id"
+# de uma pessoa/entidade/conflito (ex.: "ferreiro_anão") — o schema exige
+# `^[a-z0-9_-]{1,60}$` (Pydantic rejeita como o mesmo tipo de ValueError do
+# caso de enum acima). Em vez de descartar o roteiro inteiro, troca por um
+# slug válido e atualiza quem referenciava o id antigo (conflito → agente/
+# alvo, entidade → bloqueado_por, arco → conflito_central).
+_PADRAO_ID = re.compile(r"^[a-z0-9_-]{1,60}$")
+
+
+def _slug_unico(texto: str, ocupados: set[str]) -> str:
+    sem_acento = unicodedata.normalize("NFKD", texto).encode("ascii", "ignore").decode("ascii")
+    base = re.sub(r"[^a-z0-9_-]+", "_", sem_acento.lower()).strip("_")[:56] or "item"
+    candidato, n = base, 1
+    while candidato in ocupados:
+        n += 1
+        candidato = f"{base}_{n}"
+    return candidato
+
+
+def _renomear_colecao(colecao: dict) -> tuple[dict, dict[str, str]]:
+    """Troca a chave/`id` de cada item cujo id não bate o padrão por um
+    slug válido — devolve a coleção corrigida e o mapa {id_antigo: id_novo}
+    para quem referencia esses ids em outro lugar."""
+    nova: dict = {}
+    mapa: dict[str, str] = {}
+    for chave, item in colecao.items():
+        if not isinstance(item, dict):
+            continue
+        bruto = item.get("id")
+        id_atual: str = bruto if isinstance(bruto, str) else str(chave)
+        if _PADRAO_ID.match(id_atual) and id_atual not in nova:
+            novo_id = id_atual
+        else:
+            novo_id = _slug_unico(str(item.get("nome") or id_atual), set(nova))
+        if str(chave) != novo_id:
+            mapa[str(chave)] = novo_id
+        if id_atual != novo_id:
+            mapa[id_atual] = novo_id
+        nova[novo_id] = {**item, "id": novo_id}
+    return nova, mapa
+
+
+def _sanitizar_ids_mundo_inicial(mundo: dict) -> dict:
+    mundo = dict(mundo)
+    pessoas, mapa_pessoas = _renomear_colecao(mundo.get("pessoas") or {})
+    mundo["pessoas"] = pessoas
+
+    cenas: dict = {}
+    mapa_entidades_por_cena: dict[str, dict[str, str]] = {}
+    for nome_cena, cena in (mundo.get("cenas") or {}).items():
+        if not isinstance(cena, dict):
+            continue
+        entidades, mapa_ent = _renomear_colecao(cena.get("entidades") or {})
+        for entidade in entidades.values():
+            bloqueado_por = entidade.get("bloqueado_por")
+            if isinstance(bloqueado_por, str) and bloqueado_por in mapa_ent:
+                entidade["bloqueado_por"] = mapa_ent[bloqueado_por]
+        cenas[nome_cena] = {**cena, "entidades": entidades}
+        mapa_entidades_por_cena[nome_cena] = mapa_ent
+    mundo["cenas"] = cenas
+
+    conflitos, mapa_conflitos = _renomear_colecao(mundo.get("conflitos") or {})
+    for conflito in conflitos.values():
+        agente = conflito.get("agente")
+        if isinstance(agente, str) and agente in mapa_pessoas:
+            conflito["agente"] = mapa_pessoas[agente]
+        mapa_alvo = mapa_entidades_por_cena.get(conflito.get("local"), {})
+        alvo = conflito.get("alvo")
+        if isinstance(alvo, str) and alvo in mapa_alvo:
+            conflito["alvo"] = mapa_alvo[alvo]
+    mundo["conflitos"] = conflitos
+
+    arcos = []
+    for arco in mundo.get("arcos") or []:
+        if not isinstance(arco, dict):
+            continue
+        arco = dict(arco)
+        central = arco.get("conflito_central")
+        if isinstance(central, str) and central in mapa_conflitos:
+            arco["conflito_central"] = mapa_conflitos[central]
+        if not (isinstance(arco.get("id"), str) and _PADRAO_ID.match(arco["id"])):
+            arco["id"] = _slug_unico(str(arco.get("titulo") or arco.get("id") or "arco"), set())
+        arcos.append(arco)
+    mundo["arcos"] = arcos
     return mundo
 
 
@@ -275,7 +427,9 @@ def gerar_prologo_missao(
         roteiro["local_inicial_descricao"] = None
     try:
         normalizado = _normalizar_mundo_inicial(roteiro, abertura["mundo_inicial"])
-        reparado = _reparar_lacunas_mundo_inicial(normalizado, roteiro["local_inicial"])
+        ids_sanos = _sanitizar_ids_mundo_inicial(normalizado)
+        saneado = _sanitizar_enums_mundo_inicial(ids_sanos)
+        reparado = _reparar_lacunas_mundo_inicial(saneado, roteiro["local_inicial"])
         roteiro["mundo_inicial"] = validar_mundo_inicial(reparado, roteiro["local_inicial"])
     except (ValueError, TypeError):
         return abertura
@@ -425,11 +579,7 @@ def gerar_cronica(heroi: Personagem, eventos: list[str], chamar_fn: Callable[...
     """
     try:
         msgs = [{"role": "user", "content": prompt}]
-        resp = (
-            chamar_fn(msgs)
-            if chamar_fn is not None
-            else llm_client.chamar_modelo_unico(settings.cadeia_llm[0], msgs)
-        )
+        resp = chamar_fn(msgs) if chamar_fn is not None else llm_client.chamar_com_fallback(msgs)
         return resp.choices[0].message.content or "\n\n".join(eventos)
     except ErroMestre as e:
         print("ERRO NA CRÔNICA:", e.mensagem)
