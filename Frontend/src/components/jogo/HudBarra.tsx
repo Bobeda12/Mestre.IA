@@ -27,7 +27,15 @@ interface Props {
   horaDoDia: number | null;
 }
 
-const BOTAO_ICONE = 'shrink-0 p-1 border-2 border-gray-700 hover:border-rpg-gold text-gray-300 hover:text-rpg-gold transition-colors focus-visible:outline-none focus-visible:border-rpg-gold';
+// Achado ao vivo (rodada de melhorias pós-Fase-6) — os ícones já eram
+// uniformes (16px), mas os BOTÕES ao redor não: `<img>` dentro de um botão
+// sem centralização herda o espaço de "linha de base" reservado pra
+// descendentes de texto (~9px extras de altura) — o botão do ícone ficava
+// 35px de altura contra 26px do botão "?" (que já era `flex items-center
+// justify-center`, sem esse espaço sobrando). `flex items-center
+// justify-center` + tamanho fixo em TODOS os botões elimina essa diferença
+// — o que salta aos olhos numa fileira é a caixa do botão, não o ícone.
+const BOTAO_ICONE = 'shrink-0 w-[26px] h-[26px] flex items-center justify-center border-2 border-gray-700 hover:border-rpg-gold text-gray-300 hover:text-rpg-gold transition-colors focus-visible:outline-none focus-visible:border-rpg-gold';
 
 export default function HudBarra(p: Props) {
   return (
@@ -67,7 +75,7 @@ export default function HudBarra(p: Props) {
       {!p.showSidebar && (
         <div className="flex items-center gap-1 shrink-0 ml-auto">
           <button onClick={() => p.setManualAberto(true)} aria-label="Abrir manual do jogo" title="Manual do Jogo" className={BOTAO_ICONE}><PixelIcon name="dado" size={16} /></button>
-          <button onClick={() => p.setGuiaAberto(true)} aria-label="Abrir guia do aventureiro" title="Guia do Aventureiro" className={`${BOTAO_ICONE} w-[26px] h-[26px] flex items-center justify-center font-pixel-title text-[9px]`}>?</button>
+          <button onClick={() => p.setGuiaAberto(true)} aria-label="Abrir guia do aventureiro" title="Guia do Aventureiro" className={`${BOTAO_ICONE} font-pixel-title text-[9px]`}>?</button>
           <button onClick={() => p.setConfigAberta(true)} aria-label="Abrir configurações" title="Configurações" className={BOTAO_ICONE}><PixelIcon name="config" size={16} /></button>
         </div>
       )}

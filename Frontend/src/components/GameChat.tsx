@@ -1133,11 +1133,18 @@ export default function GameChat() {
                   está FECHADA (ver abaixo), então com a ficha aberta esta é
                   a única entrada pra configurações de novo. */}
               <div className="flex items-center gap-3">
+                  {/* Achado ao vivo (rodada de melhorias pós-Fase-6) — sem
+                      `flex items-center justify-center` + tamanho fixo, um
+                      `<img>` solto dentro do botão herda o espaço de "linha
+                      de base" reservado pra descendentes de texto e fica
+                      mais alto que o botão "?" (que já era centralizado) —
+                      é a caixa do botão que fica desigual, não o ícone.
+                      Mesmo padrão em jogo/HudBarra.tsx (`BOTAO_ICONE`). */}
                   <button
                       onClick={() => setManualAberto(true)}
                       aria-label="Abrir manual do jogo"
                       title="Manual do Jogo"
-                      className="text-gray-300 hover:text-rpg-gold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rpg-gold"
+                      className="w-[18px] h-[18px] flex items-center justify-center text-gray-300 hover:text-rpg-gold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rpg-gold"
                   ><PixelIcon name="dado" size={18}/></button>
                   {/* Item 11 da rodada de polish pós-remaster — "Guia do
                       Aventureiro": não existe ícone de interrogação em
@@ -1154,12 +1161,12 @@ export default function GameChat() {
                       onClick={() => setConfigAberta(true)}
                       aria-label="Abrir configurações"
                       title="Configurações"
-                      className="text-gray-300 hover:text-rpg-gold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rpg-gold"
+                      className="w-[18px] h-[18px] flex items-center justify-center text-gray-300 hover:text-rpg-gold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rpg-gold"
                   ><PixelIcon name="config" size={18}/></button>
                   <button
                       onClick={() => setShowSidebar(false)}
                       aria-label="Fechar ficha do personagem"
-                      className="text-gray-500 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rpg-gold"
+                      className="w-[18px] h-[18px] flex items-center justify-center text-gray-500 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rpg-gold"
                   ><PixelIcon name="fechar" size={18}/></button>
               </div>
           </div>

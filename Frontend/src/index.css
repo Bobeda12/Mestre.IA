@@ -661,7 +661,12 @@ img[src^="/assets/backgrounds/"] {
    abaixo. Reduzido para dar mais peso ao texto — continua mostrando
    herói/aliados/inimigos, só não precisa de tanta altura pra isso. */
 .palco { position: relative; flex-shrink: 0; height: clamp(190px, 26vh, 280px); margin: 8px 12px 0; border: 2px solid #695333; box-shadow: 0 0 0 2px #000, inset 0 0 0 1px #b79552; color: #e3d9c3; display: flex; flex-direction: column; }
-.palco .adventure-world__party { flex: 1; min-height: 0; padding: 32px 16px 6px; align-items: flex-end; gap: 10px; }
+/* Item "palco mais bonito" (rodada de melhorias pós-Fase-6) — sem a
+   perspectiva 3D, o chão ficava um bloco liso e vazio demais. Uma vinheta
+   sutil (escurece os cantos) dá profundidade sem reintroduzir ângulo/3D —
+   `::after` por cima de tudo, não interfere em clique (pointer-events:none). */
+.palco::after { content: ''; position: absolute; inset: 0; z-index: 4; pointer-events: none; box-shadow: inset 0 0 60px 10px #000000a0; }
+.palco .adventure-world__party { flex: 1; min-height: 0; padding: 26px 16px 6px; align-items: flex-end; gap: 10px; }
 .palco__group { display: flex; align-items: flex-end; gap: clamp(6px, 1.2vw, 16px); flex-wrap: wrap; min-width: 0; }
 .palco .adventure-actor { width: clamp(72px, 7.5vw, 96px); padding: 3px 5px 6px; }
 .palco .adventure-actor__sprite { width: 52px; height: 52px; }
