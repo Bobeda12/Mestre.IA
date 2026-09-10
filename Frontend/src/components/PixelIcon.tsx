@@ -43,44 +43,15 @@ const ICON_PATHS = {
 
 export type PixelIconName = keyof typeof ICON_PATHS;
 
-// Item D da rodada de melhorias pós-Fase-6 — os PNGs são desenhados à mão,
-// cada um com sua própria folga dentro do quadro de 16×16 (medido de
-// verdade: `im.getbbox()` sobre cada arquivo, ver commit). O mesmo `size=`
-// produzia ícones visivelmente maiores ou menores lado a lado (ex.:
-// "pergaminho" preenche só 69% do quadro; "config" preenche 100%) — o que
-// o usuário via como "ícones desalinhados". Este fator escala CADA ícone
-// pra todos convergirem pro mesmo preenchimento visual (~85% do quadro),
-// mantendo `size` como o tamanho nominal esperado pelo call site.
-const CORRECAO_VISUAL: Partial<Record<PixelIconName, number>> = {
-  adaga: 1.05,
-  alerta: 0.91,
-  bau: 0.85,
-  caveira: 1.13,
-  config: 0.85,
-  coroa: 1.13,
-  cura: 1.13,
-  dado: 0.91,
-  enviar: 0.91,
-  escudo: 1.25,
-  espada: 0.94,
-  fechar: 1.05,
-  maca: 0.85,
-  machado: 0.85,
-  mais: 1.13,
-  menos: 1.13,
-  menu: 1.13,
-  mochila: 0.91,
-  moeda: 1.24,
-  pergaminho: 1.24,
-  'pocao-azul': 1.05,
-  'pocao-roxa': 1.05,
-  'pocao-verde': 1.05,
-  'pocao-vermelha': 1.05,
-  seta: 1.13,
-  'som-ligado': 0.85,
-  'som-mudo': 0.85,
-};
-
+// Item D da rodada de melhorias pós-Fase-6 — revertido. A tentativa
+// anterior era um fator de escala por ícone pra igualar o PREENCHIMENTO
+// visual (quanto do quadro de 16×16 o desenho ocupa). Na prática isso
+// piorou a queixa original: numa fileira que já era uniforme (4 ícones a
+// 18px cada), a correção produziu 4 tamanhos DIFERENTES (15–22px) — o que
+// o olho lê como "desalinhado" é a CAIXA (width/height), não a folga
+// interna do desenho. `size=` volta a valer exatamente o que cada chamada
+// passa; ficar uniforme dentro de uma mesma fileira é responsabilidade de
+// quem chama (usar o mesmo `size` para ícones do mesmo grupo visual).
 export default function PixelIcon({
   name,
   size = 16,
@@ -92,12 +63,11 @@ export default function PixelIcon({
   className?: string;
   alt?: string;
 }) {
-  const tamanho = Math.round(size * (CORRECAO_VISUAL[name] ?? 1));
   return (
     <img
       src={ICON_PATHS[name]}
-      width={tamanho}
-      height={tamanho}
+      width={size}
+      height={size}
       alt={alt}
       draggable={false}
       className={`inline-block shrink-0 ${className}`}

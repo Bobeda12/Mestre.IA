@@ -33,6 +33,7 @@ import PixelTooltip from './PixelTooltip';
 import DetalheMonstroModal from './DetalheMonstroModal';
 import GuiaAventureiro from './GuiaAventureiro';
 import Palco from './jogo/Palco';
+import PalcoRecolhido from './jogo/PalcoRecolhido';
 import HudBarra from './jogo/HudBarra';
 import DockAcoes from './jogo/DockAcoes';
 import AbaJornada from './jogo/AbaJornada';
@@ -195,6 +196,12 @@ export default function GameChat() {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [showSidebar, setShowSidebar] = useState(true);
+  // Pedido do usuário (rodada de melhorias pós-Fase-6) — o palco competia
+  // com o chat pelo mesmo espaço o tempo todo, mesmo quando só mostrava
+  // quem já estava visível (nada pra selecionar). Recolhido por padrão;
+  // expande sozinho quando o combate começa (é ali que selecionar alvo
+  // importa de verdade) — nunca recolhe sozinho, só o jogador decide isso.
+  const [palcoExpandido, setPalcoExpandido] = useState(false);
   const [abaAtiva, setAbaAtiva] = useState<AbaFicha>('status');
   const [configAberta, setConfigAberta] = useState(false);
   const [manualAberto, setManualAberto] = useState(false);
@@ -435,6 +442,13 @@ export default function GameChat() {
     if (combatActive) combateFoiAtivoRef.current = true;
     else if (combateFoiAtivoRef.current && !gameOver) setPrimeiroCombateResolvido(true);
   }, [combatActive, gameOver]);
+
+  // Palco recolhível — expande sozinho quando o combate começa (selecionar
+  // alvo importa de verdade ali); nunca recolhe sozinho ao terminar, só o
+  // jogador decide isso.
+  useEffect(() => {
+    if (combatActive) setPalcoExpandido(true);
+  }, [combatActive]);
 
   // Etapa 11 (B-4) — trilha por tema. O tema é derivado do estado (combate,
   // HP baixo, game over), nunca pedido ao modelo.
@@ -1643,7 +1657,7 @@ export default function GameChat() {
             herói caído a 0 PV (mas ainda recuperável via teste de morte)
             continua vendo o palco, com o botão "Resistir" no lugar de
             "Atacar" (o próprio AdventureStage decide isso via `hp`). */}
-        {!gameOver && (
+        {!gameOver && (palcoExpandido ? (
             <Palco
                 nome={charName}
                 classe={charClass}
@@ -1667,8 +1681,19 @@ export default function GameChat() {
                 aoSelecionar={setSelecao}
                 aoAgir={aoAgir}
                 aoInspecionarHeroi={() => setFichaModalAberta(true)}
+                aoRecolher={() => setPalcoExpandido(false)}
             />
-        )}
+        ) : (
+            <PalcoRecolhido
+                classe={charClass}
+                local={cena?.nome || localAtual}
+                combate={combatActive}
+                aliados={aliados}
+                pessoas={mundoPersistente?.pessoas ?? []}
+                inimigos={enemies}
+                aoExpandir={() => setPalcoExpandido(true)}
+            />
+        ))}
 
         {/* Fase 1 (revisão de gameplay) — testes de morte visíveis: o herói
             caído a 0 PV está a três falhas de perder o personagem, e essa

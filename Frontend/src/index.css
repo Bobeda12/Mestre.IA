@@ -522,7 +522,12 @@ img[src^="/assets/backgrounds/"] {
 .adventure-world--ruinas .adventure-world__sky { background: linear-gradient(#252535, #5d5166); }
 .adventure-world--noite .adventure-world__sky { background: linear-gradient(#0c1728, #374158); }
 .adventure-world--noite .adventure-world__silhouette { filter: brightness(.55); }
-.adventure-world__floor { position: absolute; z-index: -2; inset: 45% 0 0; border-top: 4px solid #687254; background-color: #434b36; background-image: linear-gradient(90deg, #27342144 2px, transparent 2px), linear-gradient(#27342155 2px, transparent 2px), linear-gradient(90deg, transparent 22px, #98a07920 22px, #98a07920 24px, transparent 24px); background-size: 48px 24px, 48px 24px, 96px 48px; transform: perspective(400px) rotateX(14deg) scale(1.15); transform-origin: top; }
+/* Item "palco melhor designado" (rodada de melhorias pós-Fase-6) — a
+   perspectiva 3D (`perspective`+`rotateX`) fazia o chão do palco tentar
+   ser um diorama isométrico, destoando do resto da UI, que é chapada
+   (painéis 2D retos). Removida: o chão agora é um plano reto, igual em
+   linguagem visual ao resto da tela. */
+.adventure-world__floor { position: absolute; z-index: -2; inset: 45% 0 0; border-top: 4px solid #687254; background-color: #434b36; background-image: linear-gradient(90deg, #27342144 2px, transparent 2px), linear-gradient(#27342155 2px, transparent 2px), linear-gradient(90deg, transparent 22px, #98a07920 22px, #98a07920 24px, transparent 24px); background-size: 48px 24px, 48px 24px, 96px 48px; }
 .adventure-world--ruinas .adventure-world__floor { background-color: #44414c; border-top-color: #73686c; }
 .adventure-world__party { min-height: 220px; display: flex; align-items: flex-end; gap: clamp(12px, 4vw, 70px); justify-content: space-between; padding: 25px 24px 18px; }
 .adventure-world__opponents { display: flex; justify-content: center; gap: clamp(10px, 2vw, 30px); flex-wrap: wrap; align-items: flex-end; min-width: 0; }
@@ -664,8 +669,12 @@ img[src^="/assets/backgrounds/"] {
 .adventure-actor--npc { border-color: #d9c46f55; }
 .adventure-actor--npc .adventure-actor__tag { color: #f0deb0; font-size: 11px; }
 .adventure-actor--bystander { opacity: .55; filter: saturate(.6); cursor: default; }
-.palco__badge { position: absolute; z-index: 5; top: 6px; left: 8px; display: flex; flex-direction: column; gap: 2px; padding: 5px 8px; background: #10140fd9; border: 1px solid #665132; max-width: 55%; }
-.palco__objective { position: absolute; z-index: 5; top: 6px; right: 8px; max-width: 42%; padding: 5px 8px; background: #10140fd9; border: 1px solid #3b4934; font-size: 11px; color: #e5d6a4; }
+/* Mesmo tratamento de borda (2px) e fundo (~metade opaco) dos cards da
+   ficha (HudPersonagem.tsx: `border-2 border-gray-700 bg-black/50`) — antes
+   eram caixas translúcidas com borda de 1px, um "overlay de HUD" que não
+   combinava com o resto dos painéis da tela, que são todos sólidos. */
+.palco__badge { position: absolute; z-index: 5; top: 6px; left: 8px; display: flex; flex-direction: column; gap: 2px; padding: 5px 8px; background: #000000b3; border: 2px solid #695333; max-width: 55%; }
+.palco__objective { position: absolute; z-index: 5; top: 6px; right: 8px; max-width: 42%; padding: 5px 8px; background: #000000b3; border: 2px solid #695333; font-size: 11px; color: #e5d6a4; }
 .palco__objective > span { display: flex; align-items: center; gap: 5px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .palco__objective b { color: #ffdd91; font-weight: 600; }
 .palco__objective .adventure-objective__track { margin-top: 5px; }

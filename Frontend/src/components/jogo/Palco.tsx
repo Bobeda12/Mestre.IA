@@ -36,6 +36,7 @@ interface Props {
   aoSelecionar: (selecao: Selecao | null) => void;
   aoAgir: (acao: AcaoDireta, rotulo: string) => void;
   aoInspecionarHeroi: () => void;
+  aoRecolher: () => void;
 }
 
 const DURACAO_RESULTADO_MS = 4000;
@@ -78,7 +79,15 @@ export default function Palco(p: Props) {
       {/chuva|tempestade/i.test(p.clima) && <div className="absolute inset-0 animate-chuva opacity-40 pointer-events-none" aria-hidden="true" />}
 
       <div className="palco__badge">
-        <span className="font-pixel-title text-[8px] text-rpg-gold tracking-widest">{p.combate ? `ENCONTRO${p.cena?.rodada ? ` · RODADA ${p.cena.rodada}` : ''}` : 'EXPLORACAO'}</span>
+        <div className="flex items-center justify-between gap-3">
+          <span className="font-pixel-title text-[8px] text-rpg-gold tracking-widest">{p.combate ? `ENCONTRO${p.cena?.rodada ? ` · RODADA ${p.cena.rodada}` : ''}` : 'EXPLORACAO'}</span>
+          {/* Item do pedido "palco recolhível" — mesmo botão sempre no
+              mesmo canto do badge, pra não competir com [OBJETIVO] no
+              canto oposto. */}
+          <button type="button" onClick={p.aoRecolher} aria-label="Recolher o palco" className="shrink-0 opacity-70 hover:opacity-100 transition-opacity">
+            <PixelIcon name="seta" size={10} className="rotate-90" />
+          </button>
+        </div>
         <span className="font-rpg text-sm text-white leading-tight">{p.cena?.nome || p.local || 'Sua aventura'}</span>
       </div>
       {p.cena && (p.cena.objetivo || p.cena.descricao) && (
