@@ -140,6 +140,8 @@ def registrar_cena(executor: "ToolExecutor", descricao: str, entidades: list[dic
 
 
 def registrar_pessoa(executor: "ToolExecutor", pessoa: dict) -> dict:
+    from app.services import economia
+
     try:
         npc = PessoaMundo.model_validate(pessoa)
     except ValidationError as erro:
@@ -148,12 +150,21 @@ def registrar_pessoa(executor: "ToolExecutor", pessoa: dict) -> dict:
     mercadoria_nova = [c for c in (regras.nome_canonico(n) for n in npc.mercadoria) if c][:8]
 
     def _atualizar_mercadoria(existente: PessoaMundo) -> dict:
+        # Caracterização pode ser preenchida uma vez em saves antigos; nunca reescrita.
+        if not existente.habito:
+            existente.habito = npc.habito
+        if not existente.voz:
+            existente.voz = npc.voz
         # Fase 1 (ADR-0033) — a única coisa que um recadastro pode mudar numa
         # pessoa conhecida é o que ela vende (achado ao vivo: o modelo quis
         # fazer de uma NPC da origem a mercadora da cena). Relações, memória
         # e segredo continuam intocados.
         if mercadoria_nova:
+            estoque = economia.estoque_atual(existente)
+            if not existente.mercadoria and not existente.estoque_inicializado:
+                estoque = {n: economia.ESTOQUE_INICIAL for n in mercadoria_nova}
             existente.mercadoria = mercadoria_nova
+            economia.fixar_estoque(existente, estoque)
             return {"mercadoria": mercadoria_nova}
         return {}
 
@@ -189,6 +200,8 @@ def registrar_pessoa(executor: "ToolExecutor", pessoa: dict) -> dict:
         npc.raca = "Humano"  # o retrato do painel vem de /assets/races/<raca>.png
     # Mercadoria só com nomes do catálogo (nome canônico); o resto é descartado.
     npc.mercadoria = mercadoria_nova
+    npc.estoque = {n: economia.ESTOQUE_INICIAL for n in mercadoria_nova}
+    npc.estoque_inicializado = bool(mercadoria_nova)
     npc.confianca = max(-30, min(30, (executor.heroi.reputacao_npcs or {}).get(npc.nome, 0)))
     npc.segredo_revelado = False
     npc.lembrancas = []
@@ -205,6 +218,8 @@ def registrar_conflito(executor: "ToolExecutor", conflito: dict) -> dict:
     mundo = executor.w_state.mundo
     if novo.id in mundo.conflitos:
         return {"existente": True, "aviso": "O relógio existente foi preservado."}
+    if novo.organizacao or novo.origem:
+        return {"erro": "Iniciativas coletivas devem passar por mobilizar_organizacao."}
     pessoa = mundo.pessoas.get(novo.agente)
     if not pessoa or novo.local != pessoa.local or novo.local != executor.w_state.local:
         return {"erro": "O agente do conflito deve estar registrado e presente no local atual."}
@@ -224,14 +239,37 @@ def registrar_conflito(executor: "ToolExecutor", conflito: dict) -> dict:
 
 
 def avancar_tempo(executor: "ToolExecutor", minutos: int, atualizar_hora: bool = True) -> None:
+    from app.services.economia import avancar_remessas
+    from app.services.emergencia import amadurecer_consequencias
+    from app.services.organizacoes import iniciativa_viavel
+
     mundo = executor.w_state.mundo
     antes = mundo.minutos
+    fim = antes + minutos
+    # Uma viagem longa não pode aplicar um bloqueio futuro antes de uma entrega anterior.
+    limites = {c.proximo_avanco + max(0, c.etapas - c.progresso - 1) * c.intervalo
+               for c in mundo.conflitos.values() if c.estado == "ativo"}
+    limites.update(r.chegada_em for r in mundo.remessas.values() if r.estado != "entregue")
+    cortes = sorted(t for t in limites if antes < t < fim)
+    if cortes:
+        for instante in [*cortes, fim]:
+            avancar_tempo(executor, instante - mundo.minutos, atualizar_hora)
+        return
     mundo.minutos += minutos
+    if mundo.preparacao and mundo.preparacao.expira_em <= mundo.minutos:
+        mundo.preparacao = None
+    amadurecer_consequencias(executor)
     if atualizar_hora:
         horas = mundo.minutos // 60 - antes // 60
         executor.w_state.hora_do_dia = (executor.w_state.hora_do_dia + horas) % 24
     for conflito in mundo.conflitos.values():
         if conflito.estado != "ativo":
+            continue
+        if not iniciativa_viavel(mundo, conflito):
+            conflito.estado = "resolvido"
+            conflito.desfecho = f"{conflito.nome}: a iniciativa perdeu as condições para prosseguir."
+            if conflito.local == executor.w_state.local:
+                executor.eventos.append(conflito.desfecho)
             continue
         while mundo.minutos >= conflito.proximo_avanco and conflito.progresso < conflito.etapas:
             conflito.progresso += 1
@@ -249,6 +287,9 @@ def avancar_tempo(executor: "ToolExecutor", minutos: int, atualizar_hora: bool =
         if conflito.local == executor.w_state.local:
             registrar_fato(executor, conflito.consequencia, mundo.pessoas[conflito.agente].nome)
             executor.eventos.append(f"⏳ {conflito.consequencia}")
+
+    # Bloqueios vencidos neste avanço são resolvidos antes de permitir entregas.
+    avancar_remessas(executor)
 
 
 def bonus_aptidao(classe: str, acao: str, especializacoes: dict[str, str]) -> int:
@@ -631,6 +672,12 @@ def escolher_especializacao(executor: "ToolExecutor", marco: str, escolha: str) 
 
 
 def painel_mundo(w_state, classe: str, privado: bool = False) -> dict:
+    from app.services.economia import painel_remessas, vitrine
+    from app.services.emergencia import painel_emergente
+    from app.services.imersao import painel_imersao
+    from app.services.instalacoes import painel_instalacoes
+    from app.services.organizacoes import painel_organizacoes
+
     mundo = w_state.mundo
     cena = mundo.cenas.get(w_state.local, CenaPersistente())
     entidades = []
@@ -655,12 +702,7 @@ def painel_mundo(w_state, classe: str, privado: bool = False) -> dict:
             if pessoa.segredo_revelado:
                 dados["depoimento"] = pessoa.segredo
             # Fase 1 — vitrine com preço já calculado pelo servidor.
-            from app.services import items as itens
-
-            dados["vitrine"] = [
-                {"item": n, "preco": itens.preco_compra((itens.ficha(n) or {}).get("preco", 0), pessoa.confianca)}
-                for n in pessoa.mercadoria
-            ]
+            dados["vitrine"] = vitrine(pessoa, w_state.itens_inventados)
         pessoas.append(dados)
     conflitos = []
     for conflito in mundo.conflitos.values():
@@ -676,6 +718,12 @@ def painel_mundo(w_state, classe: str, privado: bool = False) -> dict:
             conflitos.append(dados)
     aptidao = APTIDOES.get(classe, APTIDOES["Guerreiro"])
     return {
+        "emergencia": painel_emergente(w_state, privado),
+        "imersao": painel_imersao(w_state),
+        "remessas": painel_remessas(w_state),
+        "instalacoes": painel_instalacoes(w_state),
+        "projetos": [p.model_dump() for p in mundo.projetos.values()],
+        "organizacoes": painel_organizacoes(w_state),
         "local": w_state.local,
         "descricao": cena.descricao,
         "entidades": entidades,

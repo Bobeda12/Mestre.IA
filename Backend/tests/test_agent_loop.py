@@ -247,7 +247,9 @@ def test_limite_de_passos_estourado_devolve_narrativa_de_recuperacao(monkeypatch
     monkeypatch.setattr(agent_loop, "chamar_com_fallback", fake)
     executor = FakeExecutor({"mover": ({"local": "Floresta"}, True)})
 
-    narrativa, _eventos, chamadas = agent_loop.executar_turno([], executor, max_passos=3)
+    # Isola o teto de passos do orçamento de contexto: esta cena só usa mover.
+    tools = [t for t in agent_loop.TOOLS_SCHEMA if t["function"]["name"] == "mover"]
+    narrativa, _eventos, chamadas = agent_loop.executar_turno([], executor, max_passos=3, tools=tools)
 
     assert "perdeu o fio" in narrativa
     assert len(chamadas) == 3
@@ -463,7 +465,8 @@ def test_stream_limite_de_passos_estourado_gera_evento_de_erro():
     fake = _StreamLLMFalso(sempre_chama_ferramenta)
     executor = FakeExecutor({"mover": ({"local": "Floresta"}, True)})
 
-    eventos = list(agent_loop.executar_turno_stream([], executor, max_passos=3, chamar_fn=fake))
+    tools = [t for t in agent_loop.TOOLS_SCHEMA if t["function"]["name"] == "mover"]
+    eventos = list(agent_loop.executar_turno_stream([], executor, max_passos=3, chamar_fn=fake, tools=tools))
 
     # Etapa 10 (A-7) tira o padrão `*(...)*` de todo frame de sistema — este
     # era o único lugar que ainda chegava como "token" em vez de "erro".

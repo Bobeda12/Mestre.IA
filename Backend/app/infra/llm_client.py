@@ -18,7 +18,9 @@ ADR-0003 (routers → services → domain/infra)."""
 
 import contextlib
 import logging
+import threading
 import time
+import weakref
 from collections.abc import Iterator
 from typing import Any
 
@@ -75,6 +77,27 @@ def _build_clients() -> dict[str, openai.OpenAI]:
 
 clients = _build_clients()
 
+# Pausa por instância de cliente e modelo: nenhuma chave ou texto de jogador é
+# armazenado. Válida só neste processo; clientes de outras contas são independentes.
+_pausas: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
+_pausas_lock = threading.Lock()
+
+
+def _em_pausa(cliente, modelo: str) -> bool:
+    with _pausas_lock:
+        return _pausas.get(cliente, {}).get(modelo, 0) > time.monotonic()
+
+
+def _registrar_pausa(cliente, modelo: str, erro: Exception) -> None:
+    if not isinstance(erro, openai.RateLimitError):
+        return
+    try:
+        espera = float(erro.response.headers.get("retry-after", "30"))
+    except ValueError:
+        espera = 30
+    with _pausas_lock:
+        _pausas.setdefault(cliente, {})[modelo] = time.monotonic() + max(1, min(120, espera))
+
 
 def _parse_modelo(espec: str) -> tuple[str, str]:
     provedor, _, modelo = espec.partition(":")
@@ -96,7 +119,8 @@ _SEM_PROVEDOR = (
 @retry(
     stop=stop_after_attempt(2),
     wait=wait_exponential(multiplier=0.5, max=4),
-    retry=retry_if_exception_type(_ERROS_TRANSITORIOS),
+    # 429 pede fallback imediato: repetir o mesmo payload não repõe a cota.
+    retry=retry_if_exception_type(tuple(e for e in _ERROS_TRANSITORIOS if e is not openai.RateLimitError)),
     reraise=True,
 )
 def _chamar_modelo(
@@ -212,11 +236,12 @@ def chamar_com_fallback(
     ultimo_erro: Exception | None = None
     for provedor, modelo in CADEIA:
         cliente = clients.get(provedor)
-        if cliente is None:
+        if cliente is None or _em_pausa(cliente, modelo):
             continue  # provedor sem chave configurada — pulado, não é uma falha
         try:
             return _chamar_modelo(cliente, provedor, modelo, msgs, tools, tool_choice, response_format)
         except _ERROS_TRANSITORIOS as e:
+            _registrar_pausa(cliente, modelo, e)
             ultimo_erro = e
             continue
         except openai.APIStatusError as e:
@@ -352,11 +377,12 @@ def chamar_stream_com_fallback(
     ultimo_erro: Exception | None = None
     for provedor, modelo in CADEIA:
         cliente = clients.get(provedor)
-        if cliente is None:
+        if cliente is None or _em_pausa(cliente, modelo):
             continue
         try:
             stream = _chamar_modelo(cliente, provedor, modelo, msgs, tools, tool_choice, stream=True)
         except _ERROS_TRANSITORIOS as e:
+            _registrar_pausa(cliente, modelo, e)
             ultimo_erro = e
             continue
         except openai.APIStatusError as e:
@@ -401,6 +427,7 @@ def chamar_stream_com_fallback(
                     )
                 return
             except _ERROS_TRANSITORIOS as e:
+                _registrar_pausa(cliente, modelo, e)
                 if comprometido:
                     raise ErroMestre("A conexão com a IA caiu no meio da resposta.") from e
                 ultimo_erro = e

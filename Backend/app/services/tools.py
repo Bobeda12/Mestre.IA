@@ -10,8 +10,8 @@ sucesso) — nunca deixa uma ferramenta malformada derrubar o turno inteiro."""
 
 import json
 import random
+import re
 from collections.abc import Callable
-from typing import Any
 
 from app.domain.eventos import DadosRolagem, EventoRolagem, EventoStatus
 from app.domain.state import Aliado, CombatState, Inimigo, LocalDescoberto, QuestLog, WorldState
@@ -619,9 +619,11 @@ class ToolExecutor:
     LIMITE_TURNOS_DESCANSO_LONGO = 8
 
     def _local_seguro(self) -> bool:
-        """Um local recém-descoberto (Fase 5) é conservadoramente inseguro
-        pra descanso longo — só o catálogo curado (`data/locations.json`,
-        campo `seguro`) garante isso hoje."""
+        """Catálogo seguro ou abrigo conquistado, inaugurado e ainda acessível."""
+        from app.services.instalacoes import disponivel
+
+        if any(i.tipo == "abrigo" and disponivel(self.w_state, i) for i in self.w_state.mundo.instalacoes.values()):
+            return True
         if self.w_state.local in self.w_state.locais_descobertos:
             return False
         dados = regras.get_location(self.w_state.local) or {}
@@ -774,6 +776,8 @@ class ToolExecutor:
     def comerciar(self, npc: str, operacao: str, item: str | None = None) -> dict:
         """Preços são do servidor (`items.preco_compra/venda`), nunca do
         narrador; o NPC precisa estar presente e ter `mercadoria`."""
+        from app.services import economia
+
         if self.c_state.ativo:
             return {"erro": "ninguém negocia no meio de um combate"}
         mundo = self.w_state.mundo
@@ -784,12 +788,7 @@ class ToolExecutor:
             return {"erro": f"'{npc}' não está aqui"}
         if not pessoa.mercadoria:
             return {"erro": f"{pessoa.nome} não tem nada para vender nem compra nada"}
-        vitrine: list[dict[str, Any]] = [
-            {"item": n, "preco": itens.preco_compra(
-                (itens.ficha(n) or {}).get("preco", 0), pessoa.confianca, self.mods.desconto
-            )}
-            for n in pessoa.mercadoria
-        ]
+        vitrine = economia.vitrine(pessoa, self.w_state.itens_inventados, self.mods.desconto)
         if operacao == "listar":
             return {"vitrine": vitrine, "ouro": self.heroi.ouro}
         if not item:
@@ -798,8 +797,13 @@ class ToolExecutor:
             oferta = next((v for v in vitrine if v["item"].lower() == item.lower()), None)
             if oferta is None:
                 return {"erro": f"{pessoa.nome} não vende '{item}'", "vitrine": vitrine}
+            if oferta["quantidade"] <= 0:
+                return {"erro": f"{oferta['item']} está esgotado; procure outro fornecedor ou uma entrega."}
             if self.heroi.ouro < oferta["preco"]:
                 return {"erro": f"ouro insuficiente: {oferta['item']} custa {oferta['preco']}, tem {self.heroi.ouro}"}
+            estoque = economia.estoque_atual(pessoa)
+            estoque[oferta["item"]] -= 1
+            economia.fixar_estoque(pessoa, estoque)
             self.heroi.ouro -= oferta["preco"]
             self.heroi.inventario = [*self.heroi.inventario, oferta["item"]]
             self.eventos.append(f"💰 Compra {oferta['item']} de {pessoa.nome} por {oferta['preco']} de ouro.")
@@ -809,6 +813,9 @@ class ToolExecutor:
             real = itens.resolver_nome(item, self.heroi.inventario)
             if real is None:
                 return {"erro": f"'{item}' não está no inventário"}
+            estoque = economia.estoque_atual(pessoa)
+            if real not in estoque and len(estoque) >= economia.LIMITE_ITENS:
+                return {"erro": "O comerciante não tem espaço para mais tipos de mercadoria."}
             valor = itens.preco_venda((itens.ficha(real, self.w_state.itens_inventados) or {}).get("preco", 0))
             inventario = list(self.heroi.inventario)
             inventario.remove(real)
@@ -817,6 +824,8 @@ class ToolExecutor:
             for slot in ("arma", "armadura", "escudo"):
                 if getattr(eq, slot) == real and real not in inventario:
                     itens.desequipar(self.heroi, slot)
+            estoque[real] = estoque.get(real, 0) + 1
+            economia.fixar_estoque(pessoa, estoque)
             self.heroi.ouro += valor
             self.eventos.append(f"💰 Vende {real} a {pessoa.nome} por {valor} de ouro.")
             return {"vendido": real, "preco": valor, "ouro_restante": self.heroi.ouro}
@@ -963,9 +972,11 @@ class ToolExecutor:
             return {"erro": "argumentos precisam ser um objeto JSON"}, False
         acoes = {"atacar", "investir", "esquivar", "defender", "esconder_se", "fugir",
                  "usar_habilidade", "interagir", "usar_item", "agir_no_mundo", "intervir_conflito",
-                 "mover", "descansar"}
+                 "mover", "descansar", "resolver_intencao"}
         em_combate = self.c_state.ativo
         consome = nome in acoes and not (nome == "agir_no_mundo" and args.get("acao") == "examinar")
+        if nome == "usar_instalacao":
+            consome = args.get("operacao") == "preparar"
         if nome == "equipar":
             consome = em_combate  # trocar de arma no meio da luta custa a ação
         if nome == "aplicar_dano" and em_combate:
@@ -992,6 +1003,12 @@ class ToolExecutor:
             return {"erro": f"'{nome}' falhou ao executar: {e}"}, False
         if "erro" not in resultado:
             if consome:
+                from app.services.emergencia import registrar_acontecimento
+
+                resultado["acontecimento_id"] = registrar_acontecimento(self, nome, resultado)
+                from app.services.imersao import registrar_ritmo
+
+                registrar_ritmo(self, nome, resultado, em_combate)
                 self._acao_gasta = True
                 self.c_state.acao_resolvida = True
                 from app.services.living_world import avancar_tempo
@@ -1001,6 +1018,8 @@ class ToolExecutor:
                     minutos = 120
                 elif nome == "descansar":
                     minutos = 480 if args.get("tipo") == "longo" else 60
+                elif nome == "usar_instalacao":
+                    minutos = 60
                 avancar_tempo(self, minutos, atualizar_hora=nome not in {"mover", "descansar"})
             if nome == "atacar_com_aliado":
                 self.c_state.aliados_agiram = [*self.c_state.aliados_agiram, args.get("aliado", "")]
@@ -1040,6 +1059,15 @@ ToolExecutor._DESPACHO = {
 ToolExecutor._DESPACHO.update(WORLD_DISPATCH)
 
 
+def _consultar_contexto(executor, **args):
+    from app.services.contexto_ia import consultar_contexto
+
+    return consultar_contexto(executor, **args)
+
+
+ToolExecutor._DESPACHO["consultar_contexto"] = _consultar_contexto
+
+
 def sincronizar_aliados(heroi: Personagem, c_state: CombatState) -> None:
     """Fase 3 da revisão de gameplay — o HP de um aliado muda em combate
     (`c_state.aliados`, criado a cada `iniciar_combate`/`recrutar_aliado`),
@@ -1058,6 +1086,17 @@ def sincronizar_aliados(heroi: Personagem, c_state: CombatState) -> None:
 
 
 TOOLS_SCHEMA: list[dict] = [*WORLD_TOOLS,
+    {"type": "function", "function": {
+        "name": "consultar_contexto",
+        "description": "Consulta privada, sem gastar ação: mundo busca fatos/pessoas/locais; registro lê ref exata; "
+        "memoria busca todo histórico; regras busca regras completas. pagina continua trechos. "
+        "assunto=ferramentas carrega grupo em consulta: criacao, consequencias, comercio, viagem, "
+        "progressao, combate, recompensas, imersao. Consulte antes de inventar um fato ausente.",
+        "parameters": {"type": "object", "properties": {
+            "assunto": {"type": "string", "enum": ["mundo", "registro", "memoria", "regras", "ferramentas"]},
+            "consulta": {"type": "string"}, "pagina": {"type": "integer"},
+        }, "required": ["assunto", "consulta"]},
+    }},
     {
         "type": "function",
         "function": {
@@ -1566,14 +1605,68 @@ _SO_FORA_DE_COMBATE = {
     "atualizar_missao", "registrar_cena", "registrar_pessoa", "registrar_conflito",
     "intervir_conflito", "definir_objetivo", "registrar_vinculo", "gastar_ouro",
     "consultar_regra", "ajustar_reputacao_npc",
+    "registrar_particularidade", "desenvolver_consequencia", "propor_aprendizado",
+    "registrar_momento", "registrar_marca",
 }
 # Decisões do JOGADOR nunca são ferramenta do narrador (o painel e
 # `/game/action` são o único caminho) — mesma regra que a Fase 3 aplica ao
 # level-up.
-_NUNCA_PARA_O_NARRADOR = {"escolher_especializacao", "escolher_nivel"}
+_NUNCA_PARA_O_NARRADOR = {
+    "escolher_especializacao", "escolher_nivel", "escolher_aprendizado", "gerir_projeto", "decidir_acordo_projeto",
+    "usar_instalacao",
+}
 
 
-def tools_para(c_state: CombatState) -> list[dict]:
+GRUPOS_FERRAMENTAS = {
+    "economia": {"despachar_remessa", "comerciar"},
+    "instalacoes": {"propor_instalacao"},
+    "organizacoes": {"registrar_organizacao", "mobilizar_organizacao", "intervir_conflito"},
+    "projetos": {"planejar_projeto", "registrar_avanco_projeto"},
+    "acordos": {"propor_acordo_projeto", "cumprir_acordo_projeto"},
+    "criacao": {"registrar_cena", "registrar_pessoa", "registrar_particularidade"},
+    "consequencias": {"registrar_conflito", "desenvolver_consequencia", "intervir_conflito", "registrar_vinculo"},
+    "comercio": {"comerciar", "equipar", "desequipar", "usar_item"},
+    "viagem": {"mover", "descansar", "definir_objetivo", "iniciar_combate"},
+    "progressao": {"propor_aprendizado", "abrir_arco", "encerrar_arco", "atualizar_missao", "concluir_objetivo"},
+    "combate": _SO_EM_COMBATE | {"iniciar_combate", "aplicar_dano"},
+    "recompensas": {"dar_item", "gastar_ouro", "ajustar_reputacao_npc", "recrutar_aliado"},
+    "regras": {"consultar_regra"},
+    "imersao": {"registrar_momento", "registrar_marca", "apresentar_oportunidades", "registrar_particularidade"},
+}
+
+
+def tools_para(c_state: CombatState, acao: str | None = None, w_state: WorldState | None = None) -> list[dict]:
     """Subconjunto de `TOOLS_SCHEMA` que o narrador recebe neste turno."""
     ocultas = _NUNCA_PARA_O_NARRADOR | (_SO_FORA_DE_COMBATE if c_state.ativo else _SO_EM_COMBATE)
-    return [t for t in TOOLS_SCHEMA if t["function"]["name"] not in ocultas]
+    disponiveis = [t for t in TOOLS_SCHEMA if t["function"]["name"] not in ocultas]
+    if acao is None:
+        return disponiveis
+    from app.services.contexto_ia import termos
+
+    ativas = {"consultar_contexto", "rolar_teste", "agir_no_mundo", "resolver_intencao"}
+    palavras = termos(acao)
+    if re.search(r"\b(?:vou|vamos|ir|indo|sigo)\s+(?:para|a|ao|à)\b", acao.casefold()):
+        ativas |= GRUPOS_FERRAMENTAS["viagem"]
+    gatilhos = {
+        "economia": {"remessa", "estoque", "entrega", "abastec", "fornecedor"},
+        "instalacoes": {"abrigo", "oficina", "instalac", "inaugur", "conquista"},
+        "organizacoes": {"organizac", "facc", "guilda", "conselho", "sindicato", "companhia"},
+        "acordos": {"acordo", "contrapartida", "patrocin", "exclusiv"},
+        "projetos": {"projeto", "ambicao", "constru", "reconstru", "fundar", "restaur"},
+        "comercio": {"compr", "vend", "mercad", "loja", "equip", "pocao", "beber", "usar"},
+        "viagem": {"viaj", "partir", "sair", "descans", "dorm", "caminh", "seguir", "ir", "vou"},
+        "consequencias": {"promet", "conflit", "intervir", "consequenc", "iniciativa"},
+        "progressao": {"aprend", "capitulo", "missao", "objetivo", "arco"},
+        "recompensas": {"recrut", "aliado", "receb", "recompensa"},
+        "criacao": {"novo", "nova", "desconhecid"},
+        "combate": {"atac", "lutar", "combate", "agredir"},
+        "imersao": {"convers", "lembr", "pista", "apelido", "celebr", "conviv", "investig"},
+    }
+    for grupo, raizes in gatilhos.items():
+        if any(p.startswith(raiz) for p in palavras for raiz in raizes):
+            ativas |= GRUPOS_FERRAMENTAS[grupo]
+    if c_state.ativo:
+        ativas |= _SO_EM_COMBATE | {"usar_item"}
+    elif w_state is not None and w_state.local not in w_state.mundo.cenas:
+        ativas |= GRUPOS_FERRAMENTAS["criacao"]
+    return [t for t in disponiveis if t["function"]["name"] in ativas]

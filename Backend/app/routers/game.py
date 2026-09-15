@@ -397,12 +397,20 @@ def game_action(
                           "proposta": action.proposta}
         elif action.acao == "definir_objetivo":
             argumentos = {"objetivo": action.proposta}
+        elif action.acao == "gerir_projeto":
+            argumentos = {"operacao": action.operacao, "ambicao": action.proposta, "projeto": action.alvo or ""}
+        elif action.acao == "usar_instalacao":
+            argumentos = {"operacao": action.operacao, "instalacao": action.alvo or ""}
+        elif action.acao == "decidir_acordo_projeto":
+            argumentos = {"operacao": action.operacao, "projeto": action.alvo or "", "acordo": action.proposta}
         elif action.acao == "encerrar_arco":
             argumentos = {"resumo_proposto": action.proposta, "abandonar": action.operacao == "abandonar"}
         elif action.acao == "escolher_nivel":
             argumentos = {
                 "nivel": action.nivel_escolha or 0, "tipo": action.tipo_escolha or "", "escolha": action.opcao or "",
             }
+        elif action.acao == "escolher_aprendizado":
+            argumentos = {"aprendizado": action.alvo or ""}
         elif action.acao == "atacar_com_aliado":
             argumentos = {"aliado": action.aliado or "", "alvo": action.alvo}
         elif action.acao == "equipar":
@@ -525,14 +533,14 @@ async def chat_endpoint(
         resumo = ResumoRolante.model_validate(heroi.resumo_rolante or {})
         with medir("memoria", personagem_id=heroi.id, turno=w_state.turno):
             memorias = memory.memorias_relevantes(
-                db, heroi.id, user_input.action, w_state.turno, embed_fn=chave.embed_fn
+                db, heroi.id, user_input.action, w_state.turno, embed_fn=chave.embed_consulta_fn
             )
         # Etapa 15 (BYOK) — RAG de regras fica sempre na chave do servidor
         # (`embed_fn` não é passado aqui de propósito): é um texto fixo,
         # cacheado por processo por `id(embed_fn)`; ligar à chave do
         # jogador criaria um `functools.partial` novo a cada request e
         # reembedaria a bíblia inteira em toda chamada.
-        regras_relevantes = rag_regras.regras_relevantes(user_input.action)
+        regras_relevantes = rag_regras.regras_relevantes(user_input.action, query_embed_fn=chave.embed_consulta_fn)
         nomes_na_cena = {i.nome for i in c_state.inimigos} | set(resumo.npcs_conhecidos)
         reputacoes = {nome: valor for nome, valor in heroi.reputacao_npcs.items() if nome in nomes_na_cena}
 
@@ -545,6 +553,7 @@ async def chat_endpoint(
             memorias=memorias,
             resumo=resumo,
             reputacoes=reputacoes,
+            acao=user_input.action,
         )
         msgs = [{"role": "system", "content": prompt}] + hist + [{"role": "user", "content": user_input.action}]
         executor = ToolExecutor(heroi, c_state, w_state, q_state)
@@ -554,7 +563,7 @@ async def chat_endpoint(
                 medir("agente", personagem_id=heroi.id, turno=w_state.turno),
             ):
                 narrativa, eventos_ferramentas, _chamadas = executar_turno(
-                    msgs, executor, chamar_fn=chave.chamar_fn, tools=tools_para(c_state)
+                    msgs, executor, chamar_fn=chave.chamar_fn, tools=tools_para(c_state, user_input.action, w_state)
                 )
         except ErroMestre as e:
             # Etapa 10 (A-7) — a mensagem de erro é um campo próprio, não
@@ -720,17 +729,18 @@ def chat_stream_endpoint(
             resumo = ResumoRolante.model_validate(heroi.resumo_rolante or {})
             with medir("memoria", personagem_id=heroi.id, turno=w_state.turno):
                 memorias = memory.memorias_relevantes(
-                    db, heroi.id, user_input.action, w_state.turno, embed_fn=chave.embed_fn
+                    db, heroi.id, user_input.action, w_state.turno, embed_fn=chave.embed_consulta_fn
                 )
             # Etapa 15 (BYOK) — mesma razão de `chat_endpoint`: RAG de
             # regras fica sempre na chave do servidor (cache por processo).
-            regras_relevantes = rag_regras.regras_relevantes(user_input.action)
+            regras_relevantes = rag_regras.regras_relevantes(user_input.action, query_embed_fn=chave.embed_consulta_fn)
             nomes_na_cena = {i.nome for i in c_state.inimigos} | set(resumo.npcs_conhecidos)
             reputacoes = {nome: valor for nome, valor in heroi.reputacao_npcs.items() if nome in nomes_na_cena}
 
             prompt = montar_contexto(
                 heroi, w_state, c_state, q_state,
                 regras_relevantes=regras_relevantes, memorias=memorias, resumo=resumo, reputacoes=reputacoes,
+                acao=user_input.action,
             )
             msgs = [{"role": "system", "content": prompt}] + hist + [{"role": "user", "content": user_input.action}]
             executor = ToolExecutor(heroi, c_state, w_state, q_state)
@@ -742,7 +752,8 @@ def chat_stream_endpoint(
                 medir("agente", personagem_id=heroi.id, turno=w_state.turno),
             ):
                 for evento in executar_turno_stream(
-                    msgs, executor, chamar_fn=chave.chamar_fn_stream, tools=tools_para(c_state)
+                    msgs, executor, chamar_fn=chave.chamar_fn_stream,
+                    tools=tools_para(c_state, user_input.action, w_state)
                 ):
                     if evento.tipo == "token":
                         pedacos.append(evento.dados)

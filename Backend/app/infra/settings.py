@@ -46,6 +46,20 @@ class Settings(BaseSettings):
     # que o ADR-0011 já registrava como fica em aberto).
     modelo_barato: str = "gemini:gemini-3.5-flash-lite"
     agent_max_passos: int = 6
+    # Auditoria pré-lançamento (Fase 1/Mundo Vivo) mediu esta régua contra o
+    # esquema COMPLETO de ferramentas (51, sem filtro de `tools_para`, como
+    # os testes de `agent_loop` usam por padrão quando não passam `tools=`):
+    # ~10500 estimado (chars/3) só de schema, sem nenhuma mensagem. 12000
+    # já é pouca folga para esse caso sintético; reduzir mais quebra esses
+    # testes sem refletir produção (que sempre usa `tools_para`, bem menor).
+    # A contagem real da Groq, medida ao vivo (Diário 0026), fica mais perto
+    # de chars/4 — ou seja, esta estimativa (chars/3) já é conservadora. Não
+    # é um teto de cobrança do provedor (ver docs/eficiencia-ia.md); é só um
+    # limite de sanidade local. A proteção de verdade contra o teto real de
+    # 8000 tokens/minuto da Groq vem de manter `tools_para` enxuto por turno
+    # (ver `_CAMPOS_DO_SERVIDOR`, `gatilhos`) — não deste número.
+    agent_limite_entrada_estimado: int = 12000
+    agent_limite_turno_estimado: int = 24000
     database_url: str = f"sqlite:///{(BASE_DIR / 'rpg_save.db').as_posix()}"
     # Cookie de sessão exige uma origem específica — "*" e credentials são
     # incompatíveis em qualquer navegador (ver ADR-0014). localhost:5173 é a

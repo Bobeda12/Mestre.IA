@@ -203,7 +203,7 @@ class TestComerciar:
         ex = _executor(heroi=_heroi(ouro=100), w_state=WorldState(local="Vila de Phandalin"))
         self._mundo(ex, confianca=100)
         vitrine = ex.comerciar("Bela", "listar")["vitrine"]
-        assert {"item": "Poção de Cura", "preco": 19} in vitrine  # 25 * 0.75 = 18.75 -> 19
+        assert {"item": "Poção de Cura", "preco": 19, "quantidade": 3} in vitrine  # 25 * 0.75 = 18.75 -> 19
 
     def test_comprar_debita_e_entrega(self):
         heroi = _heroi(ouro=30, inventario=[])

@@ -124,7 +124,7 @@ def test_segredos_e_consequencias_futuras_nao_vazam_no_painel(executor):
     npc.medo = "MEDO_UNICO"
     painel = json.dumps(painel_mundo(executor.w_state, "Guerreiro"), ensure_ascii=False)
     assert "SEGREDO_UNICO" not in painel and "MEDO_UNICO" not in painel
-    assert "consequencia" not in painel
+    assert all("consequencia" not in c for c in painel_mundo(executor.w_state, "Guerreiro")["conflitos"])
     privado = json.dumps(painel_mundo(executor.w_state, "Guerreiro", privado=True))
     assert "SEGREDO_UNICO" in privado
 

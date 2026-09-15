@@ -15,6 +15,102 @@ from tests.test_smoke import _payload_base
 client = TestClient(app)
 
 
+def test_escolha_aprendizado_persiste_e_rejeita_reenvio(monkeypatch):
+    from app.domain.emergencia import Aprendizado
+
+    sid = _partida(monkeypatch)
+    with SessionLocal() as db:
+        heroi = db.query(Personagem).filter_by(session_id=sid).one()
+        estado = WorldState.model_validate(heroi.world_state)
+        estado.mundo.aprendizados["eco"] = Aprendizado(
+            id="eco", nome="Ouvido das pontes", descricao="Você distingue ecos sob a ponte",
+            origens=["evento_1", "evento_2"], atributo="sabedoria", alvo="Ponte",
+        )
+        heroi.world_state = estado.model_dump()
+        heroi.combat_state = CombatState().model_dump()
+        db.commit()
+    payload = {"session_id": sid, "acao": "escolher_aprendizado", "alvo": "eco", "turno_esperado": 1}
+    resposta = client.post("/game/action", json=payload)
+    assert resposta.status_code == 200, resposta.text
+    assert "Ouvido das pontes" in resposta.json()["narrativa"]
+    assert client.post("/game/action", json=payload).status_code == 409
+    with SessionLocal() as db:
+        heroi = db.query(Personagem).filter_by(session_id=sid).one()
+        assert heroi.world_state["mundo"]["aprendizados"]["eco"]["ativo"]
+
+
+def test_projeto_escolhido_pelo_jogador_persiste_e_rejeita_reenvio(monkeypatch):
+    sid = _partida(monkeypatch)
+    with SessionLocal() as db:
+        heroi = db.query(Personagem).filter_by(session_id=sid).one()
+        heroi.combat_state = CombatState().model_dump()
+        db.commit()
+    payload = {"session_id": sid, "acao": "gerir_projeto", "operacao": "iniciar",
+               "proposta": "Recuperar a ponte", "turno_esperado": 1}
+    resposta = client.post("/game/action", json=payload)
+    assert resposta.status_code == 200, resposta.text
+    assert client.post("/game/action", json=payload).status_code == 409
+    with SessionLocal() as db:
+        heroi = db.query(Personagem).filter_by(session_id=sid).one()
+        assert heroi.world_state["mundo"]["projetos"]["projeto_1"]["ambicao"] == "Recuperar a ponte"
+
+
+def test_aceite_acordo_via_api_persiste_sem_entrega_automatica(monkeypatch):
+    from app.domain.living_world import PessoaMundo
+    from app.domain.projetos import CondicaoProjeto, Projeto, PropostaProjeto
+
+    sid = _partida(monkeypatch)
+    with SessionLocal() as db:
+        heroi = db.query(Personagem).filter_by(session_id=sid).one()
+        w = WorldState.model_validate(heroi.world_state)
+        w.mundo.pessoas["lia"] = PessoaMundo(id="lia", nome="Lia", local=w.local, objetivo="Apoiar a ponte")
+        w.mundo.projetos["ponte"] = Projeto(id="ponte", ambicao="Recuperar a ponte", local=w.local,
+            condicoes=[CondicaoProjeto(id="acesso", alvo=w.local, descricao="Travessia segura")],
+            propostas=[PropostaProjeto(id="apoio", npc="lia", nome_npc="Lia", condicao="acesso",
+                oferta="Fornecer madeira", contrapartida="Acesso livre", motivo_declarado="Ajudar moradores")])
+        heroi.world_state = w.model_dump()
+        heroi.combat_state = CombatState().model_dump()
+        inventario = list(heroi.inventario or [])
+        db.commit()
+    payload = {"session_id": sid, "acao": "decidir_acordo_projeto", "operacao": "aceitar",
+               "alvo": "ponte", "proposta": "apoio", "turno_esperado": 1}
+    resposta = client.post("/game/action", json=payload)
+    assert resposta.status_code == 200, resposta.text
+    assert client.post("/game/action", json=payload).status_code == 409
+    with SessionLocal() as db:
+        heroi = db.query(Personagem).filter_by(session_id=sid).one()
+        assert heroi.world_state["mundo"]["projetos"]["ponte"]["propostas"][0]["estado"] == "aceita"
+        assert (heroi.inventario or []) == inventario
+
+
+def test_oficina_via_api_consome_hora_e_persiste_preparacao(monkeypatch):
+    from app.domain.instalacoes import Instalacao
+    from app.domain.living_world import CenaPersistente, EntidadeCena
+
+    sid = _partida(monkeypatch)
+    with SessionLocal() as db:
+        heroi = db.query(Personagem).filter_by(session_id=sid).one()
+        w = WorldState.model_validate(heroi.world_state)
+        w.mundo.cenas[w.local] = CenaPersistente(entidades={"sala": EntidadeCena(id="sala", nome="Sala")})
+        w.mundo.condicoes[f"{w.local}:sala"] = ["A sala está equipada"]
+        w.mundo.instalacoes["oficina"] = Instalacao(
+            id="oficina", projeto="p", condicao="sala", nome="Oficina", descricao="Sala recuperada",
+            tipo="oficina", local=w.local, alvo="sala", evidencia="A sala está equipada", ativa=True,
+        )
+        heroi.world_state = w.model_dump()
+        heroi.combat_state = CombatState().model_dump()
+        db.commit()
+    payload = {"session_id": sid, "acao": "usar_instalacao", "alvo": "oficina",
+               "operacao": "preparar", "turno_esperado": 1}
+    resposta = client.post("/game/action", json=payload)
+    assert resposta.status_code == 200, resposta.text
+    assert client.post("/game/action", json=payload).status_code == 409
+    with SessionLocal() as db:
+        heroi = db.query(Personagem).filter_by(session_id=sid).one()
+        assert heroi.world_state["mundo"]["minutos"] == 60
+        assert heroi.world_state["mundo"]["preparacao"]["instalacao"] == "oficina"
+
+
 def _partida(monkeypatch, cenario="duelo"):
     monkeypatch.setattr(llm_client, "clients", {})
     criado = client.post("/create_character", json=_payload_base(nome="ControleJogo"))

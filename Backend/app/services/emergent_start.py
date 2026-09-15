@@ -37,12 +37,16 @@ def validar_mundo_inicial(dados: dict, local: str) -> dict:
         pessoa.segredo_revelado = False
         pessoa.lembrancas = []
         pessoa.promessas = []
+        pessoa.mercadoria = list(dict.fromkeys(c for n in pessoa.mercadoria if (c := regras.nome_canonico(n))))[:8]
+        pessoa.estoque = {n: 3 for n in pessoa.mercadoria}
+        pessoa.estoque_inicializado = bool(pessoa.mercadoria)
     for chave, conflito in mundo.conflitos.items():
         if chave != conflito.id or conflito.agente not in mundo.pessoas or conflito.local not in mundo.cenas:
             raise ValueError("Conflito sem agente ou local.")
         if conflito.efeito == "bloquear" and conflito.alvo not in mundo.cenas[conflito.local].entidades:
             raise ValueError("Conflito sem alvo existente.")
         conflito.progresso = conflito.intervencoes = 0
+        conflito.organizacao = conflito.origem = ""
         conflito.estado = "ativo"
         conflito.proximo_avanco = conflito.intervalo
     if len(mundo.arcos) > 1:
@@ -56,6 +60,22 @@ def validar_mundo_inicial(dados: dict, local: str) -> dict:
     mundo.especializacoes = {}
     mundo.conhecimento = []
     mundo.tentativas = {}
+    # A geração de origem não pode inventar experiências já jogadas ou bônus adquiridos.
+    mundo.acontecimentos = []
+    mundo.sequencia_acontecimentos = 0
+    mundo.consequencias = {}
+    mundo.aprendizados = {}
+    mundo.condicoes = {}
+    mundo.particularidades = {}
+    mundo.momentos = {}
+    mundo.projetos = {}
+    mundo.organizacoes = {}
+    mundo.instalacoes = {}
+    mundo.preparacao = None
+    mundo.remessas = {}
+    mundo.marcas_jornada = {}
+    mundo.oportunidades = {}
+    mundo.ritmo = type(mundo.ritmo)()
     return mundo.model_dump()
 
 

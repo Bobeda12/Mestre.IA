@@ -4,6 +4,13 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from app.domain.economia import Remessa
+from app.domain.emergencia import Acontecimento, Aprendizado, Consequencia, Particularidade
+from app.domain.imersao import MarcaJornada, MomentoPessoal, Oportunidade, Ritmo
+from app.domain.instalacoes import Instalacao, Preparacao
+from app.domain.organizacoes import Organizacao
+from app.domain.projetos import Projeto
+
 Id = str
 
 
@@ -52,11 +59,15 @@ class Conhecimento(BaseModel):
 
 
 class PessoaMundo(BaseModel):
+    estoque: dict[str, int] = Field(default_factory=dict)
+    estoque_inicializado: bool = False
     id: str = Field(pattern=r"^[a-z0-9_-]{1,60}$")
     nome: str = Field(min_length=1, max_length=100)
     local: str = Field(min_length=1, max_length=100)
     raca: str = Field(default="Humano", max_length=40, description="Raça do catálogo do jogo (Humano, Elfo, Anão...)")
     descricao: str = Field(default="", max_length=500)
+    habito: str = Field(default="", max_length=180)
+    voz: str = Field(default="", max_length=180)
     objetivo: str = Field(min_length=1, max_length=500)
     medo: str = Field(default="", max_length=400)
     limite: str = Field(default="", max_length=400)
@@ -74,6 +85,8 @@ class PessoaMundo(BaseModel):
 
 
 class ConflitoMundo(BaseModel):
+    organizacao: str = ""
+    origem: str = ""
     id: str = Field(pattern=r"^[a-z0-9_-]{1,60}$")
     nome: str = Field(min_length=1, max_length=100)
     agente: str = Field(min_length=1, max_length=60)
@@ -113,6 +126,21 @@ class Arco(BaseModel):
 
 
 class MundoVivo(BaseModel):
+    remessas: dict[str, Remessa] = Field(default_factory=dict)
+    instalacoes: dict[str, Instalacao] = Field(default_factory=dict)
+    preparacao: Preparacao | None = None
+    organizacoes: dict[str, Organizacao] = Field(default_factory=dict)
+    projetos: dict[str, Projeto] = Field(default_factory=dict)
+    momentos: dict[str, MomentoPessoal] = Field(default_factory=dict)
+    marcas_jornada: dict[str, MarcaJornada] = Field(default_factory=dict)
+    oportunidades: dict[str, Oportunidade] = Field(default_factory=dict)
+    ritmo: Ritmo = Field(default_factory=Ritmo)
+    acontecimentos: list[Acontecimento] = Field(default_factory=list)
+    sequencia_acontecimentos: int = 0
+    particularidades: dict[str, Particularidade] = Field(default_factory=dict)
+    condicoes: dict[str, list[str]] = Field(default_factory=dict)
+    consequencias: dict[str, Consequencia] = Field(default_factory=dict)
+    aprendizados: dict[str, Aprendizado] = Field(default_factory=dict)
     versao: int = 1
     arcos: list[Arco] = Field(default_factory=list)
     minutos: int = 0

@@ -43,3 +43,6 @@ class ChaveUsuario:
                 llm_client.chamar_com_chave_usuario, api_key=chave, modelo=MODELO_BARATO_BYOK
             )
             self.embed_fn = functools.partial(embeddings.embed_um, api_key=chave)
+        # Memória e regras consultam a mesma ação: um embedding por request,
+        # sem compartilhar texto/chave/cache entre jogadores ou background tasks.
+        self.embed_consulta_fn = functools.lru_cache(maxsize=4)(self.embed_fn or embeddings.embed_um)

@@ -94,7 +94,7 @@ def test_sem_client_levanta_erro_mestre_sem_chamar_nada(monkeypatch):
         chamar_com_fallback([{"role": "user", "content": "oi"}])
 
 
-def test_primeiro_modelo_esgota_retry_e_cai_para_o_proximo(monkeypatch):
+def test_rate_limit_cai_para_proximo_sem_repetir_payload(monkeypatch):
     modelo_1, modelo_2 = llm_client.CADEIA[0][1], llm_client.CADEIA[1][1]
     resultado_ok = object()
     clients, fake = _fake_clients({modelo_1: [_erro_rate_limit(), _erro_rate_limit()], modelo_2: [resultado_ok]})
@@ -103,7 +103,7 @@ def test_primeiro_modelo_esgota_retry_e_cai_para_o_proximo(monkeypatch):
     resultado = chamar_com_fallback([{"role": "user", "content": "oi"}])
 
     assert resultado is resultado_ok
-    assert fake.chat.completions.chamadas == [modelo_1, modelo_1, modelo_2]
+    assert fake.chat.completions.chamadas == [modelo_1, modelo_2]
 
 
 def test_erro_503_e_tratado_como_transitorio_e_faz_retry(monkeypatch):
@@ -140,6 +140,26 @@ def test_primeiro_modelo_funciona_sem_tocar_no_fallback(monkeypatch):
 
     assert resultado is resultado_ok
     assert fake.chat.completions.chamadas == [modelo_1]
+
+
+def test_modelo_com_cota_esgotada_e_pulado_ate_pausa_expirar(monkeypatch):
+    modelo_1, modelo_2 = llm_client.CADEIA[0][1], llm_client.CADEIA[1][1]
+    agora = [100.0]
+    monkeypatch.setattr(llm_client.time, "monotonic", lambda: agora[0])
+    clients, fake = _fake_clients({modelo_1: [_erro_rate_limit(), "recuperado"], modelo_2: ["ok", "ok"]})
+    monkeypatch.setattr(llm_client, "clients", clients)
+    assert chamar_com_fallback([]) == "ok"
+    assert chamar_com_fallback([]) == "ok"
+    assert fake.chat.completions.chamadas == [modelo_1, modelo_2, modelo_2]
+    agora[0] += 31
+    assert chamar_com_fallback([]) == "recuperado"
+
+
+def test_pausa_de_cota_nao_afeta_outro_cliente():
+    cliente_a, cliente_b = _FakeClient({}), _FakeClient({})
+    llm_client._registrar_pausa(cliente_a, "modelo", _erro_rate_limit())
+    assert llm_client._em_pausa(cliente_a, "modelo")
+    assert not llm_client._em_pausa(cliente_b, "modelo")
 
 
 def test_provedor_sem_chave_e_pulado_sem_contar_como_falha(monkeypatch):
@@ -203,7 +223,7 @@ class TestChamarStreamComFallback:
         resultado = list(chamar_stream_com_fallback([{"role": "user", "content": "oi"}]))
 
         assert resultado == chunks
-        assert fake.chat.completions.chamadas == [modelo_1, modelo_1, modelo_2]
+        assert fake.chat.completions.chamadas == [modelo_1, modelo_2]
 
     def test_falha_no_meio_da_stream_nao_troca_de_modelo(self, monkeypatch):
         # O modelo 1 abre a stream e manda um chunk — comprometido. Se cair

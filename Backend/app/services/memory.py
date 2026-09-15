@@ -23,7 +23,7 @@ from app.infra.settings import settings
 from app.services import hybrid_search
 
 
-def contexto_recente(historico: list[dict], n: int = 4) -> list[dict]:
+def contexto_recente(historico: list[dict], n: int = 4, limite_chars: int = 5000) -> list[dict]:
     """Últimas `n` mensagens do histórico, só com `role` e `content`.
 
     Achado ao vivo (Fase 0 do plano "jogo completo", 08/09/2026): a mensagem
@@ -34,7 +34,17 @@ def contexto_recente(historico: list[dict], n: int = 4) -> list[dict]:
     da cadeia, TODO turno de um herói novo caía no fallback. O histórico
     pode carregar o que o frontend precisar; o que vai ao modelo é só o
     contrato da API."""
-    return [{"role": m["role"], "content": m.get("content", "")} for m in list(historico)[-n:]]
+    recentes = [{"role": m["role"], "content": m.get("content", "")} for m in list(historico)[-n:]] if n > 0 else []
+    escolhidas = []
+    usados = 0
+    for mensagem in reversed(recentes):
+        texto = mensagem["content"] or ""
+        if usados + len(texto) <= limite_chars:
+            escolhidas.append(mensagem)
+            usados += len(texto)
+        else:
+            break  # preserva uma sequência recente, não intercala falas de turnos distintos
+    return list(reversed(escolhidas))
 
 
 def registrar_evento(
@@ -172,7 +182,10 @@ def atualizar_resumo_rolante(
     resumo_atual = ResumoRolante.model_validate(heroi.resumo_rolante or {})
 
     chamar_fn = chamar_fn or functools.partial(llm_client.chamar_modelo_unico, settings.modelo_barato)
-    prompt = _PROMPT_RESUMO.format(resumo_atual=resumo_atual.model_dump_json(), eventos=eventos_texto)
+    from app.services.contexto_ia import selecionar, serializar
+
+    recorte = {k: selecionar(v, eventos_texto, 600) for k, v in resumo_atual.model_dump().items()}
+    prompt = _PROMPT_RESUMO.format(resumo_atual=serializar(recorte), eventos=eventos_texto)
     try:
         resp = chamar_fn(
             [{"role": "user", "content": prompt}],

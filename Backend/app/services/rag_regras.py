@@ -76,7 +76,8 @@ def _documentos(embed_fn: Callable[[str], list[float]] | None = None) -> list[hy
 
 
 def regras_relevantes(
-    query: str, k: int = 1, embed_fn: Callable[[str], list[float]] | None = None
+    query: str, k: int = 1, embed_fn: Callable[[str], list[float]] | None = None,
+    query_embed_fn: Callable[[str], list[float]] | None = None,
 ) -> list[str]:
     """Sempre inclui as diretrizes de narração; acrescenta as `k` seções
     situacionais mais relevantes para `query`. Se a bíblia não tiver seções
@@ -90,5 +91,5 @@ def regras_relevantes(
         return sempre or ([texto] if texto else [])
 
     documentos = _documentos(embed_fn)
-    encontrados = hybrid_search.buscar(query, documentos, turno_atual=None, k=k, embed_fn=embed_fn)
+    encontrados = hybrid_search.buscar(query, documentos, turno_atual=None, k=k, embed_fn=query_embed_fn or embed_fn)
     return sempre + [d.texto for d in encontrados]

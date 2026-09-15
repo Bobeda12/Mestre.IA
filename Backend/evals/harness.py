@@ -23,7 +23,7 @@ from app.services.agent_loop import ChamadaFerramenta
 from app.services.guardrail import validar_narrativa
 from app.services.hybrid_search import Documento, buscar
 from app.services.narrator import montar_contexto
-from app.services.tools import ToolExecutor
+from app.services.tools import ToolExecutor, tools_para
 from evals.schema import CenarioAvaliacao
 
 
@@ -119,7 +119,8 @@ def rodar_cenario(
     nomes_na_cena = {i.nome for i in combate.inimigos} | set(resumo.npcs_conhecidos)
     reputacoes = {nome: valor for nome, valor in heroi.reputacao_npcs.items() if nome in nomes_na_cena}
 
-    contexto = montar_contexto(heroi, mundo, combate, missao, memorias=memorias, resumo=resumo, reputacoes=reputacoes)
+    contexto = montar_contexto(heroi, mundo, combate, missao, memorias=memorias, resumo=resumo,
+                              reputacoes=reputacoes, acao=cenario.acao_jogador)
     msgs = [{"role": "system", "content": contexto}, {"role": "user", "content": cenario.acao_jogador}]
 
     registros: list[ChamadaLLMRegistrada] = []
@@ -128,7 +129,8 @@ def rodar_cenario(
 
     try:
         narrativa, _eventos, chamadas = agent_loop.executar_turno(
-            msgs, executor, max_passos=max_passos, chamar_fn=chamada_registrada
+            msgs, executor, max_passos=max_passos, chamar_fn=chamada_registrada,
+            tools=tools_para(combate, cenario.acao_jogador, mundo),
         )
     except Exception as e:  # ErroMestre ou qualquer falha de API — 1 cenário não derruba a suíte inteira
         return ResultadoCenario(

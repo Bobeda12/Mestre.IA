@@ -4,7 +4,6 @@ passos". `services/narrator.py` monta o prompt; este módulo só orquestra a
 ida e volta com o modelo e o despacho de ferramentas via `tools.ToolExecutor`
 — zero regra de jogo aqui, isso é `rules_engine.py`/`combat.py`."""
 
-import json
 import logging
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
@@ -12,9 +11,29 @@ from typing import Any, Literal, Protocol
 
 from app.domain.eventos import EventoRolagem
 from app.infra.llm_client import ErroMestre, chamar_com_fallback, chamar_stream_com_fallback
+from app.infra.settings import settings
+from app.services.orcamento_ia import OrcamentoTurno, resultado_compacto
 from app.services.tools import TOOLS_SCHEMA
 
 logger = logging.getLogger(__name__)
+
+
+def _habilitar(tools, resultado, executor):
+    """Só aceita nomes do catálogo permitido no estado atual, nunca schemas vindos do modelo."""
+    from app.services.tools import tools_para
+
+    solicitadas = resultado.get("habilitar_ferramentas", [])
+    if not solicitadas or not hasattr(executor, "c_state"):
+        return tools
+    existentes = {t["function"]["name"] for t in tools}
+    return tools + [t for t in tools_para(executor.c_state)
+                    if t["function"]["name"] in solicitadas and t["function"]["name"] not in existentes]
+
+
+def _executar_habilitada(executor, tools, nome, args):
+    if nome not in {t["function"]["name"] for t in tools}:
+        return {"erro": "Carregue esta ferramenta com consultar_contexto assunto=ferramentas."}, False
+    return executor.executar(nome, args)
 
 # Fase 0 do plano "jogo completo" (08/09/2026) — degradação honesta. Achado
 # ao vivo com as chaves gratuitas do autor: a PRIMEIRA chamada do turno
@@ -92,12 +111,15 @@ def executar_turno(
     # (evals e testes antigos).
     tools = TOOLS_SCHEMA if tools is None else tools
     chamadas: list[ChamadaFerramenta] = []
+    orcamento = OrcamentoTurno()
+    resolvidas = 0
 
-    for _passo in range(max_passos):
+    for _passo in range(min(max_passos, settings.agent_max_passos)):
         try:
+            orcamento.registrar(msgs, tools)
             resp = chamar_fn(msgs, tools=tools, tool_choice="auto")
         except ErroMestre:
-            if not chamadas:
+            if not resolvidas:
                 raise
             logger.warning("narrador indisponível após %d ferramenta(s); turno segue só com o juiz", len(chamadas))
             return NARRATIVA_SEM_VOZ, executor.eventos, chamadas
@@ -149,16 +171,24 @@ def executar_turno(
             }
         )
 
+        houve_consulta = False
+        todos_ok = True
         for tc in mensagem.tool_calls:
-            resultado, sucesso = executor.executar(tc.function.name, tc.function.arguments)
+            resultado, sucesso = _executar_habilitada(executor, tools, tc.function.name, tc.function.arguments)
+            todos_ok &= sucesso
+            houve_consulta |= tc.function.name == "consultar_contexto"
+            if tc.function.name == "consultar_contexto" and sucesso:
+                tools = _habilitar(tools, resultado, executor)
+            elif sucesso:
+                resolvidas += 1
             logger.info(
                 "ferramenta passo=%d nome=%s ok=%s args=%s", _passo + 1, tc.function.name, sucesso,
                 (tc.function.arguments or "")[:160],
             )
             chamadas.append(ChamadaFerramenta(tc.function.name, tc.function.arguments, sucesso))
-            msgs.append({"role": "tool", "tool_call_id": tc.id, "content": json.dumps(resultado, ensure_ascii=False)})
+            msgs.append({"role": "tool", "tool_call_id": tc.id, "content": resultado_compacto(resultado)})
 
-        if texto_junto:
+        if texto_junto and not houve_consulta and todos_ok:
             return texto_junto, executor.eventos, chamadas
 
     return (
@@ -201,12 +231,14 @@ def executar_turno_stream(
     chamar_fn = chamar_fn or chamar_stream_com_fallback
     tools = TOOLS_SCHEMA if tools is None else tools
     ferramentas_rodaram = 0
+    orcamento = OrcamentoTurno()
 
-    for _passo in range(max_passos):
+    for _passo in range(min(max_passos, settings.agent_max_passos)):
         conteudo = ""
         chamadas_parciais: dict[int, dict[str, Any]] = {}
 
         try:
+            orcamento.registrar(msgs, tools)
             for chunk in chamar_fn(msgs, tools=tools, tool_choice="auto"):
                 delta = chunk.choices[0].delta
                 if delta.content:
@@ -239,6 +271,8 @@ def executar_turno_stream(
             return
 
         if not chamadas_parciais:
+            if not conteudo.strip():
+                yield EventoStream("erro", "O mestre ficou em silêncio — tente de novo em instantes.")
             return
 
         msgs.append(
@@ -260,10 +294,17 @@ def executar_turno_stream(
             }
         )
 
+        houve_consulta = False
+        todos_ok = True
         for slot in chamadas_parciais.values():
             len_antes = len(executor.eventos)
-            resultado, _sucesso = executor.executar(slot["nome"], slot["args"])
-            ferramentas_rodaram += 1
+            resultado, _sucesso = _executar_habilitada(executor, tools, slot["nome"], slot["args"])
+            todos_ok &= _sucesso
+            houve_consulta |= slot["nome"] == "consultar_contexto"
+            if slot["nome"] == "consultar_contexto" and _sucesso:
+                tools = _habilitar(tools, resultado, executor)
+            elif _sucesso:
+                ferramentas_rodaram += 1
             logger.info(
                 "ferramenta passo=%d nome=%s ok=%s args=%s",
                 _passo + 1, slot["nome"], _sucesso, (slot["args"] or "")[:160],
@@ -272,7 +313,7 @@ def executar_turno_stream(
                 if isinstance(evento, EventoRolagem) and evento.dados is not None:
                     yield EventoStream("tool_event", {"texto": str(evento), **evento.dados.to_dict()})
             msgs.append(
-                {"role": "tool", "tool_call_id": slot["id"], "content": json.dumps(resultado, ensure_ascii=False)}
+                {"role": "tool", "tool_call_id": slot["id"], "content": resultado_compacto(resultado)}
             )
 
         # Mesma lógica do `executar_turno` síncrono acima ("uma chamada por
@@ -281,7 +322,7 @@ def executar_turno_stream(
         # ferramenta, e não precisa de outra chamada pra "terminar de
         # narrar". Só continua o loop quando `conteudo` veio vazio (o modelo
         # só chamou a ferramenta) ou quando ele encadeia mais ferramentas.
-        if conteudo.strip():
+        if conteudo.strip() and not houve_consulta and todos_ok:
             return
 
     # Etapa 10 (A-7) tirou o padrão `*(...)*` de todo frame de sistema
