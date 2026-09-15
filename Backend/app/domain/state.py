@@ -163,9 +163,11 @@ class WorldState(BaseModel):
 
 
 class QuestLog(BaseModel):
-    """Missão miúda que o narrador atualiza turno a turno (`atualizar_missao`).
-    O esqueleto de Atos que morava aqui saiu na Fase 0 do plano "jogo
-    completo" (ADR-0032); saves antigos com `atos`/`ato_atual` carregam
+    """Missão miúda que narrador e jogador atualizam, os dois pela mesma
+    ferramenta (`definir_objetivo`, em app/services/living_world.py — não
+    existem mais `atualizar_missao` e `definir_objetivo` como coisas
+    separadas). O esqueleto de Atos que morava aqui saiu na Fase 0 do plano
+    "jogo completo" (ADR-0032); saves antigos com `atos`/`ato_atual` carregam
     sem erro porque o Pydantic ignora chaves extras."""
 
     nome_missao: str = ""

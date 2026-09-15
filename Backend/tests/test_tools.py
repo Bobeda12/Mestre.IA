@@ -786,15 +786,35 @@ class TestSincronizarAliados:
         assert heroi.aliados[0]["hp"] == 8
 
 
-class TestAtualizarMissao:
-    def test_atualiza_nome_e_objetivo(self):
+class TestDefinirObjetivo:
+    def test_npc_da_missao_nova(self):
+        # `atualizar_missao` (só do narrador) e `definir_objetivo` (só do
+        # jogador) viravam duas ferramentas escrevendo no mesmo QuestLog —
+        # fundidas numa só, distinguidas por `origem` (achado do usuário,
+        # 15/09/2026: a aba Jornada mostrava os dois resultados sem explicar
+        # a diferença entre eles).
         q_state = QuestLog()
         executor = _executor(q_state=q_state)
-        resultado = executor.atualizar_missao("Resgatar o Ferreiro", "Encontrar o esconderijo")
+        resultado, valido = executor.executar(
+            "definir_objetivo",
+            '{"objetivo": "Encontrar o esconderijo", "nome": "Resgatar o Ferreiro", "origem": "npc"}',
+        )
+        assert valido
         assert q_state.nome_missao == "Resgatar o Ferreiro"
         assert q_state.objetivo_missao == "Encontrar o esconderijo"
-        assert resultado == {"missao": "Resgatar o Ferreiro", "objetivo": "Encontrar o esconderijo"}
-        assert any("Missão atualizada" in e for e in executor.eventos)
+        assert resultado["missao"] == "Resgatar o Ferreiro"
+        assert any("Resgatar o Ferreiro" in e for e in executor.eventos)
+
+    def test_jogador_define_objetivo_sem_nome(self):
+        q_state = QuestLog()
+        executor = _executor(q_state=q_state)
+        resultado, valido = executor.executar(
+            "definir_objetivo", '{"objetivo": "Abrir uma taverna", "origem": "jogador"}',
+        )
+        assert valido
+        assert q_state.nome_missao == "Meu caminho"
+        assert q_state.objetivo_missao == "Abrir uma taverna"
+        assert resultado["objetivo"] == "Abrir uma taverna"
 
 
 class TestConcluirObjetivo:

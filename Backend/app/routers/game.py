@@ -396,7 +396,7 @@ def game_action(
             argumentos = {"conflito": action.alvo or "", "abordagem": action.operacao,
                           "proposta": action.proposta}
         elif action.acao == "definir_objetivo":
-            argumentos = {"objetivo": action.proposta}
+            argumentos = {"objetivo": action.proposta, "origem": "jogador"}
         elif action.acao == "gerir_projeto":
             argumentos = {"operacao": action.operacao, "ambicao": action.proposta, "projeto": action.alvo or ""}
         elif action.acao == "usar_instalacao":

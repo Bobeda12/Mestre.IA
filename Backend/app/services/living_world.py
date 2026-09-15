@@ -652,14 +652,24 @@ def intervir_conflito(executor: "ToolExecutor", conflito: str, abordagem: str, p
     return _finalizar(executor, {"sucesso": True, "descricao": descricao}, significativo=True)
 
 
-def definir_objetivo(executor: "ToolExecutor", objetivo: str) -> dict:
+def definir_objetivo(executor: "ToolExecutor", objetivo: str, nome: str = "", origem: str = "jogador") -> dict:
+    """Único lugar que escreve o objetivo atual (QuestLog). Antes existiam
+    duas ferramentas do narrador para isso — `definir_objetivo` (jogador) e
+    `atualizar_missao` (NPC) — escrevendo nos mesmos campos por caminhos
+    diferentes, o que deixava o Mestre livre pra confundir quem decidiu o
+    quê (achado do usuário, 15/09/2026: a aba Jornada mostrava os dois
+    resultados lado a lado sem explicar a diferença). `origem` é só pra
+    escolher o rótulo — o efeito no estado é sempre o mesmo."""
     if not 1 <= len(objetivo.strip()) <= 500:
-        return {"erro": "Descreva seu objetivo em até 500 caracteres."}
-    executor.q_state.nome_missao = "Meu caminho"
+        return {"erro": "Descreva o objetivo em até 500 caracteres."}
+    executor.q_state.nome_missao = nome.strip() if nome.strip() else ("Meu caminho" if origem == "jogador" else "Nova missão")
     executor.q_state.objetivo_missao = objetivo.strip()
     executor.w_state.mundo.objetivos = [*executor.w_state.mundo.objetivos, objetivo.strip()][-20:]
-    executor.eventos.append(f"Seu próximo objetivo: {objetivo.strip()}")
-    return {"objetivo": objetivo.strip()}
+    executor.eventos.append(
+        f"Seu próximo objetivo: {objetivo.strip()}" if origem == "jogador"
+        else f"📜 {executor.q_state.nome_missao}: {objetivo.strip()}"
+    )
+    return {"objetivo": objetivo.strip(), "missao": executor.q_state.nome_missao}
 
 
 def escolher_especializacao(executor: "ToolExecutor", marco: str, escolha: str) -> dict:

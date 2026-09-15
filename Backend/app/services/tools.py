@@ -893,12 +893,6 @@ class ToolExecutor:
             self.heroi.hp_atual = max(0, self.heroi.hp_atual - dano_surpresa)
         return {"inimigos": [i.nome for i in self.c_state.inimigos], "dano_surpresa": dano_surpresa}
 
-    def atualizar_missao(self, nome: str, objetivo: str) -> dict:
-        self.q_state.nome_missao = nome
-        self.q_state.objetivo_missao = objetivo
-        self.eventos.append(f"📜 Missão atualizada: {nome} - {objetivo}")
-        return {"missao": nome, "objetivo": objetivo}
-
     # Fase 3 da revisão de gameplay (Etapa 12/13, ADR-0027) — estatísticas
     # de combate de um aliado recrutado são fixas, não propostas pelo
     # modelo (mesmo princípio de `_conceder_xp`: o LLM decide O QUÊ, nunca
@@ -1051,7 +1045,6 @@ ToolExecutor._DESPACHO = {
     "gastar_ouro": ToolExecutor.gastar_ouro,
     "ajustar_reputacao_npc": ToolExecutor.ajustar_reputacao_npc,
     "iniciar_combate": ToolExecutor.iniciar_combate,
-    "atualizar_missao": ToolExecutor.atualizar_missao,
     "concluir_objetivo": ToolExecutor.concluir_objetivo,
     "esquivar": ToolExecutor.esquivar,
     "defender": ToolExecutor.defender,
@@ -1468,33 +1461,6 @@ TOOLS_SCHEMA: list[dict] = [*WORLD_TOOLS,
     {
         "type": "function",
         "function": {
-            "name": "atualizar_missao",
-            "description": (
-                "Atualiza a missão ativa no diário de missões (Quest Log) do jogador. Use quando um "
-                "NPC der uma nova tarefa, ou quando o objetivo da missão atual mudar ou for completado."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "nome": {
-                        "type": "string",
-                        "description": "O título curto e claro da missão (ex: 'Resgatar o Ferreiro').",
-                    },
-                    "objetivo": {
-                        "type": "string",
-                        "description": (
-                            "O que o jogador deve fazer agora "
-                            "(ex: 'Encontre o esconderijo dos goblins na floresta')."
-                        ),
-                    },
-                },
-                "required": ["nome", "objetivo"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
             "name": "concluir_objetivo",
             "description": (
                 "XP por objetivo cumprido sem combate (enigma, NPC convencido, missão por diplomacia). Uma vez" 
@@ -1610,7 +1576,7 @@ _SO_EM_COMBATE = {
 _SO_FORA_DE_COMBATE = {
     "comerciar", "desequipar", "abrir_arco", "encerrar_arco",
     "mover", "descansar", "iniciar_combate", "recrutar_aliado", "concluir_objetivo",
-    "atualizar_missao", "registrar_cena", "registrar_pessoa", "registrar_conflito",
+    "registrar_cena", "registrar_pessoa", "registrar_conflito",
     "intervir_conflito", "definir_objetivo", "registrar_vinculo", "gastar_ouro",
     "consultar_regra", "ajustar_reputacao_npc",
     "registrar_particularidade", "desenvolver_consequencia", "propor_aprendizado",
@@ -1640,7 +1606,7 @@ GRUPOS_FERRAMENTAS = {
     "consequencias": {"registrar_conflito", "desenvolver_consequencia", "intervir_conflito", "registrar_vinculo"},
     "comercio": {"comerciar", "equipar", "desequipar", "usar_item"},
     "viagem": {"mover", "descansar", "definir_objetivo", "iniciar_combate"},
-    "progressao": {"propor_aprendizado", "abrir_arco", "encerrar_arco", "atualizar_missao", "concluir_objetivo"},
+    "progressao": {"propor_aprendizado", "abrir_arco", "encerrar_arco", "definir_objetivo", "concluir_objetivo"},
     "combate": _SO_EM_COMBATE | {"iniciar_combate", "aplicar_dano"},
     "recompensas": {"dar_item", "gastar_ouro", "ajustar_reputacao_npc", "recrutar_aliado"},
     "regras": {"consultar_regra"},

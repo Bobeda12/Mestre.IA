@@ -90,15 +90,26 @@ export default function AbaJornada(p: Props) {
           ))}
         </Secao>
       )}
-      {p.quest?.nome_missao ? (
-        <PanelFrame borderWidth={8} className="bg-black/50 p-3">
-          <h3 className="text-[10px] text-blue-300 uppercase font-rpg mb-2 tracking-widest flex items-center gap-1"><PixelIcon name="pergaminho" size={11} /> Missão atual</h3>
-          <p className="text-base text-blue-100 font-rpg leading-tight mb-2">{p.quest.nome_missao}</p>
-          <p className="text-xs text-gray-200 leading-relaxed">{p.quest.objetivo_missao}</p>
-        </PanelFrame>
-      ) : (
-        <p className="text-sm text-gray-400 font-rpg text-center py-4">Nenhuma missão em andamento.</p>
-      )}
+      <PanelFrame borderWidth={8} className="bg-black/50 p-3">
+        <h3 className="text-[10px] text-blue-300 uppercase font-rpg mb-2 tracking-widest flex items-center gap-1"><PixelIcon name="seta" size={11} /> Seu objetivo agora</h3>
+        {p.quest?.nome_missao ? (
+          <>
+            <p className="text-base text-blue-100 font-rpg leading-tight mb-2">{p.quest.nome_missao}</p>
+            <p className="text-xs text-gray-200 leading-relaxed mb-2">{p.quest.objetivo_missao}</p>
+          </>
+        ) : (
+          <p className="text-sm text-gray-400 font-rpg text-center py-2">Nenhum objetivo definido ainda.</p>
+        )}
+        {p.mundo && (
+          <>
+            <form className="flex gap-1.5" onSubmit={e => { e.preventDefault(); if (objetivo.trim()) { p.aoAgir({ acao: 'definir_objetivo', proposta: objetivo }, `Meu objetivo: ${objetivo}`); setObjetivo(''); } }}>
+              <input maxLength={500} value={objetivo} onChange={e => setObjetivo(e.target.value)} placeholder="Você pode mudar de rumo." aria-label="O que você quer fazer agora?" className={CAMPO} />
+              <button type="submit" className={BOTAO} disabled={p.ocupado || !objetivo.trim()}>Seguir</button>
+            </form>
+            <p className="text-[11px] text-gray-400 font-rpg mt-1.5">{p.mundo.aptidao.nome}: +{p.mundo.aptidao.bonus} em {p.mundo.aptidao.acoes.map(a => ACOES[a] ?? a).join(', ')}.</p>
+          </>
+        )}
+      </PanelFrame>
 
       {p.arco?.ativo && (
         <Secao titulo="Capítulo atual" icone="estrela">
@@ -154,17 +165,6 @@ export default function AbaJornada(p: Props) {
                 onClick={() => { p.aoAgir({ acao: 'intervir_conflito', alvo: conflito.id, operacao: abordagem, proposta }, `${ABORDAGENS.find(a => a.id === abordagem)?.nome ?? abordagem}: ${conflito.nome}`); setProposta(''); }}>Intervir</button>
             </div>
           )}
-        </Secao>
-      )}
-
-      {p.mundo && (
-        <Secao titulo="Meu objetivo" icone="seta">
-          {p.mundo.objetivos.length > 0 && <p className="text-xs text-gray-200 font-rpg">{p.mundo.objetivos[p.mundo.objetivos.length - 1]}</p>}
-          <form className="flex gap-1.5" onSubmit={e => { e.preventDefault(); if (objetivo.trim()) { p.aoAgir({ acao: 'definir_objetivo', proposta: objetivo }, `Meu objetivo: ${objetivo}`); setObjetivo(''); } }}>
-            <input maxLength={500} value={objetivo} onChange={e => setObjetivo(e.target.value)} placeholder="Você pode mudar de rumo." aria-label="O que você quer fazer agora?" className={CAMPO} />
-            <button type="submit" className={BOTAO} disabled={p.ocupado || !objetivo.trim()}>Seguir</button>
-          </form>
-          <p className="text-[11px] text-gray-400 font-rpg">{p.mundo.aptidao.nome}: +{p.mundo.aptidao.bonus} em {p.mundo.aptidao.acoes.map(a => ACOES[a] ?? a).join(', ')}.</p>
         </Secao>
       )}
 

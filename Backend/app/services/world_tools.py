@@ -222,10 +222,13 @@ WORLD_TOOLS = [
     ),
     _tool(
         "definir_objetivo",
-        "Registre o objetivo que o JOGADOR decidiu perseguir, inclusive abandonar a missão. "
-        "Nunca use para impor uma missão nova sem escolha dele.",
-        {"objetivo": S},
-        ["objetivo"],
+        "Define o objetivo atual do jogador (única ferramenta pra isso — não existe mais 'atualizar_missao'). "
+        "origem='jogador': ele mesmo decidiu perseguir algo, inclusive abandonar a missão anterior; "
+        "nome é opcional (vira 'Meu caminho'). origem='npc': alguém deu uma tarefa nova; informe "
+        "nome (título curto, ex: 'Resgatar o Ferreiro'). Nunca use origem='npc' pra substituir um "
+        "objetivo que o próprio jogador acabou de declarar sem que a ficção justifique a mudança.",
+        {"objetivo": S, "nome": S, "origem": {"type": "string", "enum": ["jogador", "npc"]}},
+        ["objetivo", "origem"],
     ),
     _tool(
         "registrar_vinculo",
