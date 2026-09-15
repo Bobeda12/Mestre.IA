@@ -59,7 +59,21 @@ class Settings(BaseSettings):
     # 8000 tokens/minuto da Groq vem de manter `tools_para` enxuto por turno
     # (ver `_CAMPOS_DO_SERVIDOR`, `gatilhos`) — não deste número.
     agent_limite_entrada_estimado: int = 12000
-    agent_limite_turno_estimado: int = 24000
+    # Achado ao vivo em produção (15/09/2026, ver Diário 0040): com 24000, um
+    # turno de só 4 chamadas (ação rejeitada → consultar_contexto →
+    # rolar_teste → narrar) já estourava este teto ANTES de tentar a
+    # narração — sem nenhuma chamada de rede sequer acontecer (o log do
+    # Render mostrava as 3 chamadas anteriores voltando 200 OK da Gemini, e
+    # a 4ª falhando em 1ms, tempo incompatível com uma requisição de
+    # verdade). Ou seja: o próprio teto local, não o provedor, estava
+    # forçando `NARRATIVA_SEM_VOZ` num turno comum, bem antes de
+    # `agent_max_passos` (6) ser atingido. Cada chamada soma até
+    # `agent_limite_entrada_estimado`; 60000 dá fôlego para as 6 chamadas
+    # permitidas sem reabrir a proteção contra um turno de verdade fora de
+    # controle (a defesa real contra o teto por minuto de cada provedor
+    # continua sendo `tools_para` enxuto, não este número — ver comentário
+    # acima).
+    agent_limite_turno_estimado: int = 60000
     database_url: str = f"sqlite:///{(BASE_DIR / 'rpg_save.db').as_posix()}"
     # Cookie de sessão exige uma origem específica — "*" e credentials são
     # incompatíveis em qualquer navegador (ver ADR-0014). localhost:5173 é a
