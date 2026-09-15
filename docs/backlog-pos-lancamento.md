@@ -984,3 +984,24 @@ espera sem prejuízo.
 - Etapa 12b → `ADR-0020` (dificuldade muda as entradas do juiz, nunca o dado) ·
   `ADR-0021` (companheiros de Nível 1 e por que o Nível 2 continua fora do §9.3) ·
   `docs/diario/0015-etapa-12b.md`
+
+---
+
+## Auditoria pré-lançamento (15/09/2026) — o que ficou fora do escopo da rodada
+
+Uma revisão completa da Fase 1 ("Mundo Vivo": economia, instalações, organizações,
+projetos) antes de integrá-la achou vários itens; a maioria foi corrigida na hora (ver
+[Diário 0038](diario/0038-auditoria-pre-lancamento.md) e
+[ADR-0037](adr/0037-auditoria-pre-lancamento-mundo-vivo.md)). Estes quatro exigem uma
+decisão de ferramenta/custo ou tempo maior, então viraram item de backlog em vez de
+correção imediata:
+
+| Item | Por que importa | h (chute) |
+|---|---|---|
+| **Rastreamento de erros em produção** (Sentry ou equivalente) | Hoje uma falha em produção (exceção não tratada, tarefa em segundo plano quebrando) só aparece no log do Render — o dev (~10h/semana) não teria como saber que um jogador real bateu num erro, a menos que esteja olhando o log naquele momento. `Backend/app/infra/tracing.py` (Langfuse) cobre custo/latência de chamadas ao LLM, não é rastreamento de erro geral | 3–4 |
+| **Cold start empilhado** (Render free + `alembic upgrade head` em todo boot + Neon serverless) | O plano gratuito do Render desliga por inatividade (~30-50s para acordar); o `Dockerfile` roda a migration a cada boot, não só no deploy; o Neon também suspende por inatividade. As três coisas juntas podem deixar o primeiro pedido de um jogador depois de um tempo parado lento o bastante para parecer travado, ou falhar por timeout | 2–3 (mover a migration para um passo de deploy; considerar um "aquecendo…" no front) |
+| **Débito de lint pré-existente** (17 erros em 7 arquivos, a maioria `sfx.ts`/`trilha.ts` acessando `ref.current` durante o render) | Não é desta auditoria e não foi aumentado por ela, mas o job de CI novo do frontend (ver acima) já roda `npm run lint` e por ora não bloqueia o build por causa disso (`continue-on-error`). Vale limpar para o lint virar gate de verdade | 2–3 |
+| **Nota sobre `docker-compose` no README/runbook** | O `docker-compose.yml` da raiz assume `docker compose` (com espaço), que já se mostrou quebrado no git-bash desta máquina (precisa `docker-compose`, hifenizado). Não afeta o deploy real (o Render builda o `Dockerfile` direto, sem compose) — só onboarding local | 0,5 |
+
+Nenhum destes é urgente para um primeiro lançamento pequeno (poucos amigos testando); os
+dois primeiros ficam mais importantes se o jogo crescer além disso.
