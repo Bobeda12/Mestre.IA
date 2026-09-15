@@ -381,7 +381,10 @@ def gerar_prologo_missao(
     Máximo 8 locais, 8 pessoas, 4 conflitos e 20 entidades por local. Uma cena pequena é suficiente.
     Escreva intro_narrativa em 3 parágrafos: acontecimento, tensão humana, oportunidades concretas.
     Segredos, objetivos privados e pistas não descobertas NÃO aparecem na introdução.
-    As 3 opcoes são sugestões curtas e variadas. Nunca decida pelo jogador.
+    As 3 opcoes são sugestões curtas e variadas. Cada uma precisa citar algo concreto que você
+    acabou de criar nesta cena (o nome de uma pessoa, um objeto investigável, uma saída) — nunca
+    frases genéricas como "explorar a área" ou "observar os arredores", que servem pra qualquer
+    cena. Nunca decida pelo jogador.
     """
     try:
         roteiro = chamar_mestre([{"role": "user", "content": prompt}], chamar_fn=chamar_fn)
