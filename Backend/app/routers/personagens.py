@@ -1,9 +1,10 @@
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
 
 from app.infra.byok import ChaveUsuario
 from app.infra.db import EventoMemoria, EventoTelemetria, FeedbackNarracao, Personagem, Usuario, get_db
+from app.infra.rate_limit import limiter
 from app.services import memory, telemetria
 from app.services.auth import get_current_user
 from app.services.narrator import gerar_cronica
@@ -137,7 +138,9 @@ def registrar_feedback(
 
 
 @router.get("/{session_id}/cronica")
+@limiter.limit("5/minute")
 def exportar_cronica(
+    request: Request,
     session_id: str,
     current_user: Usuario = Depends(get_current_user),
     db: Session = Depends(get_db),

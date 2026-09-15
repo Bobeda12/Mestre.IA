@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 
 from app.domain.oraculo import (
     OraculoHistoriaRequest,
@@ -9,6 +9,7 @@ from app.domain.oraculo import (
 from app.infra.byok import ChaveUsuario
 from app.infra.db import Usuario
 from app.infra.llm_client import ErroMestre
+from app.infra.rate_limit import limiter
 from app.services import oraculo
 from app.services.auth import get_current_verified_user
 
@@ -16,7 +17,9 @@ router = APIRouter(tags=["oraculo"])
 
 
 @router.post("/oraculo_origem", response_model=OraculoOrigemResponse)
+@limiter.limit("10/minute")
 def oraculo_origem(
+    request: Request,
     pedido: OraculoOrigemRequest,
     current_user: Usuario = Depends(get_current_verified_user),
     chave_usuario: str | None = Header(default=None, alias="X-Gemini-Key"),
@@ -29,7 +32,9 @@ def oraculo_origem(
 
 
 @router.post("/oraculo_origem/historia", response_model=OraculoHistoriaResponse)
+@limiter.limit("10/minute")
 def oraculo_historia(
+    request: Request,
     pedido: OraculoHistoriaRequest,
     current_user: Usuario = Depends(get_current_verified_user),
     chave_usuario: str | None = Header(default=None, alias="X-Gemini-Key"),

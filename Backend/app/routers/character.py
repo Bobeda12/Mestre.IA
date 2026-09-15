@@ -1,7 +1,7 @@
 import random
 from typing import Literal
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -11,6 +11,7 @@ from app.domain.state import CombatState, LocalDescoberto, QuestLog, WorldState
 from app.infra.byok import ChaveUsuario
 from app.infra.data_manager import regras
 from app.infra.db import Personagem, Usuario, get_db
+from app.infra.rate_limit import limiter
 from app.services import memory, telemetria
 from app.services.auth import get_current_verified_user
 from app.services.geracao_atributos import criar_token_atributos
@@ -46,7 +47,9 @@ def gerar_atributos(
 
 
 @router.post("/create_character")
+@limiter.limit("10/minute")
 def create_character(
+    request: Request,
     char: CharacterCreationRequest,
     current_user: Usuario = Depends(get_current_verified_user),
     db: Session = Depends(get_db),

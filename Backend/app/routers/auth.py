@@ -55,6 +55,7 @@ def _setar_cookie_sessao(response: Response, usuario_id: int) -> None:
         max_age=_TTL_COOKIE_SESSAO_SEGUNDOS,
         httponly=True,
         samesite="lax",
+        secure=settings.environment == "production",
     )
 
 
@@ -255,6 +256,7 @@ def google_iniciar() -> RedirectResponse:
         max_age=_TTL_COOKIE_STATE_SEGUNDOS,
         httponly=True,
         samesite="lax",
+        secure=settings.environment == "production",
     )
     return resposta
 
@@ -280,5 +282,6 @@ def google_callback(
         max_age=_TTL_COOKIE_SESSAO_SEGUNDOS,
         httponly=True,
         samesite="lax",
+        secure=settings.environment == "production",
     )
     return resposta
