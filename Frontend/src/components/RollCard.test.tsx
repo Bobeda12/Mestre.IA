@@ -43,7 +43,7 @@ function renderRevelado(dadosRolagem: DadosRolagem) {
 describe('RollCard', () => {
   it('nasce girando, sem mostrar o resultado, antes da animação terminar', () => {
     render(<RollCard dados={dados()} />);
-    expect(screen.getByText('rolando')).toBeInTheDocument();
+    expect(screen.getByRole('status', { name: 'Rolando o dado' })).toBeInTheDocument();
     expect(screen.queryByText('ACERTO')).not.toBeInTheDocument();
   });
 

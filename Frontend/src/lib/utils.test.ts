@@ -35,7 +35,7 @@ describe('esconderTagOpcoes', () => {
 });
 
 describe('limparMarkdownLeve', () => {
-  it('remove negrito, itálico e código inline mantendo o texto', () => {
-    expect(limparMarkdownLeve('Isto é **importante** e `código`.')).toBe('Isto é importante e código.');
+  it('remove código inline e preserva negrito para o destaque da narrativa', () => {
+    expect(limparMarkdownLeve('Isto é **importante** e `código`.')).toBe('Isto é **importante** e código.');
   });
 });

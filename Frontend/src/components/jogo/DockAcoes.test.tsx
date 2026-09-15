@@ -52,6 +52,39 @@ function Harness(props: { aoAgir: (a: AcaoDireta, r: string) => void } & Partial
 }
 
 describe('DockAcoes — sem seleção', () => {
+  it('preenche uma sugestão e devolve o foco para escrever', () => {
+    render(<Harness aoAgir={vi.fn()} opcoes={['Observar os arredores']} />);
+    fireEvent.click(screen.getByRole('button', { name: /observar os arredores/i }));
+    expect(screen.getByLabelText('Sua ação')).toHaveValue('Observar os arredores');
+    expect(screen.getByLabelText('Sua ação')).toHaveFocus();
+  });
+
+  it('protege o texto e bloqueia ações enquanto um turno é resolvido', () => {
+    const aoAgir = vi.fn();
+    const { rerender } = render(<Harness aoAgir={aoAgir} />);
+    fireEvent.change(screen.getByLabelText('Sua ação'), { target: { value: 'Examino a porta' } });
+    rerender(<Harness aoAgir={aoAgir} loading opcoes={['Outra ação']} />);
+    expect(screen.getByLabelText('Sua ação')).toBeDisabled();
+    expect(screen.getByRole('button', { name: /descansar/i })).toBeDisabled();
+    fireEvent.keyDown(screen.getByLabelText('Sua ação'), { key: 'Enter' });
+    expect(aoAgir).not.toHaveBeenCalled();
+    expect(screen.getByLabelText('Sua ação')).toHaveValue('Examino a porta');
+    expect(screen.getByRole('status')).toHaveTextContent('O Mestre está narrando');
+    rerender(<Harness aoAgir={aoAgir} />);
+    expect(screen.getByLabelText('Sua ação')).toHaveFocus();
+  });
+
+  it('não envia Enter de composição de texto ou repetição da tecla', () => {
+    const aoAgir = vi.fn();
+    render(<Harness aoAgir={aoAgir} />);
+    const campo = screen.getByLabelText('Sua ação');
+    fireEvent.change(campo, { target: { value: 'Examino a porta' } });
+    fireEvent.keyDown(campo, { key: 'Enter', isComposing: true });
+    fireEvent.keyDown(campo, { key: 'Enter', repeat: true });
+    fireEvent.keyDown(campo, { key: 'Enter', shiftKey: true });
+    expect(aoAgir).not.toHaveBeenCalled();
+  });
+
   it('mostra as sugestões do narrador e o botão Descansar', () => {
     render(<Harness aoAgir={vi.fn()} opcoes={['Observar os arredores', 'Seguir em frente']} />);
     expect(screen.getByText('Observar os arredores')).toBeInTheDocument();
@@ -60,6 +93,13 @@ describe('DockAcoes — sem seleção', () => {
 });
 
 describe('DockAcoes — combate', () => {
+  it('agrupa consumíveis repetidos e informa a quantidade disponível', () => {
+    render(<Harness aoAgir={vi.fn()} combate inventory={['Poção de Cura', 'Poção de Cura']} />);
+    fireEvent.click(screen.getByRole('button', { name: /itens/i }));
+    expect(screen.getByLabelText('Quantidade: 2')).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: /poção de cura/i })).toHaveLength(1);
+  });
+
   it('desabilita Atacar sem alvo e habilita com alvo', () => {
     const { rerender } = render(<Harness aoAgir={vi.fn()} combate={true} alvo={undefined} />);
     expect(screen.getByRole('button', { name: /atacar/i })).toBeDisabled();

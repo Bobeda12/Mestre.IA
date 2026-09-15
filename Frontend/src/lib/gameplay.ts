@@ -56,7 +56,8 @@ export interface InimigoVisual {
 }
 
 export interface AcaoDireta {
-  acao: 'atacar' | 'defender' | 'esquivar' | 'investir' | 'esconder_se' | 'fugir' | 'usar_habilidade' | 'interagir' | 'descansar' | 'resistir' | 'agir_no_mundo' | 'intervir_conflito' | 'definir_objetivo' | 'escolher_especializacao' | 'equipar' | 'desequipar' | 'comerciar' | 'usar_item' | 'atacar_com_aliado' | 'escolher_nivel' | 'encerrar_arco';
+  acao: 'atacar' | 'defender' | 'esquivar' | 'investir' | 'esconder_se' | 'fugir' | 'usar_habilidade' | 'interagir' | 'descansar' | 'resistir' | 'agir_no_mundo' | 'intervir_conflito' | 'definir_objetivo' | 'escolher_especializacao' | 'equipar' | 'desequipar' | 'comerciar' | 'usar_item' | 'atacar_com_aliado' | 'escolher_nivel' | 'encerrar_arco' | 'escolher_aprendizado' | 'gerir_projeto' | 'decidir_acordo_projeto' | 'usar_instalacao';
+  tipo?: 'curto' | 'longo';
   alvo?: string;
   nivel_escolha?: number;
   tipo_escolha?: 'atributo' | 'talento' | 'especializacao';
@@ -78,10 +79,11 @@ export interface EntidadeMundo {
   estado: string; destino: string; descoberto: boolean; pista?: string;
 }
 export interface PessoaMundo {
+  habito?: string; voz?: string;
   id: string; nome: string; descricao: string; disposicao: string; confianca: number; raca?: string;
   necessidade: string; lembrancas: string[]; promessas: string[]; depoimento?: string;
   /** Fase 1 (ADR-0033) — vitrine do mercador, com preço já calculado pelo servidor. */
-  vitrine?: { item: string; preco: number }[];
+  vitrine?: { item: string; preco: number; quantidade?: number }[];
 }
 
 /** Fase 1 (ADR-0033) — ficha pública de um item que o herói tem ou que está à venda. */
@@ -100,6 +102,40 @@ export interface ArcoAtual {
 export interface ArcoEncerrado { id: string; titulo: string; texto: string; resultado: string; recompensa: { xp: number; ouro: number; itens: string[] } }
 
 export interface MundoPersistente {
+  remessas?: { id: string; item: string; quantidade: number; destino: string;
+    estado: 'em_transito' | 'retida' | 'entregue'; chegada_em: number }[];
+  instalacoes?: {
+    lugares: { id: string; projeto: string; nome: string; descricao: string; tipo: 'abrigo' | 'oficina';
+      atributo: string; local: string; ativa: boolean; disponivel: boolean; evidencia: string }[];
+    preparacao: { nome: string; atributo: string; expira_em: number } | null;
+  };
+  organizacoes?: {
+    id: string; nome: string; proposito: string; principio: string; local: string;
+    membros: { id: string; nome: string }[];
+    iniciativas: { id: string; nome: string; estado: string; sinal: string }[];
+  }[];
+  projetos?: {
+    id: string; ambicao: string; local: string; estado: 'ativo' | 'concluido' | 'abandonado';
+    propostas?: {
+      organizacao?: string; nome_organizacao?: string;
+      id: string; npc: string; nome_npc: string; condicao: string; oferta: string; contrapartida: string;
+      motivo_declarado: string; exclusiva: boolean; evidencia: string;
+      estado: 'oferecida' | 'aceita' | 'recusada' | 'cumprida' | 'renunciada';
+    }[];
+    condicoes: { id: string; descricao: string; alvo: string; estado: 'aberta' | 'satisfeita' | 'superada'; evidencia: string }[];
+  }[];
+  imersao?: {
+    momentos: { id: string; npc: string; gesto: string; convite: string; local: string; turno: number }[];
+    marcas: { id: string; nome: string; significado: string; tipo: string; alvo: string; local: string }[];
+    oportunidades: { id: string; percepcao: string; risco: string; alvo: string }[];
+  };
+  emergencia?: {
+    acontecimentos: { id: string; turno: number; local: string; descricao: string }[];
+    particularidades: { id: string; alvo: string; pista: string; regra?: string; pistas?: string[] }[];
+    condicoes: Record<string, string[]>;
+    consequencias: { id: string; sinal: string; estado: string }[];
+    aprendizados: { id: string; nome: string; descricao: string; atributo: string; alvo: string; ativo: boolean }[];
+  };
   local: string; descricao: string; entidades: EntidadeMundo[]; pessoas: PessoaMundo[];
   conflitos: {id: string; nome: string; sinal: string; progresso: number; etapas: number;
     estado: string; desfecho: string; minutos_restantes: number; intervencoes: number}[];

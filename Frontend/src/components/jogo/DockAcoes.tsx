@@ -56,10 +56,27 @@ export default function DockAcoes(p: Props) {
   const raiz = useRef<HTMLDivElement>(null);
   const textarea = useRef<HTMLTextAreaElement>(null);
 
-  const bloqueado = p.ocupado || p.encerrado;
+  const bloqueado = p.loading || p.ocupado || p.encerrado;
   const alvoSel = p.pessoaSelecionada ?? p.entidadeSelecionada;
   const nomeSel = alvoSel?.nome ?? (p.selecao?.tipo === 'inimigo' ? p.selecao.id : null);
   const foco = p.progressao?.recurso;
+
+  useEffect(() => {
+    const campo = textarea.current;
+    if (!campo) return;
+    campo.style.height = 'auto';
+    campo.style.height = `${Math.min(128, Math.max(48, campo.scrollHeight))}px`;
+  }, [p.input]);
+
+  const estavaOcupado = useRef(p.loading || p.ocupado);
+  useEffect(() => {
+    const ocupado = p.loading || p.ocupado;
+    if (estavaOcupado.current && !ocupado && !p.encerrado &&
+      (document.activeElement === document.body || document.activeElement === textarea.current)) {
+      textarea.current?.focus();
+    }
+    estavaOcupado.current = ocupado;
+  }, [p.loading, p.ocupado, p.encerrado]);
 
   // Trocar de seleção ou entrar em combate limpa popover, meio e proposta.
   // Ajuste de estado durante o render (padrão recomendado pelo React para
@@ -94,6 +111,7 @@ export default function DockAcoes(p: Props) {
     agirNoMundo(operacao);
   };
   const enviar = () => {
+    if (bloqueado || !p.input.trim()) return;
     if (verboPendente) {
       if (!p.input.trim()) return;
       agirNoMundo(verboPendente.operacao, p.input.trim());
@@ -104,6 +122,8 @@ export default function DockAcoes(p: Props) {
     p.handleSendMessage();
   };
   const teclado = (e: React.KeyboardEvent) => {
+    if (e.nativeEvent.isComposing || e.repeat) return;
+    if (bloqueado) { e.preventDefault(); return; }
     if (verboPendente) { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); enviar(); } return; }
     p.handleKeyDown(e);
   };
@@ -126,7 +146,7 @@ export default function DockAcoes(p: Props) {
 
   const hint = p.encerrado ? 'Esta jornada chegou ao fim.'
     : p.caido && p.combate ? 'Você está caído. Resista para avançar a rodada e fazer seu teste de morte.'
-    : p.caido ? 'Você está caído. Descanse ou peça ajuda ao Mestre.'
+    : p.caido ? 'Você está caído. Peça ajuda ao Mestre para continuar.'
     : p.combate && !p.alvo ? 'Clique numa criatura no palco para escolher o alvo.'
     : null;
 
@@ -145,7 +165,7 @@ export default function DockAcoes(p: Props) {
             const motivo = trancada ? `Desbloqueia no nível ${h.nivel}` : semFoco ? 'Foco insuficiente' : h.alvo === 'todos' ? 'Todos os inimigos' : h.alvo === 'heroi' ? 'Seu herói' : `Alvo: ${p.alvo ?? 'selecione um inimigo'}`;
             return (
               <button type="button" key={h.id} className={`dock__card ${trancada ? 'is-locked' : ''}`}
-                disabled={bloqueado || p.caido || !h.disponivel || (h.alvo === 'inimigo' && !p.alvo)}
+                disabled={bloqueado || p.caido || trancada || semFoco || !h.disponivel || (h.alvo === 'inimigo' && !p.alvo)}
                 onClick={() => { p.aoAgir({ acao: 'usar_habilidade', habilidade: h.id, ...(h.alvo === 'inimigo' ? { alvo: p.alvo } : {}) }, `${h.nome}${h.alvo === 'inimigo' ? ` em ${p.alvo}` : ''}`); setPopover(null); }}>
                 <span className="dock__card-head font-rpg uppercase tracking-wide"><strong>{h.nome}</strong><span>{h.custo} {foco?.nome ?? 'Foco'}</span></span>
                 <span className="dock__card-body font-rpg">{h.descricao}</span>
@@ -184,7 +204,7 @@ export default function DockAcoes(p: Props) {
           {consumiveis.map(item => (
             <button type="button" key={`c:${item}`} className="dock__card" disabled={bloqueado || p.caido} title={p.catalogoItens[item]?.descricao}
               onClick={() => { p.aoAgir({ acao: 'usar_item', item }, `Usar ${item}`); setPopover(null); }}>
-              <span className="dock__card-head font-rpg uppercase tracking-wide"><PixelIcon name={categoriaDe(item, p.catalogoItens[item]).icone} size={14} /><strong>{item}</strong></span>
+              <span className="dock__card-head font-rpg uppercase tracking-wide"><PixelIcon name={categoriaDe(item, p.catalogoItens[item]).icone} size={14} /><strong>{item}</strong><span aria-label={`Quantidade: ${p.inventory.filter(i => i === item).length}`}>×{p.inventory.filter(i => i === item).length}</span></span>
               <span className="dock__card-body font-rpg">{p.catalogoItens[item]?.descricao ?? 'Usar agora.'}</span>
             </button>
           ))}
@@ -265,7 +285,7 @@ export default function DockAcoes(p: Props) {
         ) : (
           <>
             {p.opcoes.length > 0 && !p.loading && !p.encerrado && p.opcoes.map((op, i) => (
-              <PixelActionCard key={i} onClick={() => { p.setInput(op); textarea.current?.focus(); }} className="text-xs md:text-sm px-3 py-2">{op}</PixelActionCard>
+              <PixelActionCard key={i} disabled={bloqueado} onClick={() => { p.setInput(op); textarea.current?.focus(); }} className="text-xs md:text-sm px-3 py-2">{op}</PixelActionCard>
             ))}
             {!p.encerrado && (
               <button type="button" className={`${BOTAO} ml-auto`} disabled={bloqueado || p.caido}
@@ -293,7 +313,8 @@ export default function DockAcoes(p: Props) {
           onKeyDown={teclado}
           placeholder={placeholder}
           aria-label="Sua ação"
-          disabled={p.encerrado || p.ocupado}
+          aria-describedby="dock-instrucao"
+          disabled={bloqueado}
           className="flex-1 bg-transparent text-gray-200 p-3 outline-none resize-none h-12 max-h-32 custom-scrollbar font-rpg text-sm placeholder-gray-500 disabled:opacity-50"
         />
         <button
@@ -305,6 +326,9 @@ export default function DockAcoes(p: Props) {
           <PixelIcon name="enviar" size={18} />
         </button>
       </div>
+      <p id="dock-instrucao" className="dock__hint font-rpg px-3 pb-1" role="status" aria-live="polite">
+        {p.encerrado ? 'Esta jornada chegou ao fim.' : p.loading ? 'O Mestre está narrando…' : p.ocupado ? 'Resolvendo sua ação…' : 'Enter para enviar · Shift + Enter para uma nova linha'}
+      </p>
       </div>
     </div>
   );

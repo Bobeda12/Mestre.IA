@@ -53,6 +53,8 @@ export default function AbaRelacoes(p: Props) {
                 </>
               )}
               {pessoa?.necessidade && <p className="text-[11px] text-gray-300 mt-1">Pode oferecer: {pessoa.necessidade}.</p>}
+              {pessoa?.habito && <p className="text-[11px] text-gray-300 mt-1">{pessoa.habito}</p>}
+              {pessoa?.voz && <p className="text-[11px] text-gray-400 italic mt-1">{pessoa.voz}</p>}
               {pessoa?.depoimento && <p className="text-[11px] text-gray-400 italic mt-1">Depoimento não verificado: {pessoa.depoimento}</p>}
               {pessoa && pessoa.lembrancas.length > 0 && (
                 <div className="mt-1.5 border-t border-gray-800 pt-1.5 space-y-0.5">

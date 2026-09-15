@@ -36,6 +36,7 @@ import Palco from './jogo/Palco';
 import PalcoRecolhido from './jogo/PalcoRecolhido';
 import HudBarra from './jogo/HudBarra';
 import DockAcoes from './jogo/DockAcoes';
+import SinaisDaCena from './jogo/SinaisDaCena';
 import AbaJornada from './jogo/AbaJornada';
 import AbaPoderes from './jogo/AbaPoderes';
 import AbaRelacoes from './jogo/AbaRelacoes';
@@ -929,7 +930,7 @@ export default function GameChat() {
           tipo_escolha: acao.tipo_escolha,
           opcao: acao.opcao,
           rotulo,
-          tipo: 'curto',
+          tipo: acao.tipo ?? 'curto',
         },
       );
       const d = resposta.data;
@@ -966,7 +967,7 @@ export default function GameChat() {
     }
   };
 
-  const handleSendMessage = () => { if (!input.trim()) return; sendAction(input); setInput(""); };
+  const handleSendMessage = () => { if (!input.trim() || !sessionId || gameOver || loading || acaoTaticaEmCurso) return; sendAction(input); setInput(""); };
   const handleKeyDown = (e: React.KeyboardEvent) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendMessage(); } };
 
   if (notFound) {
@@ -1747,6 +1748,7 @@ export default function GameChat() {
             enviarFeedback={enviarFeedback}
         />
 
+        {!gameOver && <SinaisDaCena oportunidades={mundoPersistente?.imersao?.oportunidades ?? []} />}
         <DockAcoes
             combate={combatActive}
             caido={hpAtual <= 0}

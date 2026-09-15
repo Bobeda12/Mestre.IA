@@ -3,6 +3,8 @@ import type { AcaoDireta, ArcoAtual, MundoPersistente } from '../../lib/gameplay
 import { ACOES } from '../../lib/verbos';
 import PanelFrame from '../PanelFrame';
 import PixelIcon from '../PixelIcon';
+import ProjetosJornada from './ProjetosJornada';
+import LugaresDaJornada from './LugaresDaJornada';
 
 // Fase 6 ("uma tela só", ADR-0036) — a aba MISSÃO da ficha vira JORNADA e
 // absorve tudo que era "consulta" espalhado pela tela: o capítulo (arco)
@@ -55,6 +57,32 @@ export default function AbaJornada(p: Props) {
 
   return (
     <div className="animate-fade-in space-y-5">
+      {p.mundo && <ProjetosJornada projetos={p.mundo.projetos ?? []} bloqueado={bloqueado} aoAgir={p.aoAgir} />}
+      {p.mundo && <LugaresDaJornada mundo={p.mundo} bloqueado={bloqueado} aoAgir={p.aoAgir} />}
+      {!!p.mundo?.remessas?.length && <Secao titulo="Abastecimento deste lugar" icone="pergaminho">
+        {p.mundo.remessas.map(r => <article key={r.id} className="border-l-2 border-gray-600 pl-2 text-xs space-y-1">
+          <p className="text-gray-200">{r.quantidade} × {r.item}</p>
+          <p className="text-gray-400">{r.estado === 'entregue' ? 'Entregue ao comerciante' : r.estado === 'retida'
+            ? 'Carga retida: a rota ou o recebimento precisam ser liberados.'
+            : `Em transporte — previsão em ${Math.max(0, r.chegada_em - p.mundo!.minutos)} min de jogo.`}</p>
+        </article>)}
+      </Secao>}
+      {!!p.mundo?.organizacoes?.length && (
+        <Secao titulo="Quem move este mundo" icone="pergaminho">
+          {p.mundo.organizacoes.map(g => (
+            <article key={g.id} className="border-2 border-gray-700 bg-black/40 p-2 space-y-1.5">
+              <p className="font-rpg text-sm text-rpg-gold">{g.nome}</p>
+              <p className="text-xs text-gray-200">{g.proposito}</p>
+              <p className="text-xs text-gray-400">{g.principio}</p>
+              <p className="text-[11px] text-gray-400">Pessoas conhecidas: {g.membros.map(m => m.nome).join(', ')}</p>
+              {g.iniciativas.map(i => <p key={i.id} className="text-xs text-amber-200">{i.sinal}</p>)}
+              {g.iniciativas.some(i => i.estado === 'ativo') && <p className="text-[11px] text-gray-400">
+                Você pode apoiar, ganhar tempo ou negociar em “O mundo continua”.
+              </p>}
+            </article>
+          ))}
+        </Secao>
+      )}
       {p.quest?.nome_missao ? (
         <PanelFrame borderWidth={8} className="bg-black/50 p-3">
           <h3 className="text-[10px] text-blue-300 uppercase font-rpg mb-2 tracking-widest flex items-center gap-1"><PixelIcon name="pergaminho" size={11} /> Missão atual</h3>
@@ -133,6 +161,50 @@ export default function AbaJornada(p: Props) {
         </Secao>
       )}
 
+      {!!p.mundo?.emergencia?.particularidades.length && (
+        <Secao titulo="Os segredos deste lugar" icone="pergaminho">
+          {p.mundo.emergencia.particularidades.map(regra => (
+            <article key={regra.id} className="border-l-2 border-rpg-gold/60 pl-2 text-xs text-gray-300 space-y-1">
+              <p>{regra.regra ?? regra.pista}</p>
+              {regra.pistas?.map((pista, i) => <p key={i}>{pista}</p>)}
+            </article>
+          ))}
+        </Secao>
+      )}
+
+      {!!p.mundo?.emergencia?.consequencias.length && (
+        <Secao titulo="Ecos das suas escolhas" icone="alerta">
+          {p.mundo.emergencia.consequencias.map(eco => (
+            <p key={eco.id} className="text-xs text-gray-300">{eco.sinal}</p>
+          ))}
+          <p className="text-[11px] text-gray-400">Esses sinais podem mudar com suas ações. Conte ao Mestre como quer agir.</p>
+        </Secao>
+      )}
+
+      {!!p.mundo?.emergencia && Object.values(p.mundo.emergencia.condicoes).some(c => c.length > 0) && (
+        <Secao titulo="O que mudou ao seu redor" icone="pergaminho">
+          {Object.entries(p.mundo.emergencia.condicoes).flatMap(([alvo, condicoes]) => condicoes.map(texto => (
+            <p key={`${alvo}:${texto}`} className="text-xs text-gray-300">{texto}</p>
+          )))}
+        </Secao>
+      )}
+
+      {!!p.mundo?.emergencia?.aprendizados.length && (
+        <Secao titulo="O que a jornada ensinou" icone="estrela">
+          {p.mundo.emergencia.aprendizados.map(a => (
+            <article key={a.id} className="border-2 border-gray-700 bg-black/40 p-2 space-y-1.5">
+              <p className="font-rpg text-sm text-rpg-gold">{a.nome}</p>
+              <p className="text-xs text-gray-300">{a.descricao}</p>
+              <p className="text-[11px] text-gray-400">+1 em {a.atributo} ao agir sobre {p.mundo?.pessoas.find(pessoa => pessoa.id === a.alvo)?.nome ?? p.mundo?.entidades.find(e => e.id === a.alvo)?.nome ?? (a.alvo === 'heroi' ? 'você mesmo' : a.alvo)}.</p>
+              <button type="button" className={BOTAO_PRIMARIO} disabled={bloqueado || a.ativo}
+                onClick={() => p.aoAgir({ acao: 'escolher_aprendizado', alvo: a.id }, `Aprender: ${a.nome}`.slice(0, 80))}>
+                {a.ativo ? 'Aprendizado adquirido' : 'Desenvolver este aprendizado'}
+              </button>
+            </article>
+          ))}
+        </Secao>
+      )}
+
       {(p.mundo?.conhecimento.length ?? 0) > 0 && (
         <Secao titulo="O que você descobriu" icone="pergaminho">
           {p.mundo!.conhecimento.slice(-12).reverse().map((f, i) => (
@@ -140,6 +212,28 @@ export default function AbaJornada(p: Props) {
               <span className="text-rpg-gold font-rpg">{f.natureza}</span> · {f.texto}
               <span className="block text-[10px] text-gray-500">Fonte: {f.fonte}</span>
             </p>
+          ))}
+        </Secao>
+      )}
+
+      {!!p.mundo?.imersao?.marcas.length && (
+        <Secao titulo="O que carrega sua história" icone="estrela">
+          {p.mundo.imersao.marcas.map(marca => (
+            <article key={marca.id} className="border-2 border-rpg-gold/40 bg-black/40 p-2 space-y-1">
+              <p className="font-rpg text-sm text-rpg-gold">{marca.nome}</p>
+              <p className="text-xs text-gray-300">{marca.significado}</p>
+            </article>
+          ))}
+        </Secao>
+      )}
+
+      {!!p.mundo?.imersao?.momentos.length && (
+        <Secao titulo="Momentos que ficaram" icone="pergaminho">
+          {p.mundo.imersao.momentos.map(momento => (
+            <article key={momento.id} className="border-l-2 border-gray-600 pl-2 space-y-1">
+              <p className="text-xs text-gray-200">{momento.gesto}</p>
+              {momento.convite && <p className="text-xs text-gray-400 italic">{momento.convite}</p>}
+            </article>
           ))}
         </Secao>
       )}

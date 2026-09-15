@@ -50,10 +50,15 @@ export default function BalcaoMercador(p: Props) {
         {vitrine.length === 0 && <p className="text-xs text-gray-500 font-rpg mb-3">Nada à venda agora.</p>}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 mb-4">
           {vitrine.map(v => (
-            <button type="button" key={`c:${v.item}`} className={ITEM} disabled={bloqueado || p.ouro < v.preco}
+            <button type="button" key={`c:${v.item}`} className={ITEM}
+              disabled={bloqueado || p.ouro < v.preco || v.quantidade === 0}
               title={p.catalogo[v.item]?.descricao}
               onClick={() => p.aoAgir({ acao: 'comerciar', alvo: p.pessoa.id, operacao: 'comprar', item: v.item }, `Comprar ${v.item} de ${p.pessoa.nome}`)}>
-              <span className="min-w-0 truncate">{v.item}</span>
+              <span className="min-w-0"><span className="block truncate">{v.item}</span>
+                {v.quantidade !== undefined && <span className="block text-[10px] text-gray-400">
+                  {v.quantidade === 0 ? 'Esgotado' : `${v.quantidade} em estoque`}
+                </span>}
+              </span>
               <span className="shrink-0 text-rpg-gold text-xs flex items-center gap-1"><PixelIcon name="moeda" size={11} />{v.preco}</span>
             </button>
           ))}
