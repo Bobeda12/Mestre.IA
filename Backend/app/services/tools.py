@@ -1659,7 +1659,13 @@ def tools_para(c_state: CombatState, acao: str | None = None, w_state: WorldStat
         "acordos": {"acordo", "contrapartida", "patrocin", "exclusiv"},
         "projetos": {"projeto", "ambicao", "constru", "reconstru", "fundar", "restaur"},
         "comercio": {"compr", "vend", "mercad", "loja", "equip", "pocao", "beber", "usar"},
-        "viagem": {"viaj", "partir", "sair", "descans", "dorm", "caminh", "seguir", "ir", "vou"},
+        # "ir"/"vou" saíram daqui (achado da auditoria): "ir" como raiz de 2
+        # letras casava com qualquer palavra começando por "ir" (ex. "irmã",
+        # "irritado"), carregando ferramentas de viagem à toa; "vou" nunca
+        # bateria mesmo — é removido como stopword em `termos()`. A intenção
+        # de viagem "vou/vamos/ir/indo/sigo para/a/ao/à" já é pega pelo
+        # regex de frase acima.
+        "viagem": {"viaj", "partir", "sair", "descans", "dorm", "caminh", "seguir"},
         "consequencias": {"promet", "conflit", "intervir", "consequenc", "iniciativa"},
         "progressao": {"aprend", "capitulo", "missao", "objetivo", "arco"},
         "recompensas": {"recrut", "aliado", "receb", "recompensa"},

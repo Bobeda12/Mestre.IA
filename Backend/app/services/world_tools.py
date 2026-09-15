@@ -25,6 +25,12 @@ _CAMPOS_DO_SERVIDOR = {
     "descoberto", "bloqueado_por", "recolhido",  # EntidadeCena
     "turno",  # Conhecimento
     "pistas_descobertas", "expira_turno", "nome_organizacao", "nome_npc", "estoque", "estoque_inicializado",
+    # Fase 1 (Mundo Vivo) — "evidencia"/"ativa" só existem em modelos onde o
+    # servidor sempre os sobrescreve (CondicaoProjeto, PropostaProjeto,
+    # Instalacao); ao contrário de "local"/"origem"/"organizacao"/"estado",
+    # nenhum desses dois nomes é reaproveitado em outro modelo como entrada
+    # legítima da IA, então é seguro tirá-los do schema em todo lugar.
+    "evidencia", "ativa",
 }
 
 
