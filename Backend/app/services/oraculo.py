@@ -17,7 +17,6 @@ from typing import Any
 from app.infra import llm_client
 from app.infra.data_manager import regras
 from app.infra.llm_client import ErroMestre
-from app.infra.settings import settings
 
 _SEM_ORACULO = (
     "O Oráculo está sem acesso à IA agora — falta configurar ao menos uma chave de API "
@@ -54,9 +53,14 @@ def _chamar_com_ferramenta(
     if chamar_fn is not None:
         resp = chamar_fn(msgs, tools=[schema], tool_choice=tool_choice)
     else:
+        # Achado ao vivo: usar só `cadeia_llm[0]` (sem fallback) fazia a
+        # criação de personagem falhar assim que o PRIMEIRO modelo da cadeia
+        # batesse no teto de tokens/minuto da Groq — mesmo com outros elos
+        # (Gemini, outros modelos Groq) disponíveis. O resto do jogo já usa
+        # `chamar_com_fallback` (routers/game.py) por este mesmo motivo.
         if not llm_client.clients:
             raise ErroMestre(_SEM_ORACULO)
-        resp = llm_client.chamar_modelo_unico(settings.cadeia_llm[0], msgs, tools=[schema], tool_choice=tool_choice)
+        resp = llm_client.chamar_com_fallback(msgs, tools=[schema], tool_choice=tool_choice)
 
     tool_calls = resp.choices[0].message.tool_calls
     if not tool_calls:
