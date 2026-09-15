@@ -80,3 +80,39 @@ describe('AbaJornada — capítulo atual', () => {
     expect(screen.queryByText(/capítulo atual/i)).not.toBeInTheDocument();
   });
 });
+
+describe('AbaJornada — abastecimento (remessas)', () => {
+  const mundoBase: MundoPersistente = {
+    local: 'Ponte', descricao: '', entidades: [], pessoas: [], conflitos: [], conhecimento: [],
+    objetivos: [], especializacoes: {}, aptidao: { nome: '', acoes: [], bonus: 0 }, minutos: 100,
+  };
+
+  it('mostra remessa entregue', () => {
+    render(<AbaJornada {...BASE} arco={null} aoAgir={vi.fn()} mundo={{ ...mundoBase, remessas: [
+      { id: 'r1', item: 'Poção de Cura', quantidade: 2, destino: 'Ponte', estado: 'entregue', chegada_em: 40 },
+    ] }} />);
+    expect(screen.getByText('2 × Poção de Cura')).toBeInTheDocument();
+    expect(screen.getByText('Entregue ao comerciante')).toBeInTheDocument();
+  });
+
+  it('mostra remessa retida', () => {
+    render(<AbaJornada {...BASE} arco={null} aoAgir={vi.fn()} mundo={{ ...mundoBase, remessas: [
+      { id: 'r2', item: 'Corda', quantidade: 1, destino: 'Ponte', estado: 'retida', chegada_em: 40 },
+    ] }} />);
+    expect(screen.getByText(/Carga retida/)).toBeInTheDocument();
+  });
+
+  it('mostra a previsão de chegada em minutos de jogo para remessa em trânsito', () => {
+    render(<AbaJornada {...BASE} arco={null} aoAgir={vi.fn()} mundo={{ ...mundoBase, minutos: 100, remessas: [
+      { id: 'r3', item: 'Ferramentas', quantidade: 3, destino: 'Ponte', estado: 'em_transito', chegada_em: 160 },
+    ] }} />);
+    expect(screen.getByText(/previsão em 60 min de jogo/)).toBeInTheDocument();
+  });
+
+  it('nunca mostra previsão negativa quando a chegada já passou', () => {
+    render(<AbaJornada {...BASE} arco={null} aoAgir={vi.fn()} mundo={{ ...mundoBase, minutos: 200, remessas: [
+      { id: 'r4', item: 'Ferramentas', quantidade: 3, destino: 'Ponte', estado: 'em_transito', chegada_em: 160 },
+    ] }} />);
+    expect(screen.getByText(/previsão em 0 min de jogo/)).toBeInTheDocument();
+  });
+});
