@@ -9,6 +9,7 @@ cada nome de ferramenta ao estado real de um turno (`heroi`, `c_state`,
 sucesso) — nunca deixa uma ferramenta malformada derrubar o turno inteiro."""
 
 import json
+import logging
 import random
 import re
 from collections.abc import Callable
@@ -23,6 +24,8 @@ from app.services import rules_engine as motor
 from app.services.class_abilities import limite_foco, perfil_classe
 from app.services.loot import gerar_loot
 from app.services.world_tools import WORLD_DISPATCH, WORLD_TOOLS
+
+logger = logging.getLogger(__name__)
 
 
 class ToolExecutor:
@@ -999,8 +1002,13 @@ class ToolExecutor:
             resultado = metodo(self, **args)
         except TypeError as e:
             return {"erro": f"argumentos inválidos para '{nome}': {e}"}, False
-        except Exception as e:  # ferramenta com bug não pode derrubar o turno
-            return {"erro": f"'{nome}' falhou ao executar: {e}"}, False
+        except Exception:  # ferramenta com bug não pode derrubar o turno
+            # Achado da auditoria pré-lançamento: o texto cru da exceção
+            # Python voltava pro contexto do modelo (e podia ser
+            # parafraseado na narrativa do jogador). Log fica só no
+            # servidor; o modelo recebe uma mensagem genérica.
+            logger.exception("Ferramenta '%s' falhou ao executar", nome)
+            return {"erro": f"'{nome}' falhou ao executar; tente de outro jeito"}, False
         if "erro" not in resultado:
             if consome:
                 from app.services.emergencia import registrar_acontecimento
