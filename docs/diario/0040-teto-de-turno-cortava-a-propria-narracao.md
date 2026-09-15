@@ -49,11 +49,12 @@ acabou sendo pequeno demais pro caso comum de produção, que usa ferramentas fi
 isso `agent_max_passos` (6) foi pensado pra caber — só que ninguém tinha medido a SOMA de 6
 chamadas reais contra o teto do turno inteiro até este achado.
 
-Achado à parte: as 3 chamadas do log foram todas pra Gemini — nenhuma pra Groq. Vale
-conferir no painel do Render se `GROQ_API_KEY` está mesmo configurada lá; se não estiver, a
-cadeia de fallback entre provedores (pensada pra somar as cotas gratuitas dos dois) está
-rodando só com um provedor na prática, sem a rede de segurança que o ADR-0008/ADR-0024
-descrevem.
+Achado à parte: as 3 chamadas do log foram todas pra Gemini — nenhuma pra Groq. Confirmado
+com o autor: é intencional, só `GEMINI_API_KEY` está configurada no Render (chave própria,
+sem cartão). `chamar_com_fallback` já pula qualquer elo `groq:...` sem cliente configurado
+(ver `_chave_do_provedor`), então não é bug — é só um lembrete de que, em produção, a cadeia
+de fallback entre provedores do ADR-0008/ADR-0024 hoje tem um provedor só: se a Gemini
+enfrentar rate limit, não há pra onde cair.
 
 ## Como testar
 
