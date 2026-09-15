@@ -123,6 +123,7 @@ class Arco(BaseModel):
     marcos_no_inicio: int = 0
     desfecho: dict | None = None
     recompensa: dict = Field(default_factory=dict)
+    resumo_proposto: str = Field(default="", max_length=300)
 
 
 class MundoVivo(BaseModel):

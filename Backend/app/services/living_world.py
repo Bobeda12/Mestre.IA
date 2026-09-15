@@ -850,7 +850,10 @@ def encerrar_arco(executor: "ToolExecutor", resumo_proposto: str = "", abandonar
     w.marcos = [*w.marcos, f"Arco encerrado: {arco.titulo} ({rotulo})."][-60:]
     executor.eventos.append(f"📖 Arco encerrado: {arco.titulo} — {rotulo}.")
     if resumo_proposto:
-        arco.premissa = arco.premissa  # a proposta do narrador não sobrescreve nada; vai para o desfecho
+        # A proposta (do narrador ou do jogador) não sobrescreve fatos do
+        # arco — é só uma pista opcional para `gerar_desfecho_arco` usar
+        # como direção de tom, nunca como fonte de eventos.
+        arco.resumo_proposto = resumo_proposto[:300]
     w.arco_recem_encerrado = arco.id
     executor.q_state.nome_missao = "Seu próximo passo"
     executor.q_state.objetivo_missao = "Escolha o que fazer depois de " + arco.titulo + "."

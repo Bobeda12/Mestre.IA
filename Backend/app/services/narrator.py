@@ -523,6 +523,11 @@ def gerar_desfecho_arco(
         return padrao
     rotulo = {"acordo": "um acordo negociado", "consequencia": "as consequências de não agir a tempo",
               "vitoria_chefe": "a queda de quem estava por trás", "abandono": "o abandono pelo herói"}
+    resumo_proposto = (arco.get("resumo_proposto") or "").strip()
+    pista_tom = (
+        f'\n    Pista de tom sugerida (não é fato; use só se combinar com os eventos listados): '
+        f'"{resumo_proposto}"\n' if resumo_proposto else ""
+    )
     prompt = f"""
     {regras.get_biblia()}
 
@@ -531,7 +536,7 @@ def gerar_desfecho_arco(
 
     O que aconteceu neste arco, na ordem:
     {marcos}
-
+    {pista_tom}
     Siga [A VOZ DO MESTRE]; é [MOMENTO DE ALTO IMPACTO], pode crescer além do teto normal. Em segunda
     pessoa. Baseie-se SÓ no que está listado — não invente eventos, pessoas ou lugares; se faltar
     material, seja breve. Termine apontando que o mundo segue e o herói continua.
