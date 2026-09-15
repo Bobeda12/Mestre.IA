@@ -5,7 +5,7 @@ test_rules_engine.py."""
 
 from app.domain.state import Aliado, CombatState, Inimigo, LocalDescoberto, QuestLog, WorldState
 from app.infra.db import Personagem
-from app.services.tools import ToolExecutor, sincronizar_aliados
+from app.services.tools import ToolExecutor, sincronizar_aliados, tools_para
 from tests.helpers import RngFixo
 
 ATRIBUTOS_HEROI = {
@@ -859,6 +859,25 @@ class TestToolsPorEstado:
         for ativo in (True, False):
             assert "escolher_especializacao" not in self._nomes(CombatState(ativo=ativo))
         assert "escolher_especializacao" in ToolExecutor._DESPACHO  # a rota /game/action continua servida
+
+    def test_ferramentas_do_mundo_vivo_fase_1_sao_ocultas_em_combate(self):
+        # Achado da auditoria pré-lançamento: essas nove ferramentas mutam o
+        # save e só deveriam existir fora de combate — se um gatilho de
+        # `tools_para` (ex. "organizacao", "projeto") colidir com o texto
+        # do jogador durante uma luta, elas não podem aparecer mesmo assim.
+        novas = {
+            "despachar_remessa", "propor_instalacao", "registrar_organizacao",
+            "mobilizar_organizacao", "planejar_projeto", "registrar_avanco_projeto",
+            "propor_acordo_projeto", "cumprir_acordo_projeto", "apresentar_oportunidades",
+        }
+        acoes_gatilho = "Quero fundar uma organizacao e firmar um acordo sobre este projeto"
+        dentro = self._nomes(CombatState(ativo=True))
+        dentro_com_gatilho = {
+            t["function"]["name"]
+            for t in tools_para(CombatState(ativo=True), acoes_gatilho, WorldState())
+        }
+        assert not novas & dentro
+        assert not novas & dentro_com_gatilho
 
 
 class TestAliadoUmaVezPorRodada:

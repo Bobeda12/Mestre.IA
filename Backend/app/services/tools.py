@@ -1607,6 +1607,11 @@ _SO_FORA_DE_COMBATE = {
     "consultar_regra", "ajustar_reputacao_npc",
     "registrar_particularidade", "desenvolver_consequencia", "propor_aprendizado",
     "registrar_momento", "registrar_marca",
+    # Fase 1 (Mundo Vivo) — mesma regra: nenhuma ferramenta que muda o save
+    # fica disponível para o narrador durante combate.
+    "despachar_remessa", "propor_instalacao", "registrar_organizacao",
+    "mobilizar_organizacao", "planejar_projeto", "registrar_avanco_projeto",
+    "propor_acordo_projeto", "cumprir_acordo_projeto", "apresentar_oportunidades",
 }
 # Decisões do JOGADOR nunca são ferramenta do narrador (o painel e
 # `/game/action` são o único caminho) — mesma regra que a Fase 3 aplica ao
