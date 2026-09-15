@@ -22,6 +22,7 @@ interface Props {
   marcos: string[];
   ocupado: boolean;
   combate: boolean;
+  erro: string | null;
   aoAgir: (acao: AcaoDireta, rotulo: string) => void;
 }
 
@@ -57,6 +58,12 @@ export default function AbaJornada(p: Props) {
 
   return (
     <div className="animate-fade-in space-y-5">
+      {/* Achado da auditoria pré-lançamento: no mobile, a única tela
+          visível quando esta aba está aberta é ela mesma (a ficha vira uma
+          gaveta que cobre o chat) — o erro/status de uma ação daqui
+          (DockAcoes, atrás da gaveta) ficava invisível. Repetir aqui. */}
+      {p.erro && <p className="text-xs text-red-300 border-2 border-red-900/60 bg-red-950/40 p-2" role="alert">{p.erro}</p>}
+      {p.ocupado && <p className="text-[11px] text-gray-400 font-rpg" role="status" aria-live="polite">Resolvendo sua ação…</p>}
       {p.mundo && <ProjetosJornada projetos={p.mundo.projetos ?? []} bloqueado={bloqueado} aoAgir={p.aoAgir} />}
       {p.mundo && <LugaresDaJornada mundo={p.mundo} bloqueado={bloqueado} aoAgir={p.aoAgir} />}
       {!!p.mundo?.remessas?.length && <Secao titulo="Abastecimento deste lugar" icone="pergaminho">

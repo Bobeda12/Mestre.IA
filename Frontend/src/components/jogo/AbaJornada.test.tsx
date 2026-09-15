@@ -17,7 +17,7 @@ function arco(overrides: Partial<ArcoAtual> = {}): ArcoAtual {
 
 const BASE = {
   quest: null, resumoJornada: null, jornadaAberta: false, setJornadaAberta: vi.fn(),
-  mundo: null, progressao: null, marcos: [], nivel: 1, ocupado: false, combate: false,
+  mundo: null, progressao: null, marcos: [], nivel: 1, ocupado: false, combate: false, erro: null,
 };
 
 describe('AbaJornada — capítulo atual', () => {

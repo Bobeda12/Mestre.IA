@@ -1341,6 +1341,7 @@ export default function GameChat() {
                   marcos={marcos}
                   ocupado={loading || acaoTaticaEmCurso || gameOver}
                   combate={combatActive}
+                  erro={erroAcao}
                   aoAgir={aoAgir}
                 />
               )}
