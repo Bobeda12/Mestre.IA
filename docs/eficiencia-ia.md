@@ -67,12 +67,32 @@ cache não é compartilhado entre jogadores nem ligado ao cache dos documentos d
 regras, que permanece estável. Isso evita duas chamadas iguais de embedding quando
 os dois caminhos precisam do vetor.
 
-429 não é repetido imediatamente no mesmo modelo: o fallback segue para o próximo.
-Clientes do servidor recebem uma pausa por modelo, respeitando Retry-After numérico
-entre 1 e 120 segundos (padrão: 30). Não há espera bloqueante; outras instâncias de
-cliente são independentes. A pausa é local ao processo, não distribuída e não
-compartilhada por chaves BYOK criadas por chamadas distintas. Timeout/conexão/5xx
-mantêm retry curto; streaming já iniciado nunca troca de modelo silenciosamente.
+Nenhum erro transitório é repetido no mesmo modelo dentro de uma cadeia: o modelo recebe
+uma pausa e o fallback segue para o próximo (ADR-0038). Pausas: 429 por minuto respeita
+Retry-After numérico entre 1 e 120 segundos (padrão: 30); 429 de cota diária, 15 minutos;
+5xx, 3 minutos; tempo estourado, 1 minuto. Se todos os elos estiverem pausados, os pausados
+por sobrecarga são tentados; os pausados por cota, não. Não há espera bloqueante; a pausa é
+local ao processo, não distribuída e não compartilhada por chaves BYOK criadas por chamadas
+distintas. Cada chamada tem tempo limite por papel (`TIMEOUTS_IA`: 25 s volume, 50 s
+destaque, 30 s fundo) e a cadeia inteira tem prazo por papel (`PRAZOS_IA`: 45 s, 90 s, 60 s). Chave BYOK e modelo fixo das avaliações, que não têm fila, mantêm o
+retry curto no mesmo modelo. Streaming já iniciado nunca troca de modelo silenciosamente.
+
+## Cotas do provedor e modelo por papel
+
+Medido em 05/10/2026 no painel da conta (ai.dev/rate-limit), plano gratuito do Gemini.
+Os números mudam sem aviso; conferir de tempos em tempos.
+
+| Modelo | Chamadas/min | Chamadas/dia |
+|---|---|---|
+| 3.5, 3.6, 3.7, 3.8, 3 e 2.5 Flash | 5 cada | 20 cada |
+| 3.5 Flash Lite, 3.1 Flash Lite | 15 cada | 500 cada |
+| Gemma 4 (26B, 31B) | 30 | 14.400 (16 mil tokens/min) |
+| Embedding | 100 | 1.000 |
+
+Um turno faz em média 2,7 chamadas (32 em 12 cenários). Cada chamada declara um papel
+(`volume`, `destaque`, `fundo`) e cada papel tem a sua cadeia (`CADEIA_VOLUME`,
+`CADEIA_DESTAQUE`, `CADEIA_FUNDO`), ver ADR-0038. Cada chamada atendida gera uma linha
+`ia papel=… provedor=… modelo=…` no log.
 
 ## Próxima avaliação
 

@@ -4,7 +4,7 @@ revisto pelo ADR-0024), com retry por erro transitório (`tenacity`).
 Um SDK só (`openai`) fala com todo mundo: Groq, Gemini e outros provedores
 compatíveis expõem o mesmo endpoint OpenAI-compatible, só o `base_url` (e a
 chave) muda — um `openai.OpenAI(base_url=...)` por provedor, guardados em
-`clients` por nome (`"groq"`, `"gemini"`). Cada elo de `settings.cadeia_llm`
+`clients` por nome (`"groq"`, `"gemini"`). Cada elo de `settings.cadeia_<papel>`
 é uma string `"provedor:modelo"` (ver `_parse_modelo`); atravessar provedores
 é o que transforma a cota diária *por conta* de cada um numa soma, não uma
 disputa pelo mesmo teto — o objetivo original do ADR-0008 ("por que não um
@@ -22,7 +22,7 @@ import threading
 import time
 import weakref
 from collections.abc import Iterator
-from typing import Any
+from typing import Any, Literal
 
 import openai
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
@@ -61,15 +61,23 @@ def _chave_do_provedor(provedor: str) -> str | None:
     return {"groq": settings.groq_api_key, "gemini": settings.gemini_api_key}.get(provedor)
 
 
+# Tempo limite de quem não passa por uma cadeia (chave do jogador, modelo
+# fixo das avaliações). As cadeias usam `settings.timeouts_ia` por papel.
+_TIMEOUT_PADRAO = 60.0
+
+
 def _build_clients() -> dict[str, openai.OpenAI]:
     # max_retries=0 (herdado do ADR-0008, Etapa 6): o SDK retenta 429/5xx
     # sozinho por padrão, honrando Retry-After ANTES de qualquer exceção
     # chegar aqui — o que neutralizava a cadeia de fallback na prática
     # (achado ao vivo: uma chamada com ~3869s de latência presa num retry
-    # interno enquanto a cota estava esgotada). `tenacity` (rápido, no
-    # máx. ~4s) + a troca de modelo/provedor é a única política de retry.
+    # interno enquanto a cota estava esgotada).
+    #
+    # `timeout` (05/10/2026): sem ele valia o padrão do SDK, 10 minutos. Uma
+    # chamada mínima ao Gemini ficou 293 s pendurada antes de responder —
+    # para o jogador, um turno travado.
     return {
-        provedor: openai.OpenAI(api_key=chave, base_url=base_url, max_retries=0)
+        provedor: openai.OpenAI(api_key=chave, base_url=base_url, max_retries=0, timeout=_TIMEOUT_PADRAO)
         for provedor, base_url in _BASE_URLS.items()
         if (chave := _chave_do_provedor(provedor))
     }
@@ -79,24 +87,82 @@ clients = _build_clients()
 
 # Pausa por instância de cliente e modelo: nenhuma chave ou texto de jogador é
 # armazenado. Válida só neste processo; clientes de outras contas são independentes.
+# Cada entrada é (até quando, motivo): "cota" (429) ou "sobrecarga" (5xx, timeout).
 _pausas: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
 _pausas_lock = threading.Lock()
 
+# Sobrecarga do provedor (503 "high demand") ou chamada que estourou o tempo:
+# o modelo sai da fila por alguns minutos em vez de ser tentado de novo. No
+# plano gratuito do Gemini há relatos de que o 503 também gasta a cota diária
+# (20/dia nos Flash), então insistir custa duas vezes.
+_PAUSA_SOBRECARGA = 180.0
+_PAUSA_TIMEOUT = 60.0
+# Cota diária esgotada. O corpo do 429 chegou a dizer "retry in 11h" e o
+# mesmo modelo voltou a responder cerca de uma hora depois, então a pausa é
+# de minutos: o bastante para não bater de novo a cada turno.
+_PAUSA_COTA_DIARIA = 900.0
+
+
+def _pausa(cliente, modelo: str) -> tuple[float, str]:
+    with _pausas_lock:
+        return _pausas.get(cliente, {}).get(modelo, (0.0, ""))
+
 
 def _em_pausa(cliente, modelo: str) -> bool:
-    with _pausas_lock:
-        return _pausas.get(cliente, {}).get(modelo, 0) > time.monotonic()
+    return _pausa(cliente, modelo)[0] > time.monotonic()
 
 
 def _registrar_pausa(cliente, modelo: str, erro: Exception) -> None:
-    if not isinstance(erro, openai.RateLimitError):
+    if isinstance(erro, openai.RateLimitError):
+        motivo = "cota"
+        if "PerDay" in str(getattr(erro, "body", "")):
+            espera = _PAUSA_COTA_DIARIA
+        else:
+            try:
+                espera = float(erro.response.headers.get("retry-after", "30"))
+            except ValueError:
+                espera = 30
+            espera = max(1, min(120, espera))
+    elif isinstance(erro, openai.APITimeoutError):
+        motivo, espera = "sobrecarga", _PAUSA_TIMEOUT
+    elif isinstance(erro, openai.InternalServerError):
+        motivo, espera = "sobrecarga", _PAUSA_SOBRECARGA
+    else:
         return
-    try:
-        espera = float(erro.response.headers.get("retry-after", "30"))
-    except ValueError:
-        espera = 30
     with _pausas_lock:
-        _pausas.setdefault(cliente, {})[modelo] = time.monotonic() + max(1, min(120, espera))
+        _pausas.setdefault(cliente, {})[modelo] = (time.monotonic() + espera, motivo)
+
+
+# Com menos que isto de prazo sobrando, nem vale abrir outra chamada.
+_PRAZO_MINIMO = 3.0
+
+
+def _elos_dentro_do_prazo(papel: str) -> Iterator[tuple[str, str, Any, float]]:
+    """Percorre `_elos_disponiveis(papel)` enquanto houver prazo total do
+    papel (`settings.prazos_ia`), entregando também o tempo limite daquela
+    chamada: o do papel ou o que resta do prazo, o que for menor.
+
+    Achado ao vivo (05/10/2026): só com tempo limite por chamada, um prólogo
+    levou 201 s — seis modelos falharam em fila e dois deles gastaram os
+    60 s inteiros cada. O jogador espera a soma, não cada parcela."""
+    limite = time.monotonic() + settings.prazos_ia[papel]
+    for provedor, modelo, cliente in _elos_disponiveis(papel):
+        restante = limite - time.monotonic()
+        if restante < _PRAZO_MINIMO:
+            logger.warning("ia papel=%s prazo total esgotado antes de %s", papel, modelo)
+            return
+        yield provedor, modelo, cliente, min(settings.timeouts_ia[papel], restante)
+
+
+def _elos_disponiveis(papel: str) -> list[tuple[str, str, Any]]:
+    """Elos da cadeia do papel que têm chave configurada e não estão em
+    pausa. Se TODOS estiverem em pausa, devolve os pausados por sobrecarga:
+    tentar um modelo que talvez já tenha voltado é melhor do que falhar sem
+    chamar ninguém. Os pausados por cota ficam de fora — ali a resposta
+    seria o mesmo 429."""
+    elos = [(provedor, modelo, clients[provedor]) for provedor, modelo in CADEIAS[papel] if provedor in clients]
+    livres = [elo for elo in elos if not _em_pausa(elo[2], elo[1])]
+    return livres or [elo for elo in elos if _pausa(elo[2], elo[1])[1] == "sobrecarga"]
 
 
 def _parse_modelo(espec: str) -> tuple[str, str]:
@@ -108,7 +174,15 @@ def _parse_modelo(espec: str) -> tuple[str, str]:
 
 logger = logging.getLogger(__name__)
 
-CADEIA: list[tuple[str, str]] = [_parse_modelo(espec) for espec in settings.cadeia_llm]
+# Um modelo por papel (ADR-0038): "volume" (turno de jogo), "destaque"
+# (prólogo, morte, desfechos) e "fundo" (resumo da memória). As listas vêm
+# de `settings.cadeia_<papel>`.
+Papel = Literal["volume", "destaque", "fundo"]
+CADEIAS: dict[str, list[tuple[str, str]]] = {
+    "volume": [_parse_modelo(espec) for espec in settings.cadeia_volume],
+    "destaque": [_parse_modelo(espec) for espec in settings.cadeia_destaque],
+    "fundo": [_parse_modelo(espec) for espec in settings.cadeia_fundo],
+}
 
 _SEM_PROVEDOR = (
     "O mestre está sem acesso à IA — falta configurar ao menos uma chave de API "
@@ -116,13 +190,6 @@ _SEM_PROVEDOR = (
 )
 
 
-@retry(
-    stop=stop_after_attempt(2),
-    wait=wait_exponential(multiplier=0.5, max=4),
-    # 429 pede fallback imediato: repetir o mesmo payload não repõe a cota.
-    retry=retry_if_exception_type(tuple(e for e in _ERROS_TRANSITORIOS if e is not openai.RateLimitError)),
-    reraise=True,
-)
 def _chamar_modelo(
     cliente: openai.OpenAI,
     provedor: str,
@@ -132,8 +199,18 @@ def _chamar_modelo(
     tool_choice: str | dict,
     response_format: dict | None = None,
     stream: bool = False,
+    papel: str | None = None,
+    timeout: float | None = None,
 ) -> Any:
     kwargs: dict[str, Any] = {"model": modelo, "messages": msgs}
+    if timeout is not None:
+        kwargs["timeout"] = timeout
+    if papel is not None:
+        # Os Gemini 3.x "pensam" antes de responder e isso não desliga, só
+        # diminui. Só o Gemini recebe o parâmetro: nem todo modelo da Groq o aceita.
+        esforco = settings.esforco_raciocinio.get(papel)
+        if esforco and provedor == "gemini":
+            kwargs["reasoning_effort"] = esforco
     if tools:
         kwargs["tools"] = tools
         kwargs["tool_choice"] = tool_choice
@@ -176,6 +253,18 @@ def _chamar_modelo(
     return resp
 
 
+# Quem chama um modelo só (chave do jogador, modelo fixo das avaliações) não
+# tem "próximo elo" para onde cair, então mantém o retry curto no mesmo
+# modelo. As cadeias não usam isto: lá um erro pausa o modelo e segue a fila.
+_chamar_modelo_com_retry = retry(
+    stop=stop_after_attempt(2),
+    wait=wait_exponential(multiplier=0.5, max=4),
+    # 429 não se repete: o mesmo payload não repõe a cota.
+    retry=retry_if_exception_type(tuple(e for e in _ERROS_TRANSITORIOS if e is not openai.RateLimitError)),
+    reraise=True,
+)(_chamar_modelo)
+
+
 def chamar_modelo_unico(
     modelo_espec: str,
     msgs: list[dict],
@@ -201,7 +290,7 @@ def chamar_modelo_unico(
             f"O provedor '{provedor}' não está configurado (falta a chave de API correspondente no servidor)."
         )
     try:
-        return _chamar_modelo(cliente, provedor, modelo, msgs, tools, tool_choice, response_format)
+        return _chamar_modelo_com_retry(cliente, provedor, modelo, msgs, tools, tool_choice, response_format)
     except _ERROS_TRANSITORIOS as e:
         raise ErroMestre(
             "A cota de uso da IA acabou por agora, o serviço está sobrecarregado, ou demorou demais."
@@ -210,79 +299,52 @@ def chamar_modelo_unico(
         raise ErroMestre(f"O serviço de IA recusou o pedido (código {e.status_code}).") from e
 
 
-# Espera antes de repassar a cadeia inteira (ver `rodadas` abaixo). Curta de
-# propósito: o 503 "high demand" do Gemini costuma passar em segundos.
-_ESPERA_ENTRE_RODADAS = 3.0
-
-
 def chamar_com_fallback(
     msgs: list[dict],
     tools: list[dict] | None = None,
     tool_choice: str | dict = "auto",
     response_format: dict | None = None,
-    rodadas: int = 1,
+    papel: Papel = "volume",
 ) -> Any:
-    """Tenta cada elo de `CADEIA` em ordem, pulando qualquer provedor sem
-    chave configurada. Por elo, `tenacity` cobre até 2 tentativas com
-    backoff curto para erro transitório (rate limit, timeout, conexão)
-    antes de desistir dele e cair para o próximo — é isto que transforma o
-    limite de free tier de CADA PROVEDOR numa vantagem de arquitetura em
-    vez de um turno perdido (ADR-0008/ADR-0024).
-
-    `response_format` (rodada de melhorias pós-Fase-6) — achado ao vivo: o
-    prólogo/epitáfio (`services/narrator.py:chamar_mestre`) usavam
-    `chamar_modelo_unico`, que tenta só o PRIMEIRO elo da cadeia — um 400
-    ou 429 nesse único provedor derrubava a chamada inteira, sem tentar o
-    resto da cadeia (que `chamar_com_fallback` já cobre pra todo turno de
-    jogo). Isso fazia o prólogo cair no fallback determinístico (que cita o
-    objetivo do jogador literalmente) por um motivo que nada tinha a ver
-    com o conteúdo gerado.
-
-    `rodadas` — quantas vezes a cadeia inteira pode ser percorrida. O padrão
-    (1) é o do turno de jogo, onde esperar custa mais que falhar. O prólogo
-    usa 2: em produção a cadeia tem um provedor só (Gemini), então "cair pro
-    próximo" não existe, e um 503 de alta demanda — medido ao vivo em metade
-    das chamadas — jogava o jogador direto no texto de reserva."""
+    """Tenta cada elo de `CADEIAS[papel]` em ordem, pulando provedor sem chave
+    e modelo em pausa (ver `_elos_disponiveis`). Um erro transitório — cota,
+    sobrecarga, tempo estourado — pausa aquele modelo e passa para o
+    próximo, enquanto couber no prazo total do papel, sem repetir no mesmo: a fila tem vários modelos do mesmo
+    provedor, cada um com cota própria, e no plano gratuito do Gemini
+    insistir num 503 parece gastar a cota do dia (ADR-0038)."""
     if not clients:
         raise ErroMestre(_SEM_PROVEDOR)
     ultimo_erro: Exception | None = None
-    for rodada in range(rodadas):
-        # Só vale repassar a cadeia se algum elo caiu por sobrecarga/timeout
-        # (some sozinho em segundos). Cota (429) e pedido recusado (4xx) dão
-        # a mesma resposta na segunda vez.
-        vale_repetir = False
-        if rodada:
-            time.sleep(_ESPERA_ENTRE_RODADAS)
-        for provedor, modelo in CADEIA:
-            cliente = clients.get(provedor)
-            if cliente is None or _em_pausa(cliente, modelo):
-                continue  # provedor sem chave configurada — pulado, não é uma falha
-            try:
-                return _chamar_modelo(cliente, provedor, modelo, msgs, tools, tool_choice, response_format)
-            except _ERROS_TRANSITORIOS as e:
-                # Achado de uso (05/10/2026): este ramo era mudo — com um
-                # provedor só, o jogador via "todos os modelos falharam" e o
-                # log não dizia se era cota do dia (429) ou sobrecarga (503).
-                logger.warning(
-                    "provedor=%s modelo=%s transitorio=%s corpo=%s",
-                    provedor, modelo, type(e).__name__, str(getattr(e, "body", ""))[:300],
-                )
-                _registrar_pausa(cliente, modelo, e)
-                vale_repetir = vale_repetir or not isinstance(e, openai.RateLimitError)
-                ultimo_erro = e
-                continue
-            except openai.APIStatusError as e:
-                # Fase 0 do plano "jogo completo" — o log do httpx só mostra o
-                # status; o CORPO é o que diz se foi teto de tokens, chave
-                # extra na mensagem ou uma chamada de ferramenta malformada
-                # que o próprio modelo gerou (`tool_use_failed` na Groq).
-                logger.warning(
-                    "provedor=%s modelo=%s status=%s corpo=%s", provedor, modelo, e.status_code, str(e.body)[:300]
-                )
-                ultimo_erro = e
-                continue
-        if not vale_repetir:
-            break
+    for provedor, modelo, cliente, timeout in _elos_dentro_do_prazo(papel):
+        try:
+            resp = _chamar_modelo(
+                cliente, provedor, modelo, msgs, tools, tool_choice, response_format, papel=papel, timeout=timeout
+            )
+            # Uma linha por chamada atendida: é o que permite somar, no
+            # log, quantas chamadas um turno faz e em qual modelo caíram.
+            logger.info("ia papel=%s provedor=%s modelo=%s", papel, provedor, modelo)
+            return resp
+        except _ERROS_TRANSITORIOS as e:
+            # Achado de uso (05/10/2026): este ramo era mudo — o jogador via
+            # "todos os modelos falharam" e o log não dizia se era cota do
+            # dia (429) ou sobrecarga (503).
+            logger.warning(
+                "provedor=%s modelo=%s transitorio=%s corpo=%s",
+                provedor, modelo, type(e).__name__, str(getattr(e, "body", ""))[:300],
+            )
+            _registrar_pausa(cliente, modelo, e)
+            ultimo_erro = e
+            continue
+        except openai.APIStatusError as e:
+            # Fase 0 do plano "jogo completo" — o log do httpx só mostra o
+            # status; o CORPO é o que diz se foi teto de tokens, chave
+            # extra na mensagem ou uma chamada de ferramenta malformada
+            # que o próprio modelo gerou (`tool_use_failed` na Groq).
+            logger.warning(
+                "provedor=%s modelo=%s status=%s corpo=%s", provedor, modelo, e.status_code, str(e.body)[:300]
+            )
+            ultimo_erro = e
+            continue
     raise ErroMestre(
         "Todos os modelos configurados falharam ao responder. Tente de novo em instantes."
     ) from ultimo_erro
@@ -322,7 +384,7 @@ def validar_chave_usuario(api_key: str) -> None:
     cena, como acontecia antes (`MenuConfiguracao.tsx` não validava nada).
     Levanta `ErroMestre` pelo mesmo `_mensagem_erro_byok` das chamadas de
     verdade, então a mensagem de erro é consistente nos dois lugares."""
-    cliente = openai.OpenAI(api_key=api_key, base_url=_BASE_URLS["gemini"], max_retries=0)
+    cliente = openai.OpenAI(api_key=api_key, base_url=_BASE_URLS["gemini"], max_retries=0, timeout=_TIMEOUT_PADRAO)
     try:
         cliente.models.list()
     except _ERROS_TRANSITORIOS as e:
@@ -350,9 +412,9 @@ def chamar_com_chave_usuario(
     prólogo/epitáfio (`services/narrator.py`) passaram a poder usar a
     chave do jogador também; sem este parâmetro elas caíam sempre na conta
     do servidor, mesmo com "Traga sua própria chave" ativado."""
-    cliente = openai.OpenAI(api_key=api_key, base_url=_BASE_URLS["gemini"], max_retries=0)
+    cliente = openai.OpenAI(api_key=api_key, base_url=_BASE_URLS["gemini"], max_retries=0, timeout=_TIMEOUT_PADRAO)
     try:
-        return _chamar_modelo(cliente, "gemini", modelo, msgs, tools, tool_choice, response_format)
+        return _chamar_modelo_com_retry(cliente, "gemini", modelo, msgs, tools, tool_choice, response_format)
     except _ERROS_TRANSITORIOS as e:
         raise ErroMestre(
             "Sua chave bateu no limite de uso, o Gemini está sobrecarregado, ou demorou demais para responder."
@@ -372,9 +434,9 @@ def chamar_stream_com_chave_usuario(
     cair — qualquer falha (antes ou depois do primeiro chunk) vira
     `ErroMestre` direto, nunca um fallback silencioso para outro provedor
     ou pra chave do servidor (ver docstring acima)."""
-    cliente = openai.OpenAI(api_key=api_key, base_url=_BASE_URLS["gemini"], max_retries=0)
+    cliente = openai.OpenAI(api_key=api_key, base_url=_BASE_URLS["gemini"], max_retries=0, timeout=_TIMEOUT_PADRAO)
     try:
-        stream = _chamar_modelo(cliente, "gemini", modelo, msgs, tools, tool_choice, stream=True)
+        stream = _chamar_modelo_com_retry(cliente, "gemini", modelo, msgs, tools, tool_choice, stream=True)
         yield from stream
     except _ERROS_TRANSITORIOS as e:
         raise ErroMestre(
@@ -385,7 +447,7 @@ def chamar_stream_com_chave_usuario(
 
 
 def chamar_stream_com_fallback(
-    msgs: list[dict], tools: list[dict] | None = None, tool_choice: str | dict = "auto"
+    msgs: list[dict], tools: list[dict] | None = None, tool_choice: str | dict = "auto", papel: Papel = "volume"
 ) -> Iterator[Any]:
     """Versão em streaming de `chamar_com_fallback` (Etapa 7, ADR-0012).
 
@@ -404,19 +466,26 @@ def chamar_stream_com_fallback(
     if not clients:
         raise ErroMestre(_SEM_PROVEDOR)
     ultimo_erro: Exception | None = None
-    for provedor, modelo in CADEIA:
-        cliente = clients.get(provedor)
-        if cliente is None or _em_pausa(cliente, modelo):
-            continue
+    for provedor, modelo, cliente, timeout in _elos_dentro_do_prazo(papel):
         try:
-            stream = _chamar_modelo(cliente, provedor, modelo, msgs, tools, tool_choice, stream=True)
+            stream = _chamar_modelo(
+                cliente, provedor, modelo, msgs, tools, tool_choice, stream=True, papel=papel, timeout=timeout
+            )
         except _ERROS_TRANSITORIOS as e:
+            logger.warning(
+                "provedor=%s modelo=%s transitorio=%s corpo=%s",
+                provedor, modelo, type(e).__name__, str(getattr(e, "body", ""))[:300],
+            )
             _registrar_pausa(cliente, modelo, e)
             ultimo_erro = e
             continue
         except openai.APIStatusError as e:
+            logger.warning(
+                "provedor=%s modelo=%s status=%s corpo=%s", provedor, modelo, e.status_code, str(e.body)[:300]
+            )
             ultimo_erro = e
             continue
+        logger.info("ia papel=%s provedor=%s modelo=%s stream", papel, provedor, modelo)
 
         comprometido = False
         pedacos: list[str] = []

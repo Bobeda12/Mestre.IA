@@ -219,7 +219,7 @@ class TestGerarPrologoMissaoLocalInicial:
             pessoa["local"] = local_novo
         for conflito in corpo["mundo_inicial"]["conflitos"].values():
             conflito["local"] = local_novo
-        monkeypatch.setattr(llm_client, "clients", {llm_client.CADEIA[0][0]: _ClienteFalso(corpo)})
+        monkeypatch.setattr(llm_client, "clients", {llm_client.CADEIAS["destaque"][0][0]: _ClienteFalso(corpo)})
         roteiro = gerar_prologo_missao(_personagem_criacao(), semente=5)
         assert roteiro["local_inicial"] == local_novo
         assert roteiro["mundo_inicial"]["cenas"][local_novo]
@@ -228,7 +228,7 @@ class TestGerarPrologoMissaoLocalInicial:
         from app.services.emergent_start import criar_origem
         corpo = criar_origem(_personagem_criacao(), 9)
         corpo["local_inicial"] = "Observatório sem registro"
-        monkeypatch.setattr(llm_client, "clients", {llm_client.CADEIA[0][0]: _ClienteFalso(corpo)})
+        monkeypatch.setattr(llm_client, "clients", {llm_client.CADEIAS["destaque"][0][0]: _ClienteFalso(corpo)})
         roteiro = gerar_prologo_missao(_personagem_criacao(), semente=5)
         assert roteiro["local_inicial"] in roteiro["mundo_inicial"]["cenas"]
         assert roteiro["local_inicial"] != "Observatório sem registro"
@@ -248,7 +248,7 @@ class TestGerarPrologoMissaoLocalInicial:
         corpo.update({k: v for k, v in mundo.items() if k in soltas})
         intro_original = "Um texto original que o modelo escreveu, sem citar o objetivo literalmente."
         corpo["intro_narrativa"] = intro_original
-        monkeypatch.setattr(llm_client, "clients", {llm_client.CADEIA[0][0]: _ClienteFalso(corpo)})
+        monkeypatch.setattr(llm_client, "clients", {llm_client.CADEIAS["destaque"][0][0]: _ClienteFalso(corpo)})
 
         roteiro = gerar_prologo_missao(_personagem_criacao(), semente=5)
 
@@ -269,7 +269,7 @@ class TestGerarPrologoMissaoLocalInicial:
         corpo["mundo_inicial"]["arcos"] = []
         intro_original = "Um texto original sem nenhuma pessoa na cena, mas com uma saída."
         corpo["intro_narrativa"] = intro_original
-        monkeypatch.setattr(llm_client, "clients", {llm_client.CADEIA[0][0]: _ClienteFalso(corpo)})
+        monkeypatch.setattr(llm_client, "clients", {llm_client.CADEIAS["destaque"][0][0]: _ClienteFalso(corpo)})
 
         roteiro = gerar_prologo_missao(_personagem_criacao(), semente=5)
 
@@ -289,7 +289,7 @@ class TestGerarPrologoMissaoLocalInicial:
         # e local continuam válidos, só o alvo some), sem quebrar o resto.
         intro_original = "Um texto original sem nenhuma saída na cena, mas com gente."
         corpo["intro_narrativa"] = intro_original
-        monkeypatch.setattr(llm_client, "clients", {llm_client.CADEIA[0][0]: _ClienteFalso(corpo)})
+        monkeypatch.setattr(llm_client, "clients", {llm_client.CADEIAS["destaque"][0][0]: _ClienteFalso(corpo)})
 
         roteiro = gerar_prologo_missao(_personagem_criacao(), semente=5)
 
@@ -304,7 +304,7 @@ class TestGerarPrologoMissaoLocalInicial:
         from app.services.emergent_start import criar_origem
         corpo = criar_origem(_personagem_criacao(), 9)
         corpo["intro_narrativa"] = "Primeiro parágrafo.\\n\\nSegundo parágrafo."
-        monkeypatch.setattr(llm_client, "clients", {llm_client.CADEIA[0][0]: _ClienteFalso(corpo)})
+        monkeypatch.setattr(llm_client, "clients", {llm_client.CADEIAS["destaque"][0][0]: _ClienteFalso(corpo)})
 
         roteiro = gerar_prologo_missao(_personagem_criacao(), semente=5)
 
@@ -323,7 +323,7 @@ class TestGerarPrologoMissaoLocalInicial:
         alguma_pessoa["disposicao"] = "cauteloso"
         intro_original = "Um texto original, só a disposição de um NPC veio fora do vocabulário."
         corpo["intro_narrativa"] = intro_original
-        monkeypatch.setattr(llm_client, "clients", {llm_client.CADEIA[0][0]: _ClienteFalso(corpo)})
+        monkeypatch.setattr(llm_client, "clients", {llm_client.CADEIAS["destaque"][0][0]: _ClienteFalso(corpo)})
 
         roteiro = gerar_prologo_missao(_personagem_criacao(), semente=5)
 
@@ -339,7 +339,7 @@ class TestGerarPrologoMissaoLocalInicial:
         alguma_entidade["propriedades"] = ["movel", "reluzente"]  # "reluzente" não existe no vocabulário
         intro_original = "Outro texto original, só uma propriedade de entidade veio inventada."
         corpo["intro_narrativa"] = intro_original
-        monkeypatch.setattr(llm_client, "clients", {llm_client.CADEIA[0][0]: _ClienteFalso(corpo)})
+        monkeypatch.setattr(llm_client, "clients", {llm_client.CADEIAS["destaque"][0][0]: _ClienteFalso(corpo)})
 
         roteiro = gerar_prologo_missao(_personagem_criacao(), semente=5)
 
@@ -351,12 +351,12 @@ class TestGerarPrologoMissaoLocalInicial:
         # fallback) — um 400/429 nesse elo único derrubava o prólogo
         # inteiro mesmo com o resto da cadeia disponível. Agora usa
         # chamar_com_fallback, o mesmo caminho resiliente do turno de jogo.
-        provedores = {p for p, _m in llm_client.CADEIA}
+        provedores = {p for p, _m in llm_client.CADEIAS["destaque"]}
         if len(provedores) < 2:
             import pytest
             pytest.skip("cadeia configurada com um provedor só neste ambiente")
-        primeiro_provedor = llm_client.CADEIA[0][0]
-        segundo_provedor = next(p for p, _m in llm_client.CADEIA if p != primeiro_provedor)
+        primeiro_provedor = llm_client.CADEIAS["destaque"][0][0]
+        segundo_provedor = next(p for p, _m in llm_client.CADEIAS["destaque"] if p != primeiro_provedor)
         from app.services.emergent_start import criar_origem
         corpo = criar_origem(_personagem_criacao(), 9)
         intro_original = "Texto original — só chegou porque o fallback tentou o próximo provedor."
@@ -388,7 +388,7 @@ class TestGerarPrologoMissaoLocalInicial:
                 conflito["agente"] = "ferreiro_anão"
         intro_original = "Um texto original, só o id de uma pessoa veio com acento."
         corpo["intro_narrativa"] = intro_original
-        monkeypatch.setattr(llm_client, "clients", {llm_client.CADEIA[0][0]: _ClienteFalso(corpo)})
+        monkeypatch.setattr(llm_client, "clients", {llm_client.CADEIAS["destaque"][0][0]: _ClienteFalso(corpo)})
 
         roteiro = gerar_prologo_missao(_personagem_criacao(), semente=5)
 
@@ -403,7 +403,7 @@ class TestGerarPrologoMissaoLocalInicial:
         corpo = criar_origem(_personagem_criacao(), 9)
         intro_original = "Outro texto original, mundo já vem aninhado direitinho."
         corpo["intro_narrativa"] = intro_original
-        monkeypatch.setattr(llm_client, "clients", {llm_client.CADEIA[0][0]: _ClienteFalso(corpo)})
+        monkeypatch.setattr(llm_client, "clients", {llm_client.CADEIAS["destaque"][0][0]: _ClienteFalso(corpo)})
 
         roteiro = gerar_prologo_missao(_personagem_criacao(), semente=5)
 
@@ -416,12 +416,33 @@ class TestGerarPrologoMissaoLocalInicial:
         from app.services.emergent_start import criar_origem
         corpo = criar_origem(_personagem_criacao(), 9)
         del corpo["mundo_inicial"]
-        monkeypatch.setattr(llm_client, "clients", {llm_client.CADEIA[0][0]: _ClienteFalso(corpo)})
+        monkeypatch.setattr(llm_client, "clients", {llm_client.CADEIAS["destaque"][0][0]: _ClienteFalso(corpo)})
 
         roteiro = gerar_prologo_missao(_personagem_criacao(), semente=5)
 
         cena = roteiro["mundo_inicial"]["cenas"][roteiro["local_inicial"]]
         assert any(e["tipo"] == "saida" for e in cena["entidades"].values())
+
+    def test_json_quebrado_ganha_uma_segunda_chamada(self, monkeypatch):
+        # Achado ao vivo (05/10/2026): o Flash Lite devolveu um JSON quebrado
+        # no prólogo e acertou na chamada seguinte, com o mesmo prompt.
+        from app.services.emergent_start import criar_origem
+        corpo = criar_origem(_personagem_criacao(), 9)
+        corpo["intro_narrativa"] = "Texto original que só chegou na segunda chamada."
+        respostas = [_RespostaFalsa('{"local_inicial": "Cortado no mei'), _RespostaFalsa(json.dumps(corpo))]
+        papeis: list[str] = []
+
+        def _falso(msgs, **kwargs):
+            papeis.append(kwargs["papel"])
+            return respostas.pop(0)
+
+        monkeypatch.setattr(llm_client, "clients", {"gemini": object()})
+        monkeypatch.setattr(llm_client, "chamar_com_fallback", _falso)
+
+        roteiro = gerar_prologo_missao(_personagem_criacao(), semente=5)
+
+        assert roteiro["intro_narrativa"] == "Texto original que só chegou na segunda chamada."
+        assert papeis == ["destaque", "destaque"]
 
     def test_prompt_parte_da_ficha_e_nao_da_cena_de_reserva(self, monkeypatch):
         # Achado de uso (05/10/2026): o "exemplo de formato" do prompt era a
@@ -440,7 +461,8 @@ class TestGerarPrologoMissaoLocalInicial:
                 pedidos.append(kwargs)
                 return super().create(**kwargs)
 
-        monkeypatch.setattr(llm_client, "clients", {llm_client.CADEIA[0][0]: _ClienteEspiao(criar_origem(heroi, 9))})
+        provedor = llm_client.CADEIAS["destaque"][0][0]
+        monkeypatch.setattr(llm_client, "clients", {provedor: _ClienteEspiao(criar_origem(heroi, 9))})
 
         gerar_prologo_missao(heroi, semente=5)
 
@@ -458,7 +480,7 @@ class TestGerarPrologoMissaoLocalInicial:
         corpo = criar_origem(heroi, 9)
         corpo["mundo_inicial"]["arcos"][0]["chefe"] = "Dragão Inventado"
         corpo["mundo_inicial"]["objetivos"] = []
-        monkeypatch.setattr(llm_client, "clients", {llm_client.CADEIA[0][0]: _ClienteFalso(corpo)})
+        monkeypatch.setattr(llm_client, "clients", {llm_client.CADEIAS["destaque"][0][0]: _ClienteFalso(corpo)})
 
         roteiro = gerar_prologo_missao(heroi, semente=5)
 
@@ -495,7 +517,7 @@ class TestGerarEpitafio:
     vez por morte. Mesmo padrão de teste de `gerar_prologo_missao`."""
 
     def test_retrospectiva_e_epitafio_do_modelo_sao_mantidos(self, monkeypatch):
-        provedor_principal, _ = llm_client.CADEIA[0]
+        provedor_principal, _ = llm_client.CADEIAS["destaque"][0]
         monkeypatch.setattr(
             llm_client, "clients",
             {provedor_principal: _ClienteFalso({
@@ -508,7 +530,7 @@ class TestGerarEpitafio:
         assert resultado["epitafio_curto"] == "Aqui jaz Vorag, que nunca recuou."
 
     def test_retrospectiva_vazia_do_modelo_cai_no_padrao(self, monkeypatch):
-        provedor_principal, _ = llm_client.CADEIA[0]
+        provedor_principal, _ = llm_client.CADEIAS["destaque"][0]
         monkeypatch.setattr(
             llm_client, "clients",
             {provedor_principal: _ClienteFalso({"retrospectiva": "   ", "epitafio_curto": ""})},
@@ -518,7 +540,7 @@ class TestGerarEpitafio:
         assert resultado["epitafio_curto"] == "Aqui jaz Vorag."
 
     def test_campo_ausente_do_modelo_cai_no_padrao(self, monkeypatch):
-        provedor_principal, _ = llm_client.CADEIA[0]
+        provedor_principal, _ = llm_client.CADEIAS["destaque"][0]
         monkeypatch.setattr(
             llm_client, "clients",
             {provedor_principal: _ClienteFalso({"retrospectiva": "Uma retrospectiva válida."})},

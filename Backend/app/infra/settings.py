@@ -24,26 +24,75 @@ class Settings(BaseSettings):
     # Etapa 14 (ADR-0023, ADR-0024): provedor dos embeddings
     # (app/infra/embeddings.py) e segundo provedor na cadeia de fallback
     # de chat abaixo. Sem esta chave, embeddings degradam para BM25 puro
-    # (ver embeddings.py) e `cadeia_llm` simplesmente pula qualquer elo
+    # (ver embeddings.py) e as cadeias abaixo simplesmente pulam qualquer elo
     # "gemini:..." — o mesmo padrão condicional do Google OAuth/Langfuse.
     gemini_api_key: str | None = None
-    # Cadeia de fallback (ADR-0008, revista pelo ADR-0024): cada item é
-    # "provedor:modelo" — `app/infra/llm_client.py` tenta em ordem, e
-    # `tenacity` cobre retry por erro transitório dentro de cada elo antes
-    # de cair para o próximo. Atravessa provedores de propósito: a cota do
-    # free tier da Groq (200k tokens/dia por modelo) e a do Gemini são
-    # contas separadas — um provedor esgotado no dia não derruba o outro.
-    cadeia_llm: list[str] = [
-        "groq:openai/gpt-oss-120b",
+    # Um modelo por papel (ADR-0038, revisa o ADR-0008 e o ADR-0024). Antes
+    # havia uma cadeia só (`cadeia_llm`) para tudo; em produção ela se
+    # reduzia ao `gemini-3.5-flash`, que no plano gratuito dá 5 chamadas por
+    # minuto e 20 por dia (medido em 05/10/2026, Diário 0041/0042). Cada
+    # papel tem a própria lista de "provedor:modelo", tentada em ordem por
+    # `app/infra/llm_client.py`; elos de provedor sem chave são pulados.
+    #
+    # volume — o que acontece a toda hora: turno de jogo, correção do
+    # guardrail, Oráculo da criação. Só o Flash Lite tem cota para isso
+    # (15/min, 500/dia). Os Flash de 20/dia vêm depois como reserva; o
+    # 3.1 Flash Lite fica no fim porque na avaliação caiu numa injeção de
+    # prompt e devolveu 503 em 12 de 30 chamadas.
+    cadeia_volume: list[str] = [
+        "gemini:gemini-3.5-flash-lite",
         "gemini:gemini-3.5-flash",
+        "gemini:gemini-3.6-flash",
+        "gemini:gemini-2.5-flash",
+        "gemini:gemini-3.7-flash",
+        "gemini:gemini-3.8-flash",
+        "gemini:gemini-3.1-flash-lite",
+        "groq:openai/gpt-oss-120b",
         "groq:openai/gpt-oss-20b",
-        "groq:qwen/qwen3.6-27b",
     ]
-    # Chamada barata/de baixo risco: o resumo rolante (services/memory.py) e
-    # o padrão do LLM-as-judge (evals/judge.py) — este último de propósito
-    # num provedor DIFERENTE do primeiro elo de `cadeia_llm` acima, reduzindo
-    # o viés de o juiz "gostar" do próprio estilo do narrador (a limitação
-    # que o ADR-0011 já registrava como fica em aberto).
+    # destaque — poucas chamadas, lidas com atenção: prólogo, turno de
+    # morte, epitáfio, desfecho de capítulo, crônica. Cada Flash dá 20/dia.
+    # A ordem segue o que foi medido em 05/10/2026. O 3.5 Flash Lite vem
+    # logo depois dos dois Flash que responderam bem porque é o único com
+    # prólogo bom comprovado E cota para repetir. O 2.5 Flash respondeu
+    # rápido a pedidos mínimos, mas no prólogo teve 1 resultado válido em
+    # 5 (2 descartados na validação, 2 estouros de tempo). O 3.7 levou 13 s
+    # num pedido mínimo e o 3.8 devolveu 503 em todas as tentativas.
+    cadeia_destaque: list[str] = [
+        "gemini:gemini-3.5-flash",
+        "gemini:gemini-3.6-flash",
+        "gemini:gemini-3.5-flash-lite",
+        "gemini:gemini-3.7-flash",
+        "gemini:gemini-2.5-flash",
+        "gemini:gemini-3.8-flash",
+        "gemini:gemini-3.1-flash-lite",
+        "groq:openai/gpt-oss-120b",
+    ]
+    # fundo — o resumo rolante da memória (services/memory.py): roda em
+    # segundo plano a cada 8 turnos e, se falhar, o resumo antigo continua
+    # valendo. Ordem invertida em relação a `cadeia_volume` para não gastar
+    # a cota do Lite que sustenta os turnos.
+    cadeia_fundo: list[str] = [
+        "gemini:gemini-3.1-flash-lite",
+        "gemini:gemini-3.5-flash-lite",
+    ]
+    # Tempo limite por chamada, em segundos, por papel. Estourou: o modelo
+    # é pausado e a cadeia segue para o próximo. O turno responde em 2 a
+    # 5 s no Flash Lite (p95 de 20 s na avaliação); o prólogo é um JSON
+    # grande e já levou 47 s num Flash, por isso o destaque tem mais folga.
+    timeouts_ia: dict[str, float] = {"volume": 25.0, "destaque": 50.0, "fundo": 30.0}
+    # Prazo da cadeia inteira, por papel: quanto o jogador espera no pior
+    # caso, somando todos os modelos tentados. Acabou o prazo, a chamada
+    # falha e quem chamou usa a sua saída de emergência (texto de reserva
+    # no prólogo, turno só com o juiz no jogo).
+    prazos_ia: dict[str, float] = {"volume": 45.0, "destaque": 90.0, "fundo": 60.0}
+    # Quanto os modelos Gemini "pensam" antes de responder, por papel
+    # (`reasoning_effort`: minimal, low, medium, high). Papel ausente = o
+    # padrão do modelo.
+    esforco_raciocinio: dict[str, str] = {}
+    # Modelo fixo do LLM-as-judge (evals/judge.py) e do resumo rolante com
+    # a chave do próprio jogador (infra/byok.py). O resumo com a chave do
+    # servidor usa `cadeia_fundo` acima.
     modelo_barato: str = "gemini:gemini-3.5-flash-lite"
     agent_max_passos: int = 6
     # Auditoria pré-lançamento (Fase 1/Mundo Vivo) mediu esta régua contra o

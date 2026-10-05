@@ -53,14 +53,14 @@ def _chamar_com_ferramenta(
     if chamar_fn is not None:
         resp = chamar_fn(msgs, tools=[schema], tool_choice=tool_choice)
     else:
-        # Achado ao vivo: usar só `cadeia_llm[0]` (sem fallback) fazia a
+        # Achado ao vivo: usar só o primeiro elo da cadeia (sem fallback) fazia a
         # criação de personagem falhar assim que o PRIMEIRO modelo da cadeia
         # batesse no teto de tokens/minuto da Groq — mesmo com outros elos
         # (Gemini, outros modelos Groq) disponíveis. O resto do jogo já usa
         # `chamar_com_fallback` (routers/game.py) por este mesmo motivo.
         if not llm_client.clients:
             raise ErroMestre(_SEM_ORACULO)
-        resp = llm_client.chamar_com_fallback(msgs, tools=[schema], tool_choice=tool_choice)
+        resp = llm_client.chamar_com_fallback(msgs, tools=[schema], tool_choice=tool_choice, papel="volume")
 
     tool_calls = resp.choices[0].message.tool_calls
     if not tool_calls:

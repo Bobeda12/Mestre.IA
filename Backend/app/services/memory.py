@@ -167,7 +167,7 @@ def atualizar_resumo_rolante(
     JSON inválido) não derruba o turno — o resumo antigo continua valendo,
     e a próxima chamada tenta de novo com uma janela maior.
 
-    `chamar_fn` (Etapa 15, BYOK): por padrão é `settings.modelo_barato` na
+    `chamar_fn` (Etapa 15, BYOK): por padrão é a cadeia do papel "fundo" na
     chave do servidor; `routers/game.py` injeta uma variante ligada à
     chave do jogador quando ele tem uma — este resumo roda a cada poucos
     turnos (não é um custo fixo como o RAG de regras), então também escala
@@ -181,7 +181,7 @@ def atualizar_resumo_rolante(
     eventos_texto = "\n".join(f"- {m['role']}: {m['content']}" for m in fatia if m.get("content"))
     resumo_atual = ResumoRolante.model_validate(heroi.resumo_rolante or {})
 
-    chamar_fn = chamar_fn or functools.partial(llm_client.chamar_modelo_unico, settings.modelo_barato)
+    chamar_fn = chamar_fn or functools.partial(llm_client.chamar_com_fallback, papel="fundo")
     from app.services.contexto_ia import selecionar, serializar
 
     recorte = {k: selecionar(v, eventos_texto, 600) for k, v in resumo_atual.model_dump().items()}

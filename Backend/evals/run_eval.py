@@ -161,7 +161,7 @@ def main() -> None:
     parser.add_argument(
         "--modelo", default=None, help="Mira um modelo específico ('provedor:modelo', bypassa a cadeia)."
     )
-    parser.add_argument("--bake-off", action="store_true", help="Roda contra cada elo de settings.cadeia_llm.")
+    parser.add_argument("--bake-off", action="store_true", help="Roda contra cada elo de settings.cadeia_volume.")
     parser.add_argument("--sem-juiz", action="store_true", help="Pula o LLM-as-judge (só métricas).")
     parser.add_argument("--juiz-modelo", default=None, help="Modelo do juiz (default: settings.modelo_barato).")
     parser.add_argument("--comparar-baseline", action="store_true", help="Sai com 1 se ficar abaixo do baseline.")
@@ -177,7 +177,7 @@ def main() -> None:
         print("Nenhum cenário selecionado — confira --categoria.")
         sys.exit(1)
 
-    modelos_alvo = settings.cadeia_llm if args.bake_off else [args.modelo] if args.modelo else [None]
+    modelos_alvo = settings.cadeia_volume if args.bake_off else [args.modelo] if args.modelo else [None]
     relatorio: dict[str, Any] = {"n_cenarios": len(cenarios), "modelos": {}}
     ultima_pontuacao = 0.0
     ultimos_resultados: list[ResultadoCenario] = []

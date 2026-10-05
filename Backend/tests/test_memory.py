@@ -1,7 +1,7 @@
 """Testa app/services/memory.py (Etapa 5) — registro e recuperação de
 memória de longo prazo, e o sumário rolante de médio prazo. `embed_fn` é
 sempre um fake determinístico (mesmo padrão de test_hybrid_search.py);
-`chamar_modelo_unico` do resumo rolante é mockado como em
+`chamar_com_fallback` do resumo rolante é mockado como em
 test_llm_client.py — nenhum teste aqui toca rede."""
 
 import json
@@ -170,11 +170,20 @@ class TestAtualizarResumoRolante:
         class _Resp:
             choices = [type("C", (), {"message": type("M", (), {"content": resposta_fake})()})]
 
-        monkeypatch.setattr(llm_client, "chamar_modelo_unico", lambda *a, **k: _Resp())
+        papeis: list[str] = []
+
+        def _falso(*a, **k):
+            papeis.append(k.get("papel"))
+            return _Resp()
+
+        monkeypatch.setattr(llm_client, "chamar_com_fallback", _falso)
 
         atualizou = memory.atualizar_resumo_rolante(heroi, k_turnos=2)
 
         assert atualizou is True
+        # ADR-0038: o resumo roda em segundo plano e não pode gastar a cota
+        # do modelo que sustenta os turnos.
+        assert papeis == ["fundo"]
         assert "o céu é escuro" in heroi.resumo_rolante["fatos_estabelecidos"]
         assert "o herói encontrou um mapa" in heroi.resumo_rolante["fatos_estabelecidos"]
         assert heroi.turno_resumido_ate == 4
@@ -187,7 +196,7 @@ class TestAtualizarResumoRolante:
         def _levanta(*a, **k):
             raise llm_client.ErroMestre("falhou")
 
-        monkeypatch.setattr(llm_client, "chamar_modelo_unico", _levanta)
+        monkeypatch.setattr(llm_client, "chamar_com_fallback", _levanta)
 
         atualizou = memory.atualizar_resumo_rolante(heroi, k_turnos=2)
 
@@ -198,7 +207,7 @@ class TestAtualizarResumoRolante:
     def test_chamar_fn_injetado_e_usado_no_lugar_do_default(self, db):
         # BYOK (Etapa 15) — `routers/game.py` injeta um `chamar_fn` ligado à
         # chave do jogador; aqui só confirmamos que, quando informado, ele é
-        # usado no lugar do `chamar_modelo_unico(settings.modelo_barato, ...)`
+        # usado no lugar do `chamar_com_fallback(papel="fundo")`
         # padrão (sem precisar tocar `llm_client` nem rede nenhuma).
         heroi = _personagem(db, "sessao-resumo-byok")
         heroi.historico_chat = [{"role": "user", "content": f"ação {i}"} for i in range(4)]

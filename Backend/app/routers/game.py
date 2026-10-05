@@ -520,7 +520,7 @@ async def chat_endpoint(
         msgs = [{"role": "system", "content": prompt_morte}] + hist + [{"role": "user", "content": user_input.action}]
         try:
             with turno_span(personagem_id=heroi.id, usuario_id=current_user.id, turno=w_state.turno):
-                resp = (chave.chamar_fn or chamar_com_fallback)(msgs)
+                resp = chave.chamar_fn(msgs) if chave.chamar_fn else chamar_com_fallback(msgs, papel="destaque")
             narrativa = resp.choices[0].message.content or ""
         except ErroMestre:
             narrativa = ""
@@ -719,7 +719,7 @@ def chat_stream_endpoint(
             )
             try:
                 with turno_span(personagem_id=heroi.id, usuario_id=current_user.id, turno=w_state.turno):
-                    resp = (chave.chamar_fn or chamar_com_fallback)(msgs)
+                    resp = chave.chamar_fn(msgs) if chave.chamar_fn else chamar_com_fallback(msgs, papel="destaque")
                 narrativa = resp.choices[0].message.content or ""
             except ErroMestre:
                 narrativa = ""

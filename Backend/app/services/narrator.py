@@ -73,12 +73,24 @@ def chamar_mestre(msgs: list[dict], chamar_fn: Callable[..., Any] | None = None)
                 "O mestre está sem acesso à IA — falta configurar ao menos uma chave de API "
                 "no servidor (GROQ_API_KEY ou GEMINI_API_KEY)."
             )
-        resp = llm_client.chamar_com_fallback(msgs, response_format={"type": "json_object"}, rodadas=2)
+        resp = _chamar_destaque_json(msgs)
 
     try:
         return json.loads(resp.choices[0].message.content)
     except (json.JSONDecodeError, AttributeError, TypeError, IndexError) as e:
+        if chamar_fn is not None:
+            raise ErroMestre("O mestre respondeu num formato que não consegui entender.") from e
+    # Achado ao vivo (05/10/2026): o Flash Lite às vezes devolve um JSON
+    # quebrado e acerta na chamada seguinte, com o mesmo prompt. Uma nova
+    # tentativa custa uma chamada; desistir custava o prólogo inteiro.
+    try:
+        return json.loads(_chamar_destaque_json(msgs).choices[0].message.content)
+    except (json.JSONDecodeError, AttributeError, TypeError, IndexError) as e:
         raise ErroMestre("O mestre respondeu num formato que não consegui entender.") from e
+
+
+def _chamar_destaque_json(msgs: list[dict]) -> Any:
+    return llm_client.chamar_com_fallback(msgs, response_format={"type": "json_object"}, papel="destaque")
 
 
 # Chaves de app.domain.living_world.MundoVivo — todas têm default, então um
@@ -688,7 +700,7 @@ def gerar_cronica(heroi: Personagem, eventos: list[str], chamar_fn: Callable[...
     """
     try:
         msgs = [{"role": "user", "content": prompt}]
-        resp = chamar_fn(msgs) if chamar_fn is not None else llm_client.chamar_com_fallback(msgs)
+        resp = chamar_fn(msgs) if chamar_fn is not None else llm_client.chamar_com_fallback(msgs, papel="destaque")
         return resp.choices[0].message.content or "\n\n".join(eventos)
     except ErroMestre as e:
         print("ERRO NA CRÔNICA:", e.mensagem)

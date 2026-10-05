@@ -85,7 +85,7 @@ jobs:
     # próprio roadmap recomenda. Pré-requisito: secrets `GROQ_API_KEY` e
     # `GEMINI_API_KEY` configurados em Settings → Secrets do repositório
     # (ação do usuário no GitHub, fora do que este workflow consegue fazer
-    # sozinho) — a partir da Etapa 14 (ADR-0024), `settings.cadeia_llm` tem
+    # sozinho) — a partir da Etapa 14 (ADR-0024), `settings.cadeia_volume` tem
     # um elo "gemini:...", e embeddings (rag_regras.py) sempre chamam a API
     # do Gemini; sem a segunda chave, o `--bake-off` pula esse elo e a
     # avaliação roda só com busca léxica (BM25), não o caminho de produção

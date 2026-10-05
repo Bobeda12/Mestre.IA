@@ -4,7 +4,7 @@ narrativa já gerada — não influencia o turno em si, só avalia o resultado.
 
 Limitação do ADR-0011 resolvida na Etapa 14 (ADR-0024): por padrão o juiz
 usa `settings.modelo_barato` — um provedor DIFERENTE do primeiro elo da
-cadeia do narrador (`settings.cadeia_llm[0]`), de propósito: reduz o risco
+cadeia do narrador (`settings.cadeia_volume[0]`), de propósito: reduz o risco
 de o juiz "gostar" do próprio estilo de um modelo da mesma família."""
 
 from __future__ import annotations

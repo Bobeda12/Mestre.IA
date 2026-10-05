@@ -72,12 +72,12 @@ class _FakeClient:
 
 def _fake_clients(comportamento: dict[str, list]) -> tuple[dict[str, object], _FakeClient]:
     """Um `_FakeClient` só, registrado sob todo provedor que aparece em
-    `llm_client.CADEIA` — os testes indexam `comportamento` pelo nome
+    `llm_client.CADEIAS` — os testes indexam `comportamento` pelo nome
     (bare) do modelo, não por provedor; o provedor só decide qual entrada
     de `clients` o código de produção resolve, o dublê não precisa
     distinguir isso para os cenários testados aqui."""
     fake = _FakeClient(comportamento)
-    provedores = {provedor for provedor, _ in llm_client.CADEIA}
+    provedores = {provedor for provedor, _ in llm_client.CADEIAS["volume"]}
     return dict.fromkeys(provedores, fake), fake
 
 
@@ -85,7 +85,7 @@ def _fake_clients(comportamento: dict[str, list]) -> tuple[dict[str, object], _F
 def _sem_espera_entre_tentativas(monkeypatch):
     # Mesmo backoff exponencial que roda em produção, mas sem esperar de
     # verdade — senão cada teste de fallback esgotado levaria segundos.
-    monkeypatch.setattr(llm_client._chamar_modelo.retry, "wait", tenacity.wait_none())  # type: ignore[attr-defined]
+    monkeypatch.setattr(llm_client._chamar_modelo_com_retry.retry, "wait", tenacity.wait_none())  # type: ignore[attr-defined]
 
 
 def test_sem_client_levanta_erro_mestre_sem_chamar_nada(monkeypatch):
@@ -95,7 +95,7 @@ def test_sem_client_levanta_erro_mestre_sem_chamar_nada(monkeypatch):
 
 
 def test_rate_limit_cai_para_proximo_sem_repetir_payload(monkeypatch):
-    modelo_1, modelo_2 = llm_client.CADEIA[0][1], llm_client.CADEIA[1][1]
+    modelo_1, modelo_2 = llm_client.CADEIAS["volume"][0][1], llm_client.CADEIAS["volume"][1][1]
     resultado_ok = object()
     clients, fake = _fake_clients({modelo_1: [_erro_rate_limit(), _erro_rate_limit()], modelo_2: [resultado_ok]})
     monkeypatch.setattr(llm_client, "clients", clients)
@@ -106,54 +106,147 @@ def test_rate_limit_cai_para_proximo_sem_repetir_payload(monkeypatch):
     assert fake.chat.completions.chamadas == [modelo_1, modelo_2]
 
 
-def test_erro_503_e_tratado_como_transitorio_e_faz_retry(monkeypatch):
-    # Achado ao vivo: um 503 de alta demanda do Gemini quebrava o turno
-    # direto — este teste prova que agora ele entra no mesmo retry curto
-    # que rate limit/timeout já tinham, antes de precisar trocar de modelo.
-    modelo_1 = llm_client.CADEIA[0][1]
-    resultado_ok = object()
-    clients, fake = _fake_clients({modelo_1: [_erro_servidor(503), resultado_ok]})
+def _erro_cota_diaria() -> Exception:
+    # Corpo real capturado do Gemini em 05/10/2026 (encurtado).
+    import openai
+
+    req = httpx.Request("POST", "https://example.com/x")
+    corpo = [{"error": {"code": 429, "status": "RESOURCE_EXHAUSTED", "details": [
+        {"violations": [{"quotaId": "GenerateRequestsPerDayPerProjectPerModel-FreeTier"}]}
+    ]}}]
+    return openai.RateLimitError("cota do dia", response=httpx.Response(429, request=req), body=corpo)
+
+
+def _erro_timeout() -> Exception:
+    import openai
+
+    return openai.APITimeoutError(request=httpx.Request("POST", "https://example.com/x"))
+
+
+def test_503_pausa_o_modelo_e_segue_para_o_proximo_sem_repetir(monkeypatch):
+    # Antes o 503 era repetido no mesmo modelo. No plano gratuito do Gemini
+    # há relatos de que cada 503 gasta a cota do dia (20 nos Flash), então
+    # insistir custa duas vezes: o modelo sai da fila por alguns minutos.
+    modelo_1, modelo_2 = llm_client.CADEIAS["volume"][0][1], llm_client.CADEIAS["volume"][1][1]
+    agora = [100.0]
+    monkeypatch.setattr(llm_client.time, "monotonic", lambda: agora[0])
+    clients, fake = _fake_clients({modelo_1: [_erro_servidor(503), "voltou"], modelo_2: ["ok", "ok"]})
     monkeypatch.setattr(llm_client, "clients", clients)
 
-    resultado = chamar_com_fallback([{"role": "user", "content": "oi"}])
+    assert chamar_com_fallback([]) == "ok"
+    assert chamar_com_fallback([]) == "ok"
+    assert fake.chat.completions.chamadas == [modelo_1, modelo_2, modelo_2]
 
-    assert resultado is resultado_ok
-    assert fake.chat.completions.chamadas == [modelo_1, modelo_1]
+    agora[0] += llm_client._PAUSA_SOBRECARGA + 1
+    assert chamar_com_fallback([]) == "voltou"
 
 
-def test_segunda_rodada_recupera_sobrecarga_com_um_provedor_so(monkeypatch):
-    # Achado de uso (05/10/2026): produção tem um elo só (Gemini). Um 503
-    # que sobrevive ao retry curto não tinha "próximo modelo" pra onde cair.
-    modelo = llm_client.CADEIA[0][1]
-    resultado_ok = object()
-    clients, fake = _fake_clients({modelo: [_erro_servidor(503), _erro_servidor(503), resultado_ok]})
+def test_tempo_estourado_pausa_o_modelo(monkeypatch):
+    # Achado ao vivo (05/10/2026): uma chamada mínima ficou 293 s pendurada.
+    modelo_1, modelo_2 = llm_client.CADEIAS["volume"][0][1], llm_client.CADEIAS["volume"][1][1]
+    clients, fake = _fake_clients({modelo_1: [_erro_timeout()], modelo_2: ["ok", "ok"]})
     monkeypatch.setattr(llm_client, "clients", clients)
-    monkeypatch.setattr(llm_client, "CADEIA", llm_client.CADEIA[:1])
-    monkeypatch.setattr(llm_client, "_ESPERA_ENTRE_RODADAS", 0)
 
-    resultado = chamar_com_fallback([{"role": "user", "content": "oi"}], rodadas=2)
-
-    assert resultado is resultado_ok
-    assert fake.chat.completions.chamadas == [modelo] * 3
+    assert chamar_com_fallback([]) == "ok"
+    assert chamar_com_fallback([]) == "ok"
+    assert fake.chat.completions.chamadas == [modelo_1, modelo_2, modelo_2]
 
 
-def test_segunda_rodada_nao_insiste_em_cota_esgotada(monkeypatch):
-    # 429 não se resolve esperando 3 segundos (a cota diária do Gemini volta
-    # em horas): repetir só gastaria tempo do jogador.
-    modelo = llm_client.CADEIA[0][1]
-    clients, fake = _fake_clients({modelo: [_erro_rate_limit(), object()]})
-    monkeypatch.setattr(llm_client, "clients", clients)
-    monkeypatch.setattr(llm_client, "CADEIA", llm_client.CADEIA[:1])
-    monkeypatch.setattr(llm_client, "_ESPERA_ENTRE_RODADAS", 0)
+def test_cota_diaria_esgotada_pausa_por_mais_tempo_que_a_do_minuto(monkeypatch):
+    agora = [100.0]
+    monkeypatch.setattr(llm_client.time, "monotonic", lambda: agora[0])
+    cliente = _FakeClient({})
+    llm_client._registrar_pausa(cliente, "do-minuto", _erro_rate_limit())
+    llm_client._registrar_pausa(cliente, "do-dia", _erro_cota_diaria())
+
+    agora[0] += 121  # a pausa de cota por minuto nunca passa de 120 s
+    assert not llm_client._em_pausa(cliente, "do-minuto")
+    assert llm_client._em_pausa(cliente, "do-dia")
+
+    agora[0] += llm_client._PAUSA_COTA_DIARIA
+    assert not llm_client._em_pausa(cliente, "do-dia")
+
+
+def test_todos_em_pausa_por_sobrecarga_ainda_sao_tentados(monkeypatch):
+    # Se a fila inteira está pausada, tentar um modelo que talvez já tenha
+    # voltado é melhor do que falhar sem chamar ninguém.
+    monkeypatch.setitem(llm_client.CADEIAS, "volume", [("gemini", "a"), ("gemini", "b")])
+    fake = _FakeClient({"a": [_erro_servidor(503), "voltou"], "b": [_erro_servidor(503)]})
+    monkeypatch.setattr(llm_client, "clients", {"gemini": fake})
 
     with pytest.raises(ErroMestre, match="Todos os modelos"):
-        chamar_com_fallback([{"role": "user", "content": "oi"}], rodadas=2)
+        chamar_com_fallback([])
 
-    assert fake.chat.completions.chamadas == [modelo]
+    assert chamar_com_fallback([]) == "voltou"
+    assert fake.chat.completions.chamadas == ["a", "b", "a"]
+
+
+def test_todos_em_pausa_por_cota_falham_sem_gastar_chamada(monkeypatch):
+    monkeypatch.setitem(llm_client.CADEIAS, "volume", [("gemini", "a")])
+    fake = _FakeClient({"a": [_erro_cota_diaria(), "nunca chega aqui"]})
+    monkeypatch.setattr(llm_client, "clients", {"gemini": fake})
+
+    for _ in range(2):
+        with pytest.raises(ErroMestre, match="Todos os modelos"):
+            chamar_com_fallback([])
+
+    assert fake.chat.completions.chamadas == ["a"]
+
+
+def test_prazo_total_do_papel_encerra_a_fila(monkeypatch):
+    # Achado ao vivo (05/10/2026): seis modelos falhando em fila somaram
+    # 201 s num prólogo. O prazo é da fila inteira, não de cada chamada.
+    from app.infra.settings import settings
+
+    agora = [0.0]
+    monkeypatch.setattr(llm_client.time, "monotonic", lambda: agora[0])
+    monkeypatch.setitem(llm_client.CADEIAS, "volume", [("gemini", "a"), ("gemini", "b"), ("gemini", "c")])
+    recebidos: list[tuple[str, float]] = []
+
+    class _Completions:
+        def create(self, **kwargs):
+            recebidos.append((kwargs["model"], kwargs["timeout"]))
+            agora[0] += kwargs["timeout"]  # cada modelo consome o tempo limite inteiro
+            raise _erro_timeout()
+
+    fake = type("Cliente", (), {"chat": type("Chat", (), {"completions": _Completions()})()})()
+    monkeypatch.setattr(llm_client, "clients", {"gemini": fake})
+
+    with pytest.raises(ErroMestre, match="Todos os modelos"):
+        chamar_com_fallback([])
+
+    total, por_chamada = settings.prazos_ia["volume"], settings.timeouts_ia["volume"]
+    assert recebidos == [("a", por_chamada), ("b", total - por_chamada)]
+    assert agora[0] <= total
+
+
+def test_cada_chamada_da_cadeia_leva_o_tempo_limite_do_papel(monkeypatch):
+    from app.infra.settings import settings
+
+    recebidos: list[dict] = []
+
+    class _Completions:
+        def create(self, **kwargs):
+            recebidos.append(kwargs)
+            return "ok"
+
+    fake = type("Cliente", (), {"chat": type("Chat", (), {"completions": _Completions()})()})()
+    monkeypatch.setattr(llm_client, "clients", {"gemini": fake})
+    monkeypatch.setitem(llm_client.CADEIAS, "volume", [("gemini", "m")])
+    monkeypatch.setitem(llm_client.CADEIAS, "destaque", [("gemini", "m")])
+    monkeypatch.setattr(settings, "esforco_raciocinio", {"volume": "low"})
+
+    chamar_com_fallback([])
+    chamar_com_fallback([], papel="destaque")
+
+    assert recebidos[0]["timeout"] == settings.timeouts_ia["volume"]
+    assert recebidos[1]["timeout"] == settings.timeouts_ia["destaque"]
+    assert recebidos[0]["reasoning_effort"] == "low"
+    assert "reasoning_effort" not in recebidos[1]
 
 
 def test_todos_os_modelos_falhando_levanta_erro_mestre(monkeypatch):
-    comportamento = {modelo: [_erro_rate_limit(), _erro_rate_limit()] for _, modelo in llm_client.CADEIA}
+    comportamento = {modelo: [_erro_rate_limit(), _erro_rate_limit()] for _, modelo in llm_client.CADEIAS["volume"]}
     clients, _ = _fake_clients(comportamento)
     monkeypatch.setattr(llm_client, "clients", clients)
 
@@ -163,7 +256,7 @@ def test_todos_os_modelos_falhando_levanta_erro_mestre(monkeypatch):
 
 def test_primeiro_modelo_funciona_sem_tocar_no_fallback(monkeypatch):
     resultado_ok = object()
-    modelo_1 = llm_client.CADEIA[0][1]
+    modelo_1 = llm_client.CADEIAS["volume"][0][1]
     clients, fake = _fake_clients({modelo_1: [resultado_ok]})
     monkeypatch.setattr(llm_client, "clients", clients)
 
@@ -174,7 +267,7 @@ def test_primeiro_modelo_funciona_sem_tocar_no_fallback(monkeypatch):
 
 
 def test_modelo_com_cota_esgotada_e_pulado_ate_pausa_expirar(monkeypatch):
-    modelo_1, modelo_2 = llm_client.CADEIA[0][1], llm_client.CADEIA[1][1]
+    modelo_1, modelo_2 = llm_client.CADEIAS["volume"][0][1], llm_client.CADEIAS["volume"][1][1]
     agora = [100.0]
     monkeypatch.setattr(llm_client.time, "monotonic", lambda: agora[0])
     clients, fake = _fake_clients({modelo_1: [_erro_rate_limit(), "recuperado"], modelo_2: ["ok", "ok"]})
@@ -193,10 +286,40 @@ def test_pausa_de_cota_nao_afeta_outro_cliente():
     assert not llm_client._em_pausa(cliente_b, "modelo")
 
 
+def test_cada_papel_percorre_a_propria_cadeia(monkeypatch):
+    # ADR-0038: o turno de jogo (volume) e o prólogo (destaque) não disputam
+    # o mesmo primeiro modelo — cada papel tem a sua lista.
+    monkeypatch.setitem(llm_client.CADEIAS, "volume", [("gemini", "modelo-de-volume")])
+    monkeypatch.setitem(llm_client.CADEIAS, "destaque", [("gemini", "modelo-de-destaque")])
+    ok_volume, ok_destaque = object(), object()
+    fake = _FakeClient({"modelo-de-volume": [ok_volume], "modelo-de-destaque": [ok_destaque]})
+    monkeypatch.setattr(llm_client, "clients", {"gemini": fake})
+    msgs = [{"role": "user", "content": "oi"}]
+
+    assert chamar_com_fallback(msgs) is ok_volume
+    assert chamar_com_fallback(msgs, papel="destaque") is ok_destaque
+    assert fake.chat.completions.chamadas == ["modelo-de-volume", "modelo-de-destaque"]
+
+
+def test_cadeias_padrao_poem_o_modelo_de_cota_alta_no_volume():
+    # Trava a decisão medida em 05/10/2026: no plano gratuito do Gemini só o
+    # 3.5 Flash Lite tem cota diária para sustentar turnos (500/dia contra
+    # 20/dia dos Flash). Se alguém reordenar a lista, este teste avisa.
+    from app.infra.settings import Settings
+
+    padrao = Settings(_env_file=None)
+    assert padrao.cadeia_volume[0] == "gemini:gemini-3.5-flash-lite"
+    assert padrao.cadeia_destaque[0] != padrao.cadeia_volume[0]
+    assert "gemini:gemini-3.5-flash-lite" in padrao.cadeia_destaque
+    assert padrao.cadeia_fundo[0] != padrao.cadeia_volume[0]
+
+
 def test_provedor_sem_chave_e_pulado_sem_contar_como_falha(monkeypatch):
-    # `clients` só tem o provedor do 2º elo — o 1º é pulado silenciosamente
-    # (não é uma tentativa que falhou, é um provedor nunca configurado).
-    provedor_2, modelo_2 = llm_client.CADEIA[1]
+    # `clients` só tem um provedor que não é o do 1º elo — os elos antes
+    # dele são pulados silenciosamente (não é uma tentativa que falhou, é um
+    # provedor nunca configurado).
+    primeiro_provedor = llm_client.CADEIAS["volume"][0][0]
+    provedor_2, modelo_2 = next(elo for elo in llm_client.CADEIAS["volume"] if elo[0] != primeiro_provedor)
     resultado_ok = object()
     fake = _FakeClient({modelo_2: [resultado_ok]})
     monkeypatch.setattr(llm_client, "clients", {provedor_2: fake})
@@ -234,7 +357,7 @@ class TestChamarStreamComFallback:
 
     def test_primeiro_modelo_funciona_sem_tocar_no_fallback(self, monkeypatch):
         chunks = ["a", "b", "c"]
-        modelo_1 = llm_client.CADEIA[0][1]
+        modelo_1 = llm_client.CADEIAS["volume"][0][1]
         clients, fake = _fake_clients({modelo_1: [chunks]})
         monkeypatch.setattr(llm_client, "clients", clients)
 
@@ -246,7 +369,7 @@ class TestChamarStreamComFallback:
     def test_falha_antes_do_primeiro_chunk_cai_para_o_proximo_modelo(self, monkeypatch):
         # create() do modelo 1 levanta direto (nunca chega a abrir stream) —
         # nada foi mandado pro cliente ainda, então pode trocar de modelo.
-        modelo_1, modelo_2 = llm_client.CADEIA[0][1], llm_client.CADEIA[1][1]
+        modelo_1, modelo_2 = llm_client.CADEIAS["volume"][0][1], llm_client.CADEIAS["volume"][1][1]
         chunks = ["x", "y"]
         clients, fake = _fake_clients({modelo_1: [_erro_rate_limit(), _erro_rate_limit()], modelo_2: [chunks]})
         monkeypatch.setattr(llm_client, "clients", clients)
@@ -260,7 +383,7 @@ class TestChamarStreamComFallback:
         # O modelo 1 abre a stream e manda um chunk — comprometido. Se cair
         # depois disso, vira ErroMestre, e o modelo 2 nunca é chamado (uma
         # troca silenciosa costuraria a resposta de dois modelos diferentes).
-        modelo_1 = llm_client.CADEIA[0][1]
+        modelo_1 = llm_client.CADEIAS["volume"][0][1]
         stream_quebrada = _StreamQuebrado(["a"], _erro_rate_limit())
         clients, fake = _fake_clients({modelo_1: [stream_quebrada]})
         monkeypatch.setattr(llm_client, "clients", clients)
@@ -272,7 +395,7 @@ class TestChamarStreamComFallback:
         assert fake.chat.completions.chamadas == [modelo_1]
 
     def test_todos_os_modelos_falhando_levanta_erro_mestre(self, monkeypatch):
-        comportamento = {modelo: [_erro_rate_limit(), _erro_rate_limit()] for _, modelo in llm_client.CADEIA}
+        comportamento = {modelo: [_erro_rate_limit(), _erro_rate_limit()] for _, modelo in llm_client.CADEIAS["volume"]}
         clients, _ = _fake_clients(comportamento)
         monkeypatch.setattr(llm_client, "clients", clients)
 
