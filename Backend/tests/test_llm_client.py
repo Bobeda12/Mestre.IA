@@ -193,6 +193,72 @@ def test_todos_em_pausa_por_cota_falham_sem_gastar_chamada(monkeypatch):
     assert fake.chat.completions.chamadas == ["a"]
 
 
+def _cadeia_ab(monkeypatch, limites: dict[str, list[int]], comportamento: dict[str, list]):
+    from app.infra.settings import settings
+
+    monkeypatch.setitem(llm_client.CADEIAS, "volume", [("gemini", "a"), ("gemini", "b")])
+    monkeypatch.setattr(settings, "limites_ia", limites)
+    fake = _FakeClient(comportamento)
+    monkeypatch.setattr(llm_client, "clients", {"gemini": fake})
+    return fake
+
+
+def test_contador_pula_modelo_no_limite_por_minuto_sem_gastar_chamada(monkeypatch):
+    # Antes o servidor só descobria o limite batendo no 429 — o que gasta
+    # uma chamada e, no turno, alguns segundos do jogador.
+    agora = [1000.0]
+    monkeypatch.setattr(llm_client.time, "monotonic", lambda: agora[0])
+    fake = _cadeia_ab(monkeypatch, {"a": [2, 500]}, {"a": ["a1", "a2", "a3"], "b": ["b1"]})
+
+    assert [chamar_com_fallback([]) for _ in range(3)] == ["a1", "a2", "b1"]
+    assert fake.chat.completions.chamadas == ["a", "a", "b"]
+
+    agora[0] += 61  # o minuto virou: "a" volta para a frente da fila
+    assert chamar_com_fallback([]) == "a3"
+
+
+def test_contador_pula_modelo_no_limite_do_dia_e_zera_quando_o_dia_vira(monkeypatch):
+    dia = [20000]
+    monkeypatch.setattr(llm_client, "_dia_da_cota", lambda: dia[0])
+    agora = [1000.0]
+    monkeypatch.setattr(llm_client.time, "monotonic", lambda: agora[0])
+    fake = _cadeia_ab(monkeypatch, {"a": [100, 2]}, {"a": ["a1", "a2", "a3"], "b": ["b1"]})
+
+    for esperado in ("a1", "a2", "b1"):
+        assert chamar_com_fallback([]) == esperado
+        agora[0] += 120  # espaçadas: o limite por minuto não entra na conta
+    assert fake.chat.completions.chamadas == ["a", "a", "b"]
+
+    dia[0] += 1
+    assert chamar_com_fallback([]) == "a3"
+
+
+def test_contador_conta_tentativa_que_falhou(monkeypatch):
+    # Há relatos de que o 503 do Gemini desconta da cota diária.
+    fake = _cadeia_ab(monkeypatch, {"a": [100, 500]}, {"a": [_erro_servidor(503)], "b": ["b1"]})
+
+    assert chamar_com_fallback([]) == "b1"
+
+    assert llm_client._uso_atual(fake, "a") == (1, 1)
+    assert llm_client._uso_atual(fake, "b") == (1, 1)
+
+
+def test_todos_no_limite_do_contador_ainda_sao_tentados(monkeypatch):
+    # O contador é estimativa; se ele tirou todo mundo da fila, vale mais
+    # tentar e deixar o provedor responder do que falhar sem chamar ninguém.
+    fake = _cadeia_ab(monkeypatch, {"a": [1, 500], "b": [1, 500]}, {"a": ["a1", "a2"], "b": ["b1"]})
+
+    assert [chamar_com_fallback([]) for _ in range(3)] == ["a1", "b1", "a2"]
+    assert fake.chat.completions.chamadas == ["a", "b", "a"]
+
+
+def test_modelo_sem_limite_configurado_nunca_e_pulado_pelo_contador(monkeypatch):
+    fake = _cadeia_ab(monkeypatch, {}, {"a": ["x"] * 30, "b": []})
+
+    assert [chamar_com_fallback([]) for _ in range(30)] == ["x"] * 30
+    assert set(fake.chat.completions.chamadas) == {"a"}
+
+
 def test_prazo_total_do_papel_encerra_a_fila(monkeypatch):
     # Achado ao vivo (05/10/2026): seis modelos falhando em fila somaram
     # 201 s num prólogo. O prazo é da fila inteira, não de cada chamada.

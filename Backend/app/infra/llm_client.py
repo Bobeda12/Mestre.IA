@@ -133,8 +133,59 @@ def _registrar_pausa(cliente, modelo: str, erro: Exception) -> None:
         _pausas.setdefault(cliente, {})[modelo] = (time.monotonic() + espera, motivo)
 
 
+# Contador local de chamadas por cliente e modelo, para a fila pular um
+# modelo que já está no limite sem gastar uma chamada para descobrir (o 429
+# só chega depois de bater). É uma estimativa: zera quando o processo
+# reinicia e não enxerga outros processos com a mesma chave. Por isso ele
+# só tira o modelo da frente da fila; o 429 continua sendo a verdade.
+# Cada entrada: (momentos das chamadas no último minuto, dia, chamadas no dia).
+_uso: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
+_uso_lock = threading.Lock()
+
+
+def _dia_da_cota() -> int:
+    # A cota diária do Gemini zera à meia-noite do Pacífico. UTC-8 fixo: no
+    # horário de verão de lá o dia vira uma hora depois do real, o que só
+    # deixa o contador conservador por uma hora.
+    return int((time.time() - 8 * 3600) // 86400)
+
+
+def _uso_atual(cliente, modelo: str) -> tuple[int, int]:
+    """(chamadas no último minuto, chamadas no dia) deste cliente neste modelo."""
+    with _uso_lock:
+        momentos, dia, no_dia = _uso.get(cliente, {}).get(modelo, ((), 0, 0))
+        agora = time.monotonic()
+        return sum(1 for m in momentos if agora - m < 60), no_dia if dia == _dia_da_cota() else 0
+
+
+def _contar_chamada(cliente, modelo: str) -> None:
+    # Conta a tentativa, não só o sucesso: há relatos de que o 503 do Gemini
+    # também desconta da cota diária, e errar para mais só adianta a troca
+    # de modelo.
+    with _uso_lock:
+        momentos, dia, no_dia = _uso.setdefault(cliente, {}).get(modelo, ((), 0, 0))
+        agora, hoje = time.monotonic(), _dia_da_cota()
+        recentes = (*(m for m in momentos if agora - m < 60), agora)
+        _uso[cliente][modelo] = (recentes, hoje, (no_dia if dia == hoje else 0) + 1)
+
+
+def _no_limite(cliente, modelo: str) -> bool:
+    limite = settings.limites_ia.get(modelo)
+    if not limite:
+        return False
+    por_minuto, por_dia = _uso_atual(cliente, modelo)
+    return por_minuto >= limite[0] or por_dia >= limite[1]
+
+
 # Com menos que isto de prazo sobrando, nem vale abrir outra chamada.
 _PRAZO_MINIMO = 3.0
+
+
+def _uso_no_log(cliente, modelo: str) -> str:
+    """"3/15min 120/500dia" — o uso contado aqui contra o limite configurado."""
+    por_minuto, por_dia = _uso_atual(cliente, modelo)
+    limite = settings.limites_ia.get(modelo)
+    return f"{por_minuto}/{limite[0]}min {por_dia}/{limite[1]}dia" if limite else f"{por_minuto}min {por_dia}dia"
 
 
 def _elos_dentro_do_prazo(papel: str) -> Iterator[tuple[str, str, Any, float]]:
@@ -151,18 +202,25 @@ def _elos_dentro_do_prazo(papel: str) -> Iterator[tuple[str, str, Any, float]]:
         if restante < _PRAZO_MINIMO:
             logger.warning("ia papel=%s prazo total esgotado antes de %s", papel, modelo)
             return
+        _contar_chamada(cliente, modelo)
         yield provedor, modelo, cliente, min(settings.timeouts_ia[papel], restante)
 
 
 def _elos_disponiveis(papel: str) -> list[tuple[str, str, Any]]:
-    """Elos da cadeia do papel que têm chave configurada e não estão em
-    pausa. Se TODOS estiverem em pausa, devolve os pausados por sobrecarga:
-    tentar um modelo que talvez já tenha voltado é melhor do que falhar sem
-    chamar ninguém. Os pausados por cota ficam de fora — ali a resposta
-    seria o mesmo 429."""
+    """Elos da cadeia do papel que têm chave configurada, não estão em pausa
+    e não chegaram ao limite no contador local (`_no_limite`). Se não sobrar
+    NENHUM, devolve os que só estão fora por sobrecarga ou pelo contador:
+    tentar um modelo que talvez já tenha voltado (ou cuja contagem local
+    esteja errada para mais) é melhor do que falhar sem chamar ninguém. Os
+    pausados por cota ficam de fora — ali o provedor já respondeu 429."""
     elos = [(provedor, modelo, clients[provedor]) for provedor, modelo in CADEIAS[papel] if provedor in clients]
-    livres = [elo for elo in elos if not _em_pausa(elo[2], elo[1])]
-    return livres or [elo for elo in elos if _pausa(elo[2], elo[1])[1] == "sobrecarga"]
+    livres = [elo for elo in elos if not _em_pausa(elo[2], elo[1]) and not _no_limite(elo[2], elo[1])]
+    if livres:
+        return livres
+    return [
+        elo for elo in elos
+        if not _em_pausa(elo[2], elo[1]) or _pausa(elo[2], elo[1])[1] == "sobrecarga"
+    ]
 
 
 def _parse_modelo(espec: str) -> tuple[str, str]:
@@ -322,7 +380,9 @@ def chamar_com_fallback(
             )
             # Uma linha por chamada atendida: é o que permite somar, no
             # log, quantas chamadas um turno faz e em qual modelo caíram.
-            logger.info("ia papel=%s provedor=%s modelo=%s", papel, provedor, modelo)
+            logger.info(
+                "ia papel=%s provedor=%s modelo=%s uso=%s", papel, provedor, modelo, _uso_no_log(cliente, modelo)
+            )
             return resp
         except _ERROS_TRANSITORIOS as e:
             # Achado de uso (05/10/2026): este ramo era mudo — o jogador via
@@ -485,7 +545,9 @@ def chamar_stream_com_fallback(
             )
             ultimo_erro = e
             continue
-        logger.info("ia papel=%s provedor=%s modelo=%s stream", papel, provedor, modelo)
+        logger.info(
+            "ia papel=%s provedor=%s modelo=%s uso=%s stream", papel, provedor, modelo, _uso_no_log(cliente, modelo)
+        )
 
         comprometido = False
         pedacos: list[str] = []

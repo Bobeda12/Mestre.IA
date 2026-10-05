@@ -86,6 +86,20 @@ class Settings(BaseSettings):
     # falha e quem chamou usa a sua saída de emergência (texto de reserva
     # no prólogo, turno só com o juiz no jogo).
     prazos_ia: dict[str, float] = {"volume": 45.0, "destaque": 90.0, "fundo": 60.0}
+    # Limites do plano gratuito por modelo: [chamadas por minuto, chamadas
+    # por dia]. Lidos no painel da conta (ai.dev/rate-limit) em 05/10/2026;
+    # o Google muda esses números sem aviso, conferir de tempos em tempos.
+    # `llm_client` conta as chamadas e pula o modelo que chegou ao limite.
+    # Modelo ausente daqui (os da Groq) não é contado contra limite nenhum.
+    limites_ia: dict[str, list[int]] = {
+        "gemini-3.5-flash-lite": [15, 500],
+        "gemini-3.1-flash-lite": [15, 500],
+        "gemini-3.5-flash": [5, 20],
+        "gemini-3.6-flash": [5, 20],
+        "gemini-3.7-flash": [5, 20],
+        "gemini-3.8-flash": [5, 20],
+        "gemini-2.5-flash": [5, 20],
+    }
     # Quanto os modelos Gemini "pensam" antes de responder, por papel
     # (`reasoning_effort`: minimal, low, medium, high). Papel ausente = o
     # padrão do modelo.

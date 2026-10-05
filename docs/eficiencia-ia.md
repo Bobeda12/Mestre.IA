@@ -89,6 +89,10 @@ Os números mudam sem aviso; conferir de tempos em tempos.
 | Gemma 4 (26B, 31B) | 30 | 14.400 (16 mil tokens/min) |
 | Embedding | 100 | 1.000 |
 
+`LIMITES_IA` guarda esses números por modelo. O servidor conta as próprias chamadas (último
+minuto e dia, por processo) e tira da frente da cadeia o modelo que chegou ao limite; a
+linha de log mostra `uso=3/15min 120/500dia`. A contagem é estimativa: zera no reinício.
+
 Um turno faz em média 2,7 chamadas (32 em 12 cenários). Cada chamada declara um papel
 (`volume`, `destaque`, `fundo`) e cada papel tem a sua cadeia (`CADEIA_VOLUME`,
 `CADEIA_DESTAQUE`, `CADEIA_FUNDO`), ver ADR-0038. Cada chamada atendida gera uma linha

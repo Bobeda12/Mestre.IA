@@ -55,6 +55,10 @@ Junto com os papéis, a cadeia mudou de comportamento diante de erro:
   Os pausados por cota não.
 - **Cada chamada tem tempo limite por papel** (`settings.timeouts_ia`: 25 s no volume, 50 s no
   destaque, 30 s no fundo). Antes valia o padrão da biblioteca, 10 minutos.
+- **O servidor conta as próprias chamadas por modelo** (no último minuto e no dia) contra os
+  limites da tabela acima (`settings.limites_ia`) e tira da frente da fila o modelo que
+  chegou ao limite, sem gastar uma chamada para descobrir. Conta a tentativa, não só o
+  sucesso. O dia vira à meia-noite do Pacífico, como a cota do Gemini.
 - **A fila inteira tem prazo por papel** (`settings.prazos_ia`: 45 s no volume, 90 s no
   destaque, 60 s no fundo). Só com o limite por chamada, um prólogo levou 201 s ao vivo: seis
   modelos falharam em sequência. Acabou o prazo, a chamada falha e quem chamou usa a sua saída
@@ -89,10 +93,14 @@ Junto com os papéis, a cadeia mudou de comportamento diante de erro:
 - A voz pode mudar entre o prólogo (Flash) e os turnos (Lite).
 
 **Fica em aberto:**
-- O servidor ainda só descobre que a cota acabou batendo no 429. A pausa de cota diária é de
-  15 minutos, não as "11 horas" que o corpo do erro anunciou: o mesmo modelo voltou a
-  responder cerca de uma hora depois, então o número do Google não é confiável. Falta o
-  contador local de chamadas por modelo.
+- O contador é uma estimativa local: zera quando o processo reinicia (o Render gratuito
+  hiberna e reinicia) e não enxerga outro processo com a mesma chave, como o ambiente de
+  desenvolvimento. Por isso ele só reordena a fila; se tirar todos os modelos, eles são
+  tentados mesmo assim e o 429 do provedor decide. Persistir a contagem no banco resolveria
+  o reinício, ao custo de uma escrita por chamada.
+- A pausa de cota diária é de 15 minutos, não as "11 horas" que o corpo do erro anunciou: o
+  mesmo modelo voltou a responder cerca de uma hora depois, então o número do Google não é
+  confiável.
 - Há relatos no fórum do Google (23 a 29/09/2026) de que um 503 gasta a cota diária do plano
   gratuito. O Google não confirmou nem negou. A pausa de 3 minutos parte dessa hipótese.
 - `settings.esforco_raciocinio` existe e está vazio. Medido: o 3.5 Flash Lite não "pensa" por

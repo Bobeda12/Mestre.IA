@@ -96,6 +96,31 @@ Também testei pedir aos modelos que "pensem menos" antes de responder (um parâ
 `reasoning_effort`). Não ajudou: o Flash Lite já não pensa por padrão, e nos Flash a demora
 vem da fila do Google, não do raciocínio. O ajuste ficou disponível na configuração, desligado.
 
+## O servidor passou a contar
+
+Faltava uma peça: o servidor só descobria que um modelo tinha chegado ao limite quando o
+Google respondia "cota esgotada". Isso gasta uma chamada e alguns segundos do jogador, toda
+vez.
+
+Agora ele conta as próprias chamadas, por modelo: quantas no último minuto e quantas no dia.
+Os limites de cada modelo ficam na configuração (os mesmos da tabela do painel). Quando um
+modelo chega ao limite, a fila simplesmente começa pelo seguinte.
+
+Três cuidados:
+
+- **Conta a tentativa, não só o acerto.** Se o erro de sobrecarga realmente desconta da cota,
+  contar só os acertos deixaria o servidor otimista demais.
+- **O dia vira na hora do Google**, meia-noite na costa oeste dos EUA (4h ou 5h de Brasília).
+- **A contagem é uma estimativa.** Ela zera quando o servidor reinicia e não sabe de chamadas
+  feitas por outro programa com a mesma chave (meus testes no computador, por exemplo). Então
+  ela só muda a ordem da fila. Se pela contagem todos os modelos estiverem no limite, o
+  servidor tenta mesmo assim e deixa o Google dar a palavra final.
+
+Teste ao vivo, com o limite do Flash Lite baixado de propósito para 3 por minuto: as três
+primeiras chamadas saíram por ele e a quarta foi direto para o modelo seguinte, sem bater no
+erro. A linha de log de cada chamada agora mostra a contagem, por exemplo
+`uso=3/15min 120/500dia`.
+
 ## Depois
 
 Teste ao vivo, só com Gemini, como em produção: um prólogo saiu pelo `gemini-3.5-flash`
@@ -106,8 +131,9 @@ Capacidade estimada: cerca de 185 turnos por dia e 5 por minuto.
 
 ## O que ficou de fora
 
-- **O servidor ainda não sabe quanta cota resta.** Ele já distingue, no erro, limite do
-  minuto e limite do dia, mas só descobre batendo nele. Falta contar as chamadas localmente.
+- **A contagem de cota não sobrevive a um reinício do servidor.** Guardá-la no banco
+  resolveria, ao custo de uma gravação a cada chamada. Ficou para se a estimativa se
+  mostrar ruim na prática.
 - **Quem traz a própria chave** continua preso ao modelo de 20 por dia.
 - **O teto de turnos por jogador** (20 por dia) não foi recalibrado com os números novos.
 - A sondagem dos Flash é de um dia só. Qual modelo está disputado muda com o dia e a hora.
@@ -118,10 +144,11 @@ Capacidade estimada: cerca de 185 turnos por dia e 5 por minuto.
 
 ## Como testar
 
-`pytest` no backend: 688 testes. Os novos cobrem: cada papel usa a sua lista; a ordem padrão
+`pytest` no backend: 694 testes. Os novos cobrem: cada papel usa a sua lista; a ordem padrão
 das listas; a segunda chance do prólogo; o resumo usa o papel de fundo; erro de sobrecarga e
 prazo estourado põem o modelo de lado sem repetir; cota do dia afasta por mais tempo que a
-do minuto; fila inteira de lado; prazo por papel. Para ver ao vivo,
+do minuto; fila inteira de lado; prazo por papel e prazo da fila; e o contador (limite por
+minuto, limite por dia, virada do dia, tentativa que falhou também conta). Para ver ao vivo,
 basta jogar com o servidor local e procurar no log as linhas `ia papel=`.
 
 A decisão, as alternativas e os sinais de que ela estaria errada estão no
