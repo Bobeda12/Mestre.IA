@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { esconderTagOpcoes, limparMarkdownLeve } from './utils';
+import { isValidElement } from 'react';
+import { esconderTagOpcoes, limparMarkdownLeve, renderizarNarrativa } from './utils';
 
 describe('esconderTagOpcoes', () => {
   it('esconde a tag na última linha, sem acento', () => {
@@ -37,5 +38,31 @@ describe('esconderTagOpcoes', () => {
 describe('limparMarkdownLeve', () => {
   it('remove código inline e preserva negrito para o destaque da narrativa', () => {
     expect(limparMarkdownLeve('Isto é **importante** e `código`.')).toBe('Isto é **importante** e código.');
+  });
+});
+
+// O que a tela mostra: texto comum como está, destaque entre colchetes.
+function desenhado(texto: string) {
+  return renderizarNarrativa(texto)
+    .map(no => (isValidElement<{ children: string }>(no) ? `[${no.props.children}]` : String(no)))
+    .join('');
+}
+
+describe('renderizarNarrativa', () => {
+  it('transforma o par de asteriscos em destaque', () => {
+    expect(desenhado('Há um **cofre de ferro** ali.')).toBe('Há um [cofre de ferro] ali.');
+  });
+
+  it('esconde a abertura que ainda espera o par, durante a digitação', () => {
+    expect(desenhado('Há um **cofre de fe')).toBe('Há um ');
+    expect(desenhado('Há um *')).toBe('Há um ');
+    expect(desenhado('Há um **cofre** e uma **cha')).toBe('Há um [cofre] e uma ');
+  });
+
+  it('nunca mostra asteriscos crus nem esconde o resto do texto por causa de um par quebrado', () => {
+    expect(desenhado('Um **cofre fechado.\n\nA estrada segue.')).toBe('Um cofre fechado.\n\nA estrada segue.');
+    expect(desenhado('Um **homem\nde avental** olha.')).toBe('Um homem\nde avental olha.');
+    expect(desenhado('Um **cofre.\nUm **martelo** na mesa.')).toBe('Um cofre.\nUm [martelo] na mesa.');
+    expect(desenhado('Um **cofre.\nUm **martelo** e uma **cha')).toBe('Um cofre.\nUm [martelo] e uma cha');
   });
 });

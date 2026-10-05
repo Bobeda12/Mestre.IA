@@ -71,17 +71,27 @@ const _PADRAO_NEGRITO = /(\*\*[^*\n]+?\*\*)/g
 // incompleta" que `esconderTagOpcoes` já usa pra tag `[OPCOES]`: com um
 // número ÍMPAR de `**` no texto acumulado, o último é uma abertura ainda
 // sem par — corta a exibição bem antes dele até o par chegar.
+//
+// Só conta como "abertura esperando o par" um `**` sem par que esteja na
+// ÚLTIMA linha: negrito não atravessa parágrafo, então o que sobrou numa
+// linha já encerrada é deslize do modelo, e cortar ali esconderia o resto do
+// texto para sempre. Um `*` sozinho no fim é a metade de um `**` que a
+// digitação do prólogo (dois caracteres por vez) ainda não completou.
 function ocultarNegritoIncompleto(texto: string): string {
-  const total = (texto.match(/\*\*/g) || []).length
-  if (total % 2 === 0) return texto
-  return texto.slice(0, texto.lastIndexOf('**'))
+  // Pares já fechados viram espaços do mesmo tamanho, para o índice valer.
+  const semPares = texto.replace(_PADRAO_NEGRITO, m => ' '.repeat(m.length))
+  const sobras = (semPares.match(/\*\*/g) || []).length
+  const ultima = semPares.lastIndexOf('**')
+  if (sobras % 2 === 1 && ultima > texto.lastIndexOf('\n')) texto = texto.slice(0, ultima)
+  return texto.replace(/\*$/, '')
 }
 
 export function renderizarNarrativa(texto: string): ReactNode[] {
   const partes = ocultarNegritoIncompleto(texto).split(_PADRAO_NEGRITO)
   return partes.map((parte, i) => {
     const m = /^\*\*([^*\n]+?)\*\*$/.exec(parte)
-    if (!m) return parte
+    // `**` fora de um par válido nunca vira destaque, e não aparece cru.
+    if (!m) return parte.replace(/\*{2,}/g, '')
     return (
       <strong key={i} className="text-rpg-gold text-glow font-bold">
         {m[1]}

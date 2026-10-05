@@ -88,6 +88,15 @@ class TestLimparFormatacao:
     def test_sem_negrito_tira_os_asteriscos(self):
         assert guardrail.sem_negrito("O **Lobo** ataca.") == "O Lobo ataca."
 
+    def test_negrito_com_espaco_colado_e_consertado(self):
+        # Achado de uso (05/10/2026): `**` cru na tela do prólogo.
+        assert guardrail.limpar_formatacao("Um ** cofre de ferro ** fechado.") == "Um **cofre de ferro** fechado."
+
+    def test_asteriscos_sem_par_somem_e_o_texto_fica(self):
+        assert guardrail.limpar_formatacao("Um **cofre de ferro fechado.") == "Um cofre de ferro fechado."
+        texto = "A **Olaria de Tordas** fumega. Um **homem\nde avental** observa."
+        assert guardrail.limpar_formatacao(texto) == "A **Olaria de Tordas** fumega. Um homem\nde avental observa."
+
     def test_remove_italico(self):
         assert guardrail.limpar_formatacao("Um *sussurro* ecoa nas pedras.") == "Um sussurro ecoa nas pedras."
 

@@ -167,6 +167,30 @@ def test_alvo_invalido_nao_consume_acao(monkeypatch):
     assert client.post("/load_game", json={"session_id": sid}).json()["turno_mundo"] == 1
 
 
+def test_abrir_o_jogo_devolve_as_opcoes_gravadas_com_a_ultima_narracao(monkeypatch):
+    # Achado de uso (05/10/2026): o prólogo gravava três opções ligadas à
+    # cena, mas /load_game (que abre o jogo) devolvia sempre as genéricas.
+    monkeypatch.setattr(llm_client, "clients", {})
+    criado = client.post("/create_character", json=_payload_base(nome="OpcoesPrologo")).json()
+    sid = criado["session_id"]
+    assert len(criado["opcoes"]) == 3
+    assert client.post("/load_game", json={"session_id": sid}).json()["opcoes"] == criado["opcoes"]
+
+    with SessionLocal() as db:
+        heroi = db.query(Personagem).filter_by(session_id=sid).one()
+        heroi.historico_chat = [*heroi.historico_chat, {"role": "user", "content": "x"},
+                                {"role": "assistant", "content": "y", "opcoes": ["Abrir o cofre", "Sair"]}]
+        db.commit()
+    assert client.post("/load_game", json={"session_id": sid}).json()["opcoes"] == ["Abrir o cofre", "Sair"]
+
+    with SessionLocal() as db:
+        heroi = db.query(Personagem).filter_by(session_id=sid).one()
+        heroi.historico_chat = [*heroi.historico_chat, {"role": "user", "content": "x"},
+                                {"role": "assistant", "content": "narração antiga, sem opções"}]
+        db.commit()
+    assert client.post("/load_game", json={"session_id": sid}).json()["opcoes"][0] == "Observar os arredores"
+
+
 def test_habilidade_classe_resolve_e_consume_foco(monkeypatch):
     sid = _partida(monkeypatch)
     resposta = client.post("/game/action", json={

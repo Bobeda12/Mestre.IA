@@ -35,6 +35,14 @@ __all__ = [
 # narração, os demais viram texto comum.
 MAX_DESTAQUES = 3
 _PADRAO_NEGRITO = re.compile(r"\*\*([^*\n]+?)\*\*")
+# Achado de uso (05/10/2026): `**` cru na tela do prólogo. O frontend só
+# desenha em dourado o par bem formado numa linha só; qualquer outra coisa
+# que o modelo escreva (espaço colado nos asteriscos, par que atravessa a
+# quebra de parágrafo, um `**` que nunca fecha) ficava como veio. O par com
+# espaço é consertado; o que sobra sem par é apagado.
+_PADRAO_NEGRITO_COM_ESPACO = re.compile(r"\*\*[ \t]*([^*\n]+?)[ \t]*\*\*")
+_PADRAO_PAR_DE_NEGRITO = re.compile(r"(\*\*[^*\n]+?\*\*)")
+_PADRAO_ASTERISCOS_SOLTOS = re.compile(r"\*{2,}")
 _PADRAO_NEGRITO_ITALICO_JUNTOS = re.compile(r"\*{3}([^*\n]+?)\*{3}")
 _PADRAO_ITALICO = re.compile(r"(?<!\*)\*(?![\s*])([^*\n]+?)(?<![\s*])\*(?!\*)")
 _PADRAO_TITULO = re.compile(r"^#{1,6}\s*", flags=re.MULTILINE)
@@ -98,6 +106,7 @@ def limpar_formatacao(texto: str) -> str:
     texto = _PADRAO_BLOCO_CODIGO.sub(lambda m: m.group(0).strip("`"), texto)
     texto = _PADRAO_CODIGO_INLINE.sub(r"\1", texto)
     texto = _PADRAO_NEGRITO_ITALICO_JUNTOS.sub(r"**\1**", texto)
+    texto = _PADRAO_NEGRITO_COM_ESPACO.sub(r"**\1**", texto)
     texto = _PADRAO_ITALICO.sub(r"\1", texto)
     texto = _PADRAO_TITULO.sub("", texto)
     texto = _PADRAO_LISTA.sub("", texto)
@@ -108,7 +117,10 @@ def limpar_formatacao(texto: str) -> str:
         vistos += 1
         return m.group(0) if vistos <= MAX_DESTAQUES else m.group(1)
 
-    return _PADRAO_NEGRITO.sub(_limitar, texto)
+    texto = _PADRAO_NEGRITO.sub(_limitar, texto)
+    # Índices ímpares do split são os pares válidos; no resto, `**` é sobra.
+    partes = _PADRAO_PAR_DE_NEGRITO.split(texto)
+    return "".join(p if i % 2 else _PADRAO_ASTERISCOS_SOLTOS.sub("", p) for i, p in enumerate(partes))
 
 
 def validar_narrativa(texto: str, heroi: Personagem, c_state: CombatState, w_state: WorldState) -> list[str]:

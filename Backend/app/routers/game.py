@@ -328,8 +328,22 @@ def load_game(
         # Rodada de conserto — antes disto, `opcoes` só vinha nos turnos de
         # chat: recarregar uma partida deixava o jogador sem botões até
         # jogar uma vez. `opcoes_padrao` não depende de narração nenhuma.
-        opcoes=opcoes_padrao(heroi, c_state),
+        opcoes=_opcoes_ao_carregar(heroi, c_state),
     )
+
+
+def _opcoes_ao_carregar(heroi: Personagem, c_state: CombatState) -> list[str]:
+    """As sugestões que acompanharam a última narração, se foram gravadas
+    com ela. Achado de uso (05/10/2026): o prólogo gera três opções ligadas
+    à cena e as grava em `historico_chat[0]`, mas esta rota devolvia sempre
+    as genéricas ("Observar os arredores") — e é ela que abre o jogo, então
+    as do prólogo nunca chegavam à tela. O mesmo valia para recarregar no
+    meio da partida."""
+    ultima = (heroi.historico_chat or [{}])[-1]
+    salvas = ultima.get("opcoes") if ultima.get("role") == "assistant" else None
+    if heroi.hp_atual > 0 and isinstance(salvas, list) and salvas:
+        return [str(o) for o in salvas[:3]]
+    return opcoes_padrao(heroi, c_state)
 
 
 @router.post("/game/action")
@@ -608,7 +622,7 @@ async def chat_endpoint(
 
     novo_hist = list(heroi.historico_chat)
     novo_hist.append({"role": "user", "content": user_input.action})
-    novo_hist.append({"role": "assistant", "content": narrativa})
+    novo_hist.append({"role": "assistant", "content": narrativa, "opcoes": opcoes})
     # Reatribuição, não mutação in-place: é assim que o SQLAlchemy detecta
     # a mudança numa coluna JSON. Ver Lição 03.
     heroi.historico_chat = novo_hist
@@ -836,7 +850,7 @@ def chat_stream_endpoint(
 
         novo_hist = list(heroi.historico_chat)
         novo_hist.append({"role": "user", "content": user_input.action})
-        novo_hist.append({"role": "assistant", "content": narrativa})
+        novo_hist.append({"role": "assistant", "content": narrativa, "opcoes": opcoes})
         heroi.historico_chat = novo_hist
         _persistir_desfecho_arco(db, heroi, w_state, chave)
         sincronizar_aliados(heroi, c_state)  # Fase 3 — HP de aliado em combate precisa sobreviver ao turno
