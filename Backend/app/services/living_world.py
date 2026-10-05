@@ -662,7 +662,8 @@ def definir_objetivo(executor: "ToolExecutor", objetivo: str, nome: str = "", or
     escolher o rótulo — o efeito no estado é sempre o mesmo."""
     if not 1 <= len(objetivo.strip()) <= 500:
         return {"erro": "Descreva o objetivo em até 500 caracteres."}
-    executor.q_state.nome_missao = nome.strip() if nome.strip() else ("Meu caminho" if origem == "jogador" else "Nova missão")
+    nome_padrao = "Meu caminho" if origem == "jogador" else "Nova missão"
+    executor.q_state.nome_missao = nome.strip() or nome_padrao
     executor.q_state.objetivo_missao = objetivo.strip()
     executor.w_state.mundo.objetivos = [*executor.w_state.mundo.objetivos, objetivo.strip()][-20:]
     executor.eventos.append(
