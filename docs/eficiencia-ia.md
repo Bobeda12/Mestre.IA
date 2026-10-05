@@ -73,7 +73,9 @@ Retry-After numérico entre 1 e 120 segundos (padrão: 30); 429 de cota diária,
 5xx, 3 minutos; tempo estourado, 1 minuto. Se todos os elos estiverem pausados, os pausados
 por sobrecarga são tentados; os pausados por cota, não. Não há espera bloqueante; a pausa é
 local ao processo e não distribuída. Cada chamada tem tempo limite por papel (`TIMEOUTS_IA`: 25 s volume, 50 s
-destaque, 30 s fundo) e a cadeia inteira tem prazo por papel (`PRAZOS_IA`: 45 s, 90 s, 60 s). A chave BYOK percorre os elos Gemini da mesma cadeia, com pausas e contagem por hash
+destaque, 30 s fundo) e a cadeia inteira tem prazo por papel (`PRAZOS_IA`: 45 s, 90 s, 60 s). Modelos rápidos têm tempo limite próprio (`TIMEOUTS_MODELO`: 22 s nos Flash Lite). O
+prólogo reparte um prazo de 80 s entre até 3 tentativas, refazendo o pedido com o motivo
+quando a resposta não serve. A chave BYOK percorre os elos Gemini da mesma cadeia, com pausas e contagem por hash
 da chave; nunca cai para a chave do servidor. Só o modelo fixo das avaliações, que não
 tem fila, mantém o retry curto no mesmo modelo. Streaming já iniciado nunca troca de modelo silenciosamente.
 

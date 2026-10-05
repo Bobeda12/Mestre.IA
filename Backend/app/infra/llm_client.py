@@ -218,7 +218,7 @@ def _conta_byok(api_key: str) -> _Conta:
 
 
 def _elos_dentro_do_prazo(
-    papel: str, clientes: dict[str, Any] | None = None, dono: Any = None
+    papel: str, clientes: dict[str, Any] | None = None, dono: Any = None, prazo: float | None = None
 ) -> Iterator[tuple[str, str, Any, Any, float]]:
     """Percorre `_elos_disponiveis(papel)` enquanto houver prazo total do
     papel (`settings.prazos_ia`), entregando também o tempo limite daquela
@@ -227,14 +227,17 @@ def _elos_dentro_do_prazo(
     Achado ao vivo (05/10/2026): só com tempo limite por chamada, um prólogo
     levou 201 s — seis modelos falharam em fila e dois deles gastaram os
     60 s inteiros cada. O jogador espera a soma, não cada parcela."""
-    limite = time.monotonic() + settings.prazos_ia[papel]
+    # `prazo` encurta o do papel para quem tem o próprio relógio (o prólogo
+    # reparte um prazo só entre várias tentativas); nunca o alonga.
+    limite = time.monotonic() + min(prazo or settings.prazos_ia[papel], settings.prazos_ia[papel])
     for provedor, modelo, cliente, dono_do_elo in _elos_disponiveis(papel, clientes, dono):
         restante = limite - time.monotonic()
         if restante < _PRAZO_MINIMO:
             logger.warning("ia papel=%s prazo total esgotado antes de %s", papel, modelo)
             return
         _contar_chamada(dono_do_elo, modelo)
-        yield provedor, modelo, cliente, dono_do_elo, min(settings.timeouts_ia[papel], restante)
+        do_modelo = settings.timeouts_modelo.get(modelo, settings.timeouts_ia[papel])
+        yield provedor, modelo, cliente, dono_do_elo, min(settings.timeouts_ia[papel], do_modelo, restante)
 
 
 def _elos_disponiveis(
@@ -445,6 +448,7 @@ def _percorrer_cadeia(
     clientes: dict[str, Any] | None = None,
     dono: Any = None,
     parar_se_chave_recusada: bool = False,
+    prazo: float | None = None,
 ) -> Any:
     """Tenta cada elo de `CADEIAS[papel]` em ordem, pulando provedor sem chave
     e modelo em pausa ou no limite (ver `_elos_disponiveis`). Um erro
@@ -455,7 +459,7 @@ def _percorrer_cadeia(
     gastar a cota do dia (ADR-0038)."""
     ultimo_erro: Exception | None = None
     ultimo_modelo = ""
-    for provedor, modelo, cliente, dono_do_elo, timeout in _elos_dentro_do_prazo(papel, clientes, dono):
+    for provedor, modelo, cliente, dono_do_elo, timeout in _elos_dentro_do_prazo(papel, clientes, dono, prazo):
         try:
             resp = _chamar_modelo(
                 cliente, provedor, modelo, msgs, tools, tool_choice, response_format, papel=papel, timeout=timeout
@@ -481,13 +485,14 @@ def chamar_com_fallback(
     tool_choice: str | dict = "auto",
     response_format: dict | None = None,
     papel: Papel = "volume",
+    prazo: float | None = None,
 ) -> Any:
     """Chama a IA com a chave do servidor, pela cadeia do papel (ver
-    `_percorrer_cadeia`)."""
+    `_percorrer_cadeia`). `prazo` encurta o prazo total do papel."""
     if not clients:
         raise ErroMestre(_SEM_PROVEDOR)
     try:
-        return _percorrer_cadeia(papel, msgs, tools, tool_choice, response_format)
+        return _percorrer_cadeia(papel, msgs, tools, tool_choice, response_format, prazo=prazo)
     except _CadeiaEsgotada as e:
         raise ErroMestre(
             "Todos os modelos configurados falharam ao responder. Tente de novo em instantes."

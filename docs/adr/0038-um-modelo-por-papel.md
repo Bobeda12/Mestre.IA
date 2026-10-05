@@ -39,10 +39,11 @@ Cada chamada declara um **papel**, e cada papel tem a própria lista de modelos
 
 - **volume** (turno, guardrail, Oráculo): 3.5 Flash Lite primeiro; os Flash de 20/dia como
   reserva; 3.1 Flash Lite por último.
-- **destaque** (prólogo, morte, epitáfio, desfecho, crônica): 3.5 Flash, 3.6 Flash e logo o
-  3.5 Flash Lite, que é o único com prólogo bom comprovado e cota para repetir; os outros
-  Flash ficam depois. O 2.5 Flash respondeu rápido a pedidos mínimos, mas no prólogo deu 1
-  resultado válido em 5 (2 descartados na validação, 2 estouros de tempo).
+- **destaque** (prólogo, morte, epitáfio, desfecho, crônica): os dois Flash Lite primeiro, os
+  Flash com o tempo que sobrar. A intenção original era o contrário (modelo maior para o
+  texto lido com atenção), mas a medição não sustentou: no prólogo o 3.5 Flash Lite entregou
+  13 de 13 em 4 a 21 s; os Flash levaram 28 a 47 s quando responderam e, em duas baterias
+  seguidas, não entregaram nenhum de 7. Ver diário 0043.
 - **fundo** (resumo da memória): 3.1 Flash Lite, depois 3.5 Flash Lite.
 
 Junto com os papéis, a cadeia mudou de comportamento diante de erro:
@@ -65,6 +66,8 @@ Junto com os papéis, a cadeia mudou de comportamento diante de erro:
   (401/403) encerra no primeiro modelo. Como o cliente da chave do jogador é criado a cada
   chamada (para a chave não ficar guardada), as pausas e contagens dele ficam numa conta
   identificada pelo hash SHA-256 da chave, no máximo 256 contas em memória.
+- **Modelo rápido tem tempo limite próprio** (`settings.timeouts_modelo`: 22 s nos Flash
+  Lite), valendo o menor entre ele e o do papel.
 - **A fila inteira tem prazo por papel** (`settings.prazos_ia`: 45 s no volume, 90 s no
   destaque, 60 s no fundo). Só com o limite por chamada, um prólogo levou 201 s ao vivo: seis
   modelos falharam em sequência. Acabou o prazo, a chamada falha e quem chamou usa a sua saída
@@ -96,7 +99,9 @@ Junto com os papéis, a cadeia mudou de comportamento diante de erro:
 - O 3.1 Flash Lite é fraco: caiu numa injeção de prompt, deixou 2 turnos sem narração e
   devolveu 503 em 12 de 30 chamadas. Por isso fica no fim da lista de volume.
 - Três listas para manter, e nomes de modelo e cotas gratuitas que mudam sem aviso.
-- A voz pode mudar entre o prólogo (Flash) e os turnos (Lite).
+- O papel de destaque perdeu, na prática, o modelo maior: hoje prólogo e turno abrem pelo
+  mesmo 3.5 Flash Lite. A separação em papéis continua valendo pelo que cada um tolera
+  (prazo, tempo limite, ordem da reserva), não mais pela qualidade do primeiro modelo.
 
 **Fica em aberto:**
 - O contador é uma estimativa local: zera quando o processo reinicia (o Render gratuito
@@ -137,7 +142,8 @@ Junto com os papéis, a cadeia mudou de comportamento diante de erro:
 
 ## Referências
 
-- [Diário 0041](../diario/0041-prologo-sob-medida.md) e [Diário 0042](../diario/0042-um-modelo-por-papel.md)
+- [Diário 0041](../diario/0041-prologo-sob-medida.md), [Diário 0042](../diario/0042-um-modelo-por-papel.md)
+  e [Diário 0043](../diario/0043-negrito-dourado-e-prologo-que-nao-desiste.md)
 - [ADR-0008](0008-cadeia-de-fallback-de-modelo.md), [ADR-0024](0024-cadeia-multi-provedor-groq-gemini.md)
 - Painel de limites da conta: https://ai.dev/rate-limit (os números acima são de 05/10/2026)
 - Fórum Google AI: [503 no plano gratuito](https://discuss.ai.google.dev/t/repeated-503-unavailable-on-free-tier-including-a-tiny-text-only-generatecontent-request-from-apps-script/185898),

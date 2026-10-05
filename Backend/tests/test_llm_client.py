@@ -286,6 +286,29 @@ def test_prazo_total_do_papel_encerra_a_fila(monkeypatch):
     assert agora[0] <= total
 
 
+def test_modelo_rapido_tem_tempo_limite_proprio_menor_que_o_do_papel(monkeypatch):
+    # Achado ao vivo (05/10/2026): o Flash Lite, que responde em segundos,
+    # ficou 50 s pendurado e gastou mais da metade do prazo do prólogo.
+    from app.infra.settings import settings
+
+    recebidos: list[tuple[str, float]] = []
+
+    class _Completions:
+        def create(self, **kwargs):
+            recebidos.append((kwargs["model"], kwargs["timeout"]))
+            raise _erro_timeout()
+
+    fake = type("Cliente", (), {"chat": type("Chat", (), {"completions": _Completions()})()})()
+    monkeypatch.setattr(llm_client, "clients", {"gemini": fake})
+    monkeypatch.setitem(llm_client.CADEIAS, "destaque", [("gemini", "rapido"), ("gemini", "lento")])
+    monkeypatch.setattr(settings, "timeouts_modelo", {"rapido": 10.0})
+
+    with pytest.raises(ErroMestre):
+        chamar_com_fallback([], papel="destaque")
+
+    assert recebidos == [("rapido", 10.0), ("lento", settings.timeouts_ia["destaque"])]
+
+
 def test_cada_chamada_da_cadeia_leva_o_tempo_limite_do_papel(monkeypatch):
     from app.infra.settings import settings
 
@@ -375,8 +398,9 @@ def test_cadeias_padrao_poem_o_modelo_de_cota_alta_no_volume():
 
     padrao = Settings(_env_file=None)
     assert padrao.cadeia_volume[0] == "gemini:gemini-3.5-flash-lite"
-    assert padrao.cadeia_destaque[0] != padrao.cadeia_volume[0]
-    assert "gemini:gemini-3.5-flash-lite" in padrao.cadeia_destaque
+    # O prólogo também abre pelo Lite: foi o único que entregou sempre e
+    # dentro do prazo (ver comentário em settings.cadeia_destaque).
+    assert padrao.cadeia_destaque[0] == "gemini:gemini-3.5-flash-lite"
     assert padrao.cadeia_fundo[0] != padrao.cadeia_volume[0]
 
 
@@ -509,13 +533,13 @@ class TestChamarComChaveUsuario:
         assert fake.chat.completions.chamadas == [primeiro]
 
     def test_cada_papel_usa_a_propria_cadeia(self, monkeypatch):
-        volume, destaque = _gemini_do_papel("volume")[0], _gemini_do_papel("destaque")[0]
-        assert volume != destaque
-        fake = self._fake_openai(monkeypatch, {volume: ["do volume"], destaque: ["do destaque"]})
+        monkeypatch.setitem(llm_client.CADEIAS, "volume", [("gemini", "do-volume")])
+        monkeypatch.setitem(llm_client.CADEIAS, "destaque", [("gemini", "do-destaque")])
+        fake = self._fake_openai(monkeypatch, {"do-volume": ["v"], "do-destaque": ["d"]})
 
-        assert chamar_com_chave_usuario(self.MSGS, api_key="chave") == "do volume"
-        assert chamar_com_chave_usuario(self.MSGS, api_key="chave", papel="destaque") == "do destaque"
-        assert fake.chat.completions.chamadas == [volume, destaque]
+        assert chamar_com_chave_usuario(self.MSGS, api_key="chave") == "v"
+        assert chamar_com_chave_usuario(self.MSGS, api_key="chave", papel="destaque") == "d"
+        assert fake.chat.completions.chamadas == ["do-volume", "do-destaque"]
 
     def test_nunca_usa_outro_provedor_nem_a_chave_do_servidor(self, monkeypatch):
         # Todos os elos Gemini falham por cota: vira ErroMestre. Os elos da

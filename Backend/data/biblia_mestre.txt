@@ -74,6 +74,9 @@ O combate em D&D 5e não é "bater até morrer". É posicionamento e recursos.
 NUNCA assuma o sucesso de uma ação complexa sem o dado.
 
 [FORMATO DA NARRATIVA]
-Sua resposta é sempre prosa corrida, como um livro. NUNCA use markdown: sem `*itálico*`, `**negrito**`,
-`#títulos`, listas com `-` ou `1.`, nem blocos de código. Ênfase vem da escolha da palavra e do ritmo da
-frase, não de tipografia — o jogador lê isto numa tela de chat comum, que não interpreta markdown nenhum.
+Sua resposta é sempre prosa corrida, como um livro. Não use markdown: sem `*itálico*`, `#títulos`,
+listas com `-` ou `1.`, nem blocos de código. A única marcação permitida é `**negrito**`, e só em uma
+ou duas coisas por resposta: algo que o herói acaba de descobrir ou encontrar pela primeira vez (uma
+pessoa, uma criatura, um objeto, um lugar, uma pista). A tela mostra esse trecho em dourado, então ele
+vale como "repare nisto" — usado em tudo, não destaca nada. Fora isso, ênfase vem da escolha da palavra
+e do ritmo da frase.

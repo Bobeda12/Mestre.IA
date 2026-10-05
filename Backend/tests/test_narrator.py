@@ -8,6 +8,7 @@ import json
 
 import httpx
 import openai
+import pytest
 
 from app.domain.character import CharacterCreationRequest
 from app.domain.memoria import ResumoRolante
@@ -224,14 +225,142 @@ class TestGerarPrologoMissaoLocalInicial:
         assert roteiro["local_inicial"] == local_novo
         assert roteiro["mundo_inicial"]["cenas"][local_novo]
 
-    def test_local_sem_mundo_coerente_cai_na_origem_validada(self, monkeypatch):
+    def test_cena_com_outro_nome_assume_o_do_local_inicial(self, monkeypatch):
+        # Quinto achado ao vivo (05/10/2026, Gemini 2.5 Flash): a cena
+        # existia, mas a chave dela não era o `local_inicial`. Antes isto
+        # descartava a resposta inteira ("Origem sem cena coerente").
         from app.services.emergent_start import criar_origem
         corpo = criar_origem(_personagem_criacao(), 9)
         corpo["local_inicial"] = "Observatório sem registro"
+        corpo["intro_narrativa"] = "Texto original numa cena cujo nome não batia com o local."
         monkeypatch.setattr(llm_client, "clients", {llm_client.CADEIAS["destaque"][0][0]: _ClienteFalso(corpo)})
+
         roteiro = gerar_prologo_missao(_personagem_criacao(), semente=5)
-        assert roteiro["local_inicial"] in roteiro["mundo_inicial"]["cenas"]
-        assert roteiro["local_inicial"] != "Observatório sem registro"
+
+        assert roteiro["intro_narrativa"] == "Texto original numa cena cujo nome não batia com o local."
+        assert roteiro["local_inicial"] == "Observatório sem registro"
+        mundo = roteiro["mundo_inicial"]
+        assert list(mundo["cenas"]) == ["Observatório sem registro"]
+        assert {p["local"] for p in mundo["pessoas"].values()} == {"Observatório sem registro"}
+        assert {c["local"] for c in mundo["conflitos"].values()} == {"Observatório sem registro"}
+
+    def test_chave_sem_aspas_no_json_e_lida_mesmo_assim(self, monkeypatch):
+        # Achado ao vivo (05/10/2026): o "modo JSON" do Gemini devolveu
+        # 3.500 caracteres perfeitos exceto por `name_missao: "..."` — chave
+        # sem aspas e com o nome errado. Custava o prólogo inteiro.
+        from app.services.emergent_start import criar_origem
+        corpo = criar_origem(_personagem_criacao(), 9)
+        corpo["intro_narrativa"] = "Texto original que veio num JSON quase válido."
+        del corpo["nome_missao"]
+        texto = json.dumps(corpo, ensure_ascii=False, indent=2)
+        texto = texto.replace('  "clima_inicial"', '  name_missao: "O Rastro do Corvo",\n  "clima_inicial"', 1)
+        with pytest.raises(json.JSONDecodeError):
+            json.loads(texto)
+        cliente = _ClienteFalso({})
+        cliente._resposta = _RespostaFalsa(texto)
+        monkeypatch.setattr(llm_client, "clients", {llm_client.CADEIAS["destaque"][0][0]: cliente})
+
+        roteiro = gerar_prologo_missao(_personagem_criacao(), semente=5)
+
+        assert roteiro["intro_narrativa"] == "Texto original que veio num JSON quase válido."
+        # A chave errada que o modelo escreveu é aproveitada como título.
+        assert roteiro["nome_missao"] == "O Rastro do Corvo"
+
+    def test_campo_nulo_e_texto_longo_demais_nao_derrubam_o_prologo(self, monkeypatch):
+        from app.services.emergent_start import criar_origem
+        corpo = criar_origem(_personagem_criacao(), 9)
+        corpo["intro_narrativa"] = "Texto original com um mundo que só precisava de aparo."
+        pessoa = next(iter(corpo["mundo_inicial"]["pessoas"].values()))
+        pessoa["medo"] = None  # o schema tem padrão "", mas recusa null
+        pessoa["descricao"] = "x" * 2000  # limite do schema: 500
+        monkeypatch.setattr(llm_client, "clients", {llm_client.CADEIAS["destaque"][0][0]: _ClienteFalso(corpo)})
+
+        roteiro = gerar_prologo_missao(_personagem_criacao(), semente=5)
+
+        assert roteiro["intro_narrativa"] == "Texto original com um mundo que só precisava de aparo."
+        salva = roteiro["mundo_inicial"]["pessoas"][pessoa["id"]]
+        assert salva["medo"] == "" and len(salva["descricao"]) == 500
+
+    def test_mundo_acima_do_teto_e_cortado_em_vez_de_descartado(self, monkeypatch):
+        from app.services.emergent_start import criar_origem
+        corpo = criar_origem(_personagem_criacao(), 9)
+        corpo["intro_narrativa"] = "Texto original com gente demais na cena."
+        local = corpo["local_inicial"]
+        modelo_de_pessoa = next(iter(corpo["mundo_inicial"]["pessoas"].values()))
+        for i in range(12):
+            corpo["mundo_inicial"]["pessoas"][f"extra_{i}"] = {
+                **modelo_de_pessoa, "id": f"extra_{i}", "nome": f"Figurante {i}", "local": "Lugar que não existe",
+            }
+        monkeypatch.setattr(llm_client, "clients", {llm_client.CADEIAS["destaque"][0][0]: _ClienteFalso(corpo)})
+
+        roteiro = gerar_prologo_missao(_personagem_criacao(), semente=5)
+
+        pessoas = roteiro["mundo_inicial"]["pessoas"]
+        assert roteiro["intro_narrativa"] == "Texto original com gente demais na cena."
+        assert len(pessoas) == 8
+        assert {p["local"] for p in pessoas.values()} == {local}
+        # As duas pessoas que o modelo pôs no local inicial ficam; o corte pega os figurantes.
+        assert {"interlocutora", "responsavel"} <= set(pessoas)
+
+    def test_opcoes_invalidas_viram_opcoes_da_cena_criada_pelo_modelo(self, monkeypatch):
+        # Antes caíam nas opções da origem determinística: "Examinar
+        # Registro de entregas" numa cena que não tinha registro nenhum.
+        from app.services.emergent_start import criar_origem
+        corpo = criar_origem(_personagem_criacao(), 9)
+        local = corpo["local_inicial"]
+        entidades = corpo["mundo_inicial"]["cenas"][local]["entidades"]
+        entidades["registro"]["nome"] = "Mapa lacrado"
+        corpo["opcoes"] = ["só uma"]
+        monkeypatch.setattr(llm_client, "clients", {llm_client.CADEIAS["destaque"][0][0]: _ClienteFalso(corpo)})
+
+        roteiro = gerar_prologo_missao(_personagem_criacao(), semente=5)
+
+        assert roteiro["opcoes"][0] == "Examinar Mapa lacrado"
+        assert len(roteiro["opcoes"]) == 3
+
+    def test_resposta_irreparavel_ganha_nova_tentativa_com_o_motivo(self, monkeypatch):
+        from app.services.emergent_start import criar_origem
+        bom = criar_origem(_personagem_criacao(), 9)
+        bom["intro_narrativa"] = "Texto original que só veio na segunda tentativa."
+        ruim = {**bom, "intro_narrativa": "<os 3 parágrafos>"}  # o modelo devolveu o molde
+        respostas = [_RespostaFalsa(json.dumps(ruim)), _RespostaFalsa(json.dumps(bom))]
+        pedidos: list[str] = []
+
+        def _falso(msgs, **kwargs):
+            pedidos.append(msgs[0]["content"])
+            return respostas.pop(0)
+
+        monkeypatch.setattr(llm_client, "clients", {"gemini": object()})
+        monkeypatch.setattr(llm_client, "chamar_com_fallback", _falso)
+
+        roteiro = gerar_prologo_missao(_personagem_criacao(), semente=5)
+
+        assert roteiro["intro_narrativa"] == "Texto original que só veio na segunda tentativa."
+        assert "[CORREÇÃO]" not in pedidos[0]
+        assert "[CORREÇÃO]" in pedidos[1] and "molde entre < >" in pedidos[1]
+
+    def test_tentativas_param_quando_o_prazo_do_prologo_acaba(self, monkeypatch):
+        # O jogador não pode esperar minutos: perto dos 100 s um proxy de
+        # hospedagem corta a requisição, e isso é pior que o texto de reserva.
+        from app.services import narrator
+        from app.services.emergent_start import criar_origem
+        agora = [0.0]
+        monkeypatch.setattr(narrator.time, "monotonic", lambda: agora[0])
+        prazos: list[float] = []
+
+        def _lento(msgs, **kwargs):
+            prazos.append(kwargs["prazo"])
+            agora[0] += 50  # cada chamada consome 50 s e falha
+            raise llm_client.ErroMestre("Todos os modelos configurados falharam ao responder.")
+
+        monkeypatch.setattr(llm_client, "clients", {"gemini": object()})
+        monkeypatch.setattr(llm_client, "chamar_com_fallback", _lento)
+        heroi = _personagem_criacao()
+
+        roteiro = gerar_prologo_missao(heroi, semente=5)
+
+        assert roteiro["intro_narrativa"] == criar_origem(heroi, 5)["intro_narrativa"]
+        assert prazos == [narrator._PRAZO_PROLOGO, narrator._PRAZO_PROLOGO - 50]
 
     def test_cenas_pessoas_conflitos_soltos_no_topo_sao_aceitos(self, monkeypatch):
         # Achado ao vivo (Groq): o modelo às vezes devolve cenas/pessoas/

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import RetratoPixelado from './RetratoPixelado';
 import { useVelocidadeTexto } from '../lib/config';
+import { renderizarNarrativa } from '../lib/utils';
 
 // Etapa 11 (B-7) — o prólogo (narrator.gerar_prologo_missao) sempre existiu
 // como texto pronto, mas virava só mais uma bolha de chat igual às outras
@@ -97,7 +98,9 @@ export default function Prologo({
             tabIndex={0}
             className="cursor-pointer text-gray-100 leading-relaxed whitespace-pre-wrap font-hand text-lg md:text-xl max-w-[62ch] max-h-[46vh] overflow-y-auto custom-scrollbar pr-2"
           >
-            {visivel}
+            {/* Mesmo destaque dourado do log: `**trecho**` vira <strong>. Um `**`
+                ainda sem par, no meio da digitação, fica escondido até fechar. */}
+            {renderizarNarrativa(visivel)}
             {!concluido && <span className="animate-pulse">▋</span>}
           </div>
 

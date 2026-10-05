@@ -31,6 +31,7 @@ from app.services.guardrail import (
     extrair_opcoes,
     limpar_formatacao,
     opcoes_padrao,
+    sem_negrito,
     validar_narrativa,
 )
 from app.services.living_world import condicoes_arco, migrar_mundo, painel_mundo
@@ -626,7 +627,7 @@ async def chat_endpoint(
         heroi.id,
         w_state.turno,
         "morte" if eventos_morte else "turno",
-        f"{user_input.action} → {narrativa[:300]}",
+        f"{user_input.action} → {sem_negrito(narrativa)[:300]}",
         [i.nome for i in c_state.inimigos],
         chamar_fn_barato=chave.chamar_fn_barato,
         embed_fn=chave.embed_fn,
@@ -850,7 +851,7 @@ def chat_stream_endpoint(
             heroi_id=heroi.id,
             turno=w_state.turno,
             tipo="morte" if eventos_morte else "turno",
-            texto=f"{user_input.action} → {narrativa[:300]}",
+            texto=f"{user_input.action} → {sem_negrito(narrativa)[:300]}",
             personagens=[i.nome for i in c_state.inimigos],
             chamar_fn_barato=chave.chamar_fn_barato,
             embed_fn=chave.embed_fn,

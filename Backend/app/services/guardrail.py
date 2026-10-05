@@ -16,21 +16,27 @@ __all__ = [
     "corrigir_narrativa",
     "extrair_opcoes",
     "limpar_formatacao",
+    "sem_negrito",
     "opcoes_padrao",
     "validar_narrativa",
 ]
 
-# Etapa 10 (A-7) — o prompt pede prosa sem títulos/listas/código, e desde a
-# rodada de polish "juice" pós-remaster passou a permitir **negrito** só em
-# nome de item/lugar/achado novo (destaque dourado no frontend, ver
-# renderizarNarrativa em Frontend/src/lib/utils.tsx) — mas pedir ao modelo é
-# a primeira linha, não a que vale: isto é a segunda, determinística,
-# aplicada antes de PERSISTIR. Importa persistir limpo (sem `**` nenhum,
-# mesmo do uso permitido) porque o histórico vira contexto do próximo turno
-# — markdown no histórico ensina o modelo a formatar mais, não menos; o
-# destaque dourado só existe ao vivo, nos frames `token` do turno atual, que
-# não passam por aqui.
-_PADRAO_NEGRITO_ITALICO = re.compile(r"\*{1,3}([^*\n]+?)\*{1,3}")
+# Etapa 10 (A-7) — o prompt pede prosa sem títulos/listas/código e permite
+# **negrito** só em uma ou duas descobertas novas (destaque dourado no
+# frontend, ver renderizarNarrativa em Frontend/src/lib/utils.tsx). Pedir ao
+# modelo é a primeira linha, não a que vale: isto é a segunda,
+# determinística, aplicada antes de PERSISTIR.
+#
+# Até 05/10/2026 o negrito também era apagado aqui, com o argumento de que
+# markdown no histórico ensina o modelo a formatar mais. O efeito para o
+# jogador era o destaque dourado aparecer enquanto o texto chegava e sumir
+# quando o turno fechava (e nunca voltar ao recarregar). Agora o negrito é
+# preservado e o excesso é que é cortado: no máximo `MAX_DESTAQUES` por
+# narração, os demais viram texto comum.
+MAX_DESTAQUES = 3
+_PADRAO_NEGRITO = re.compile(r"\*\*([^*\n]+?)\*\*")
+_PADRAO_NEGRITO_ITALICO_JUNTOS = re.compile(r"\*{3}([^*\n]+?)\*{3}")
+_PADRAO_ITALICO = re.compile(r"(?<!\*)\*(?![\s*])([^*\n]+?)(?<![\s*])\*(?!\*)")
 _PADRAO_TITULO = re.compile(r"^#{1,6}\s*", flags=re.MULTILINE)
 _PADRAO_LISTA = re.compile(r"^\s*(?:[-*+]|\d+\.)\s+", flags=re.MULTILINE)
 _PADRAO_BLOCO_CODIGO = re.compile(r"```.*?```", flags=re.DOTALL)
@@ -54,7 +60,7 @@ def extrair_opcoes(texto: str) -> tuple[str, list[str]]:
     m = _PADRAO_OPCOES.search(texto)
     if not m:
         return texto, []
-    opcoes = [o.strip(" .") for o in m.group(1).split("|") if o.strip()]
+    opcoes = [sem_negrito(o).strip(" .") for o in m.group(1).split("|") if o.strip()]
     return texto[: m.start()].rstrip(), opcoes[:3]
 
 
@@ -79,21 +85,36 @@ def opcoes_padrao(heroi: Personagem, c_state: CombatState) -> list[str]:
     return ["Observar os arredores", "Seguir em frente", "Verificar o inventário"]
 
 
+def sem_negrito(texto: str) -> str:
+    """O texto sem os `**` de destaque — para tudo que não é a tela do
+    jogador: checagem do guardrail, memória de longo prazo, botões de opção."""
+    return _PADRAO_NEGRITO.sub(r"\1", texto)
+
+
 def limpar_formatacao(texto: str) -> str:
-    """Remove marcação markdown da narrativa, mantendo o texto — o jogador
-    nunca deveria ver um `**`/`#`/`-` cru numa tela de chat que não
-    interpreta markdown nenhum (`GameChat.tsx` renderiza texto puro)."""
+    """Remove marcação markdown da narrativa, mantendo o texto. A única que
+    sobrevive é `**negrito**`, que a tela desenha em dourado — e só os
+    primeiros `MAX_DESTAQUES` de cada narração."""
     texto = _PADRAO_BLOCO_CODIGO.sub(lambda m: m.group(0).strip("`"), texto)
     texto = _PADRAO_CODIGO_INLINE.sub(r"\1", texto)
-    texto = _PADRAO_NEGRITO_ITALICO.sub(r"\1", texto)
+    texto = _PADRAO_NEGRITO_ITALICO_JUNTOS.sub(r"**\1**", texto)
+    texto = _PADRAO_ITALICO.sub(r"\1", texto)
     texto = _PADRAO_TITULO.sub("", texto)
     texto = _PADRAO_LISTA.sub("", texto)
-    return texto
+    vistos = 0
+
+    def _limitar(m: re.Match) -> str:
+        nonlocal vistos
+        vistos += 1
+        return m.group(0) if vistos <= MAX_DESTAQUES else m.group(1)
+
+    return _PADRAO_NEGRITO.sub(_limitar, texto)
 
 
 def validar_narrativa(texto: str, heroi: Personagem, c_state: CombatState, w_state: WorldState) -> list[str]:
     violacoes: list[str] = []
-    texto_lower = texto.lower()
+    # Sem os `**`: "**lobo** ataca" tem de casar com "lobo ataca".
+    texto_lower = sem_negrito(texto).lower()
 
     # Itens de outros personagens (bestiário/armas conhecidas) citados como
     # "seu/sua X" sem estarem no inventário do herói.

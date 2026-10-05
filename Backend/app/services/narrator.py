@@ -1,11 +1,20 @@
 import json
+import random
 import re
+import time
 import unicodedata
 from collections.abc import Callable
 from typing import Any
 
 from app.domain.character import CharacterCreationRequest
-from app.domain.living_world import SAIDA_LIVRE
+from app.domain.living_world import (
+    SAIDA_LIVRE,
+    Arco,
+    CenaPersistente,
+    ConflitoMundo,
+    EntidadeCena,
+    PessoaMundo,
+)
 from app.domain.memoria import ResumoRolante
 from app.domain.state import CombatState, QuestLog, WorldState
 from app.infra import llm_client
@@ -16,6 +25,7 @@ from app.services import rules_engine as motor
 from app.services.contexto_ia import contexto_mundo, selecionar, serializar
 from app.services.emergent_start import criar_origem, validar_mundo_inicial
 from app.services.encounters import painel_cena
+from app.services.guardrail import limpar_formatacao, sem_negrito
 from app.services.imersao import direcao_cena
 from app.services.progression import painel_progressao
 
@@ -44,12 +54,24 @@ TEMPERAMENTO_INSTRUCAO: dict[str, str] = {
 }
 
 
+def _texto_puro(texto: str) -> str:
+    """Epitáfio, desfecho de capítulo e crônica aparecem em telas que não
+    desenham o destaque dourado: ali nenhum asterisco pode sobrar."""
+    return sem_negrito(limpar_formatacao(texto))
+
+
 def secao_tom_mestre(temperamento: str) -> str:
     instrucao = TEMPERAMENTO_INSTRUCAO.get(temperamento, TEMPERAMENTO_INSTRUCAO["Justo"])
     return f"[TOM DO MESTRE] {instrucao}"
 
 
-def chamar_mestre(msgs: list[dict], chamar_fn: Callable[..., Any] | None = None) -> dict:
+def chamar_mestre(
+    msgs: list[dict],
+    chamar_fn: Callable[..., Any] | None = None,
+    *,
+    prazo: float | None = None,
+    repetir_json: bool = True,
+) -> dict:
     """Chama o LLM e devolve o JSON já decodificado, ou levanta ErroMestre
     (nunca engole o erro em silêncio — ver ADR-0002, Etapa 1).
 
@@ -66,31 +88,53 @@ def chamar_mestre(msgs: list[dict], chamar_fn: Callable[..., Any] | None = None)
     Agora usa `chamar_com_fallback`, o mesmo caminho resiliente que todo
     turno de jogo já usa (ADR-0008/ADR-0024)."""
     if chamar_fn is not None:
-        resp = chamar_fn(msgs, response_format={"type": "json_object"})
-    else:
-        if not llm_client.clients:
-            raise ErroMestre(
-                "O mestre está sem acesso à IA — falta configurar ao menos uma chave de API "
-                "no servidor (GROQ_API_KEY ou GEMINI_API_KEY)."
-            )
-        resp = _chamar_destaque_json(msgs)
-
+        return _ler_json(chamar_fn(msgs, response_format={"type": "json_object"}))
+    if not llm_client.clients:
+        raise ErroMestre(
+            "O mestre está sem acesso à IA — falta configurar ao menos uma chave de API "
+            "no servidor (GROQ_API_KEY ou GEMINI_API_KEY)."
+        )
     try:
-        return json.loads(resp.choices[0].message.content)
-    except (json.JSONDecodeError, AttributeError, TypeError, IndexError) as e:
-        if chamar_fn is not None:
-            raise ErroMestre("O mestre respondeu num formato que não consegui entender.") from e
+        return _ler_json(_chamar_destaque_json(msgs, prazo))
+    except ErroMestre:
+        if not repetir_json:
+            raise
     # Achado ao vivo (05/10/2026): o Flash Lite às vezes devolve um JSON
     # quebrado e acerta na chamada seguinte, com o mesmo prompt. Uma nova
-    # tentativa custa uma chamada; desistir custava o prólogo inteiro.
+    # tentativa custa uma chamada; desistir custava o texto inteiro.
+    return _ler_json(_chamar_destaque_json(msgs, prazo))
+
+
+def _chamar_destaque_json(msgs: list[dict], prazo: float | None = None) -> Any:
+    return llm_client.chamar_com_fallback(
+        msgs, response_format={"type": "json_object"}, papel="destaque", prazo=prazo
+    )
+
+
+_CERCA_DE_CODIGO = re.compile(r"^\s*```(?:json)?\s*|\s*```\s*$")
+_CHAVE_SEM_ASPAS = re.compile(r"(?m)^(\s*)([A-Za-z_][A-Za-z0-9_]*)(\s*:)")
+_VIRGULA_SOBRANDO = re.compile(r",(\s*[}\]])")
+
+
+def _ler_json(resp: Any) -> dict:
+    """Decodifica o JSON da resposta, consertando os deslizes de forma que
+    não mudam o conteúdo. Achado ao vivo (05/10/2026): o "modo JSON" do
+    Gemini não garante JSON válido — uma resposta de 3.500 caracteres veio
+    perfeita exceto por uma linha `name_missao: "..."`, com a chave sem
+    aspas. Descartar tudo por isso custava o prólogo."""
     try:
-        return json.loads(_chamar_destaque_json(msgs).choices[0].message.content)
+        texto = resp.choices[0].message.content
+        if not isinstance(texto, str):
+            raise TypeError("resposta sem texto")
+        try:
+            return json.loads(texto)
+        except json.JSONDecodeError:
+            consertado = _CERCA_DE_CODIGO.sub("", texto)
+            consertado = _CHAVE_SEM_ASPAS.sub(r'\1"\2"\3', consertado)
+            consertado = _VIRGULA_SOBRANDO.sub(r"\1", consertado)
+            return json.loads(consertado)
     except (json.JSONDecodeError, AttributeError, TypeError, IndexError) as e:
         raise ErroMestre("O mestre respondeu num formato que não consegui entender.") from e
-
-
-def _chamar_destaque_json(msgs: list[dict]) -> Any:
-    return llm_client.chamar_com_fallback(msgs, response_format={"type": "json_object"}, papel="destaque")
 
 
 # Chaves de app.domain.living_world.MundoVivo — todas têm default, então um
@@ -125,6 +169,162 @@ def _normalizar_mundo_inicial(roteiro: dict, mundo_padrao: dict) -> dict:
         if chave not in mundo and chave in roteiro:
             mundo[chave] = roteiro[chave]
     return mundo
+
+
+def _sem_acento(texto: str) -> str:
+    return unicodedata.normalize("NFKD", texto).encode("ascii", "ignore").decode("ascii").casefold().strip()
+
+
+def _cena_do_local(cenas: dict, pessoas: dict, local: str) -> str:
+    """Qual cena o modelo quis dizer que é o local inicial, quando nenhuma
+    chave de `cenas` bate exatamente com `local_inicial`."""
+    alvo = _sem_acento(local)
+    for nome in cenas:
+        if _sem_acento(nome) == alvo:
+            return nome
+    for nome in cenas:
+        if alvo in _sem_acento(nome) or _sem_acento(nome) in alvo:
+            return nome
+    if len(cenas) == 1:
+        return next(iter(cenas))
+    return max(cenas, key=lambda nome: sum(1 for p in pessoas.values() if p.get("local") == nome))
+
+
+def _reparar_estrutura_mundo_inicial(mundo: dict, local: str) -> dict:
+    """Quinto achado ao vivo (05/10/2026, Gemini 2.5 Flash): duas respostas
+    seguidas foram descartadas com "Origem sem cena coerente ou maior que o
+    limite inicial" — a cena existia, mas com outro nome que não o de
+    `local_inicial`, ou o mundo passava dos tetos. Mesma lógica de "reparar
+    em vez de descartar":
+
+    - a cena que mais parece ser o local inicial assume o nome dele (e quem
+      apontava para o nome antigo acompanha);
+    - pessoa ou conflito num lugar que não existe vem para o local inicial;
+    - o que passa dos tetos (8 cenas, 8 pessoas, 4 conflitos, 20 entidades
+      por cena) é cortado, ficando primeiro o que está no local inicial e,
+      nas entidades, as saídas."""
+    mundo = dict(mundo)
+    cenas = {str(k).strip(): dict(v) for k, v in (mundo.get("cenas") or {}).items() if isinstance(v, dict)}
+    pessoas = {k: dict(v) for k, v in (mundo.get("pessoas") or {}).items() if isinstance(v, dict)}
+    conflitos = {k: dict(v) for k, v in (mundo.get("conflitos") or {}).items() if isinstance(v, dict)}
+    if not cenas:
+        return mundo  # sem cena nenhuma não há o que consertar; a validação recusa
+
+    if local not in cenas:
+        antiga = _cena_do_local(cenas, pessoas, local)
+        cenas = {(local if nome == antiga else nome): cena for nome, cena in cenas.items()}
+        for item in (*pessoas.values(), *conflitos.values()):
+            if item.get("local") == antiga:
+                item["local"] = local
+    for item in (*pessoas.values(), *conflitos.values()):
+        if item.get("local") not in cenas:
+            item["local"] = local
+
+    cenas = dict(sorted(cenas.items(), key=lambda par: par[0] != local)[:8])
+    for cena in cenas.values():
+        entidades = {k: v for k, v in (cena.get("entidades") or {}).items() if isinstance(v, dict)}
+        cena["entidades"] = dict(sorted(entidades.items(), key=lambda par: par[1].get("tipo") != "saida")[:20])
+    pessoas = dict(sorted(pessoas.items(), key=lambda par: par[1].get("local") != local)[:8])
+    conflitos = dict(sorted(conflitos.items(), key=lambda par: par[1].get("local") != local)[:4])
+    for item in (*pessoas.values(), *conflitos.values()):
+        if item.get("local") not in cenas:  # a cena dele foi cortada pelo teto
+            item["local"] = local
+
+    mundo["cenas"], mundo["pessoas"], mundo["conflitos"] = cenas, pessoas, conflitos
+    return mundo
+
+
+def _aparar(modelo: type, dados: dict) -> dict:
+    """Ajusta um item ao que o schema aceita sem mudar o sentido: tira campo
+    `null` (o schema tem padrão para quase todos e recusa `null`) e corta
+    texto ou lista maior que o `max_length` do campo. Um parágrafo longo
+    demais numa descrição não é motivo para jogar o prólogo fora."""
+    aparado = {k: v for k, v in dados.items() if v is not None}
+    for nome, campo in modelo.model_fields.items():  # type: ignore[attr-defined]
+        valor = aparado.get(nome)
+        maximo = next((m.max_length for m in campo.metadata if getattr(m, "max_length", None)), None)
+        if maximo and isinstance(valor, str | list) and len(valor) > maximo:
+            aparado[nome] = valor[:maximo]
+    return aparado
+
+
+def _entre(valor: object, minimo: int, maximo: int, padrao: int) -> int:
+    return max(minimo, min(maximo, valor)) if isinstance(valor, int) and not isinstance(valor, bool) else padrao
+
+
+def _texto(valor: object) -> str:
+    return valor.strip() if isinstance(valor, str) else ""
+
+
+def _aparar_mundo_inicial(mundo: dict) -> dict:
+    """Passa `_aparar` em cada peça e completa ou remove o que o schema
+    exige e veio faltando: pessoa sem nome sai, pessoa sem objetivo ganha um
+    neutro, entidade sem nome usa o id, conflito sem nome/objetivo/sinal/
+    consequência sai (conflitos são dispensáveis), arco sem título usa o
+    nome do conflito."""
+    mundo = dict(mundo)
+    pessoas = {}
+    for chave, pessoa in (mundo.get("pessoas") or {}).items():
+        pessoa = _aparar(PessoaMundo, pessoa)
+        if not _texto(pessoa.get("nome")):
+            continue
+        if not _texto(pessoa.get("objetivo")):
+            pessoa["objetivo"] = "seguir com o que estava fazendo antes de ser interrompido"
+        if "confianca" in pessoa:
+            pessoa["confianca"] = _entre(pessoa["confianca"], -100, 100, 0)
+        pessoas[chave] = pessoa
+    mundo["pessoas"] = pessoas
+
+    cenas = {}
+    for nome_cena, cena in (mundo.get("cenas") or {}).items():
+        cena = _aparar(CenaPersistente, cena)
+        entidades = {}
+        for chave, entidade in (cena.get("entidades") or {}).items():
+            entidade = _aparar(EntidadeCena, entidade)
+            if not _texto(entidade.get("nome")):
+                entidade["nome"] = str(entidade.get("id") or chave).replace("_", " ")
+            entidades[chave] = entidade
+        cenas[nome_cena] = {**cena, "entidades": entidades}
+    mundo["cenas"] = cenas
+
+    conflitos = {}
+    for chave, conflito in (mundo.get("conflitos") or {}).items():
+        conflito = _aparar(ConflitoMundo, conflito)
+        if not all(_texto(conflito.get(campo)) for campo in ("nome", "objetivo", "sinal", "consequencia")):
+            continue
+        conflito["intervalo"] = _entre(conflito.get("intervalo"), 10, 1440, 90)
+        conflito["etapas"] = _entre(conflito.get("etapas"), 2, 8, 4)
+        conflitos[chave] = conflito
+    mundo["conflitos"] = conflitos
+
+    arcos = []
+    for arco in mundo.get("arcos") or []:
+        if not isinstance(arco, dict):
+            continue
+        arco = _aparar(Arco, arco)
+        central = conflitos.get(arco.get("conflito_central"), {})
+        if not _texto(arco.get("titulo")):
+            arco["titulo"] = central.get("nome", "")
+        if _texto(arco.get("titulo")):
+            arcos.append(arco)
+    mundo["arcos"] = arcos
+    return mundo
+
+
+def _opcoes_do_mundo(mundo: dict, local: str) -> list[str]:
+    """Três sugestões montadas a partir da cena que o próprio modelo criou.
+    Antes, opções inválidas (em falta, ou longas demais) eram trocadas pelas
+    da origem determinística — "Examinar Registro de entregas" numa cena
+    que não tinha registro nenhum."""
+    entidades = list(mundo["cenas"][local]["entidades"].values())
+    para_examinar = next((e for e in entidades if "investigavel" in e.get("propriedades", [])), None)
+    para_examinar = para_examinar or next((e for e in entidades if e.get("tipo") != "saida"), None)
+    saida = next(e for e in entidades if e.get("tipo") == "saida")
+    return [
+        f"Examinar {para_examinar['nome']}" if para_examinar else "Olhar em volta com calma",
+        "Falar com quem está mais perto",
+        f"Seguir por {saida['nome']}",
+    ]
 
 
 def _reparar_lacunas_mundo_inicial(mundo: dict, local: str) -> dict:
@@ -337,6 +537,16 @@ def _sanitizar_ids_mundo_inicial(mundo: dict) -> dict:
     return mundo
 
 
+# Pontos de partida que não são taverna nem porto — ver `lugares_sugeridos`
+# em `gerar_prologo_missao`.
+_LUGARES_DE_PARTIDA = (
+    "feira de estrada", "mosteiro na encosta", "acampamento de caravana", "ponte com pedágio",
+    "mina desativada", "moinho à beira de um rio", "ruína ocupada por colonos", "posto de fronteira",
+    "vila de lenhadores", "santuário de peregrinos", "pedreira", "balsa de travessia",
+    "mercado de gado", "torre de vigia abandonada", "aldeia de pescadores de rio", "oficina de carroças",
+)
+
+
 # Formato do roteiro do prólogo, sem conteúdo: só as chaves e, entre < >, o
 # que vai em cada uma. Antes o exemplo era a origem determinística inteira
 # (`criar_origem`), e o modelo copiava a cena dela em vez de partir da ficha.
@@ -400,7 +610,6 @@ def gerar_prologo_missao(
     # chamada falhar; lugares novos só entram no mundo com uma descrição.
     locais_validos = regras.get_locations_list()
     abertura = criar_origem(char, semente)
-    local_padrao = abertura["local_inicial"]
 
     # BYOK (rodada de conserto) — com a chave do jogador, `chamar_clients`
     # do servidor pode estar vazio e mesmo assim o prólogo funciona.
@@ -425,6 +634,10 @@ def gerar_prologo_missao(
     # exemplo é um esqueleto sem conteúdo (`_ESQUELETO_ROTEIRO`), a ficha é
     # a matéria-prima declarada e a ordem é herói → chegada → gancho.
     historia = char.historia_texto.strip() or "(o jogador não escreveu)"
+    # Medido em 10 prólogos no Flash Lite: 7 em porto ou estalagem, quase
+    # todos com chuva, dois nomes repetidos três vezes. A semente da
+    # campanha sorteia três pontos de partida para tirar o modelo do molde.
+    lugares_sugeridos = ", ".join(random.Random(abertura["semente_aventura"]).sample(_LUGARES_DE_PARTIDA, 3))
     racas = ", ".join(regras.get_races_list() or ["Humano"])
     prompt = f"""
     {regras.get_biblia()}
@@ -442,7 +655,9 @@ def gerar_prologo_missao(
     jogador": o mundo segue indiferente, mas o ponto onde a história começa é escolhido a dedo.
     Teste: se a abertura servisse para outro personagem trocando só o nome, ela está errada.
     1. O lugar e o momento saem do objetivo: é onde alguém atrás desse objetivo estaria agora,
-       seguindo um rastro, um boato ou um nome.
+       seguindo um rastro, um boato ou um nome. Taverna, estalagem e porto debaixo de chuva são o
+       lugar-comum: só use se a ficha apontar para eles. Se a ficha não sugerir um lugar, parta
+       de um destes: {lugares_sugeridos}. Dê ao lugar um nome próprio que não seja genérico.
     2. Uma pessoa E um objeto investigável da cena tocam diretamente o objetivo ou o passado. Um
        detalhe concreto da ficha (um nome, um símbolo, um ofício, um lugar) reaparece aqui. Registre
        essa ligação na "pista" do objeto e no "objetivo" ou "segredo" da pessoa.
@@ -470,8 +685,9 @@ def gerar_prologo_missao(
     - Não decida ação, fala nem sentimento do herói além de ter chegado.
 
     [FORMATO]
-    Responda APENAS um JSON com exatamente esta estrutura. Os textos entre < > são instruções de
-    preenchimento, não conteúdo — substitua todos:
+    Responda APENAS um JSON válido com exatamente esta estrutura e estes nomes de chave, todas
+    entre aspas duplas. Os textos entre < > são instruções de preenchimento, não conteúdo —
+    substitua todos:
     {json.dumps(_ESQUELETO_ROTEIRO, ensure_ascii=False)}
     "cenas", "pessoas", "conflitos" e "arcos" vivem DENTRO de "mundo_inicial", nunca no nível
     superior. mundo_inicial.cenas usa o NOME do local como chave; entidades, pessoas e conflitos
@@ -488,27 +704,81 @@ def gerar_prologo_missao(
     introdução as apresentou — nunca frases genéricas como "explorar a área". Nunca decida pelo
     jogador.
     """
-    try:
-        roteiro = chamar_mestre([{"role": "user", "content": prompt}], chamar_fn=chamar_fn)
-    except ErroMestre as e:
-        print("ERRO NO PRÓLOGO:", e.mensagem)
-        return abertura
+    # Uma resposta ruim não manda o jogador direto para o texto de reserva:
+    # o pedido é refeito dizendo o que estava errado, enquanto couber no
+    # prazo. O prólogo é o primeiro contato com o jogo.
+    limite = time.monotonic() + _PRAZO_PROLOGO
+    pedido = prompt
+    for _tentativa in range(_TENTATIVAS_PROLOGO):
+        restante = limite - time.monotonic()
+        if restante < _FOLGA_MINIMA_PROLOGO:
+            break
+        try:
+            bruto = chamar_mestre(
+                [{"role": "user", "content": pedido}], chamar_fn=chamar_fn, prazo=restante, repetir_json=False
+            )
+            return _montar_roteiro(bruto, char, abertura, locais_validos)
+        except ErroMestre as e:
+            print("ERRO NO PRÓLOGO:", e.mensagem)
+            pedido = prompt
+        except _RoteiroInvalido as e:
+            # Sem isto o descarte era mudo: o jogador via o texto de reserva
+            # e nada no log dizia que o modelo tinha respondido.
+            print("PRÓLOGO DESCARTADO NA VALIDAÇÃO:", e)
+            pedido = (
+                f"{prompt}\n[CORREÇÃO] Uma resposta anterior a este pedido foi descartada por este motivo: {e}\n"
+                "Gere a resposta inteira de novo, sem repetir esse problema."
+            )
+    return abertura
 
+
+# Quanto o jogador espera pelo prólogo no pior caso, somando as tentativas.
+# Fica abaixo de 100 s de propósito: é a ordem de grandeza em que proxies de
+# hospedagem costumam cortar uma requisição, e um corte ali vira erro na
+# tela — pior que o texto de reserva. (Com a chave do próprio jogador o
+# prazo de cada chamada é o da cadeia; aqui só se decide se cabe outra.)
+_PRAZO_PROLOGO = 80.0
+_FOLGA_MINIMA_PROLOGO = 12.0
+_TENTATIVAS_PROLOGO = 3
+# O esqueleto do prompt usa instruções entre < >; se uma delas volta na
+# resposta, o modelo copiou o molde em vez de preencher.
+_MOLDE_NAO_PREENCHIDO = re.compile(r"<[^<>\n]{3,80}>")
+
+
+class _RoteiroInvalido(ValueError):
+    """A resposta do modelo não vira um prólogo jogável nem com conserto."""
+
+
+def _montar_roteiro(roteiro: Any, char: CharacterCreationRequest, abertura: dict, locais_validos: list[str]) -> dict:
+    """Transforma a resposta crua do modelo no roteiro que
+    `routers/character.py` grava — consertando o que der e levantando
+    `_RoteiroInvalido` (com um motivo que o próprio modelo entenda) quando
+    não der."""
     if not isinstance(roteiro, dict):
-        return abertura
+        raise _RoteiroInvalido("a resposta não é um objeto JSON")
     # Achado ao vivo (Groq): às vezes o modelo escreve o `\n` de parágrafo
     # como dois caracteres literais ("\" + "n") dentro da string JSON, em
     # vez de uma quebra de linha de verdade — aparecia como "\n\n" cru na
-    # tela em vez de parágrafos separados. Normaliza antes de qualquer
-    # validação, já que isso não afeta se o texto está vazio ou não.
+    # tela em vez de parágrafos separados.
     if isinstance(roteiro.get("intro_narrativa"), str):
-        roteiro["intro_narrativa"] = roteiro["intro_narrativa"].replace("\\n", "\n")
-    # Uma resposta truncada nunca produz campanha com título/local/texto ausentes.
-    campos_texto = ("local_inicial", "clima_inicial", "nome_missao", "objetivo_missao", "intro_narrativa")
-    if any(not isinstance(roteiro.get(campo), str) or not roteiro[campo].strip() for campo in campos_texto):
-        return abertura
+        # Mesma limpeza da narração de turno: o negrito fica (a tela do
+        # prólogo e o log o desenham em dourado), o resto do markdown sai.
+        roteiro["intro_narrativa"] = limpar_formatacao(roteiro["intro_narrativa"].replace("\\n", "\n")).strip()
+    # Sem lugar ou sem texto não há prólogo; o resto tem padrão. Antes,
+    # faltar o título (`nome_missao`) descartava a resposta inteira — e foi
+    # exatamente a chave que o modelo errou ao vivo (`name_missao`).
+    for campo in ("local_inicial", "intro_narrativa"):
+        if not _texto(roteiro.get(campo)):
+            raise _RoteiroInvalido(f'o campo "{campo}" veio vazio ou ausente')
+        if _MOLDE_NAO_PREENCHIDO.search(roteiro[campo]):
+            raise _RoteiroInvalido(f'o campo "{campo}" ainda tem um trecho do molde entre < >')
+    roteiro["local_inicial"] = roteiro["local_inicial"].strip()[:100]
+    if not _texto(roteiro.get("clima_inicial")):
+        roteiro["clima_inicial"] = abertura["clima_inicial"]
+    if not _texto(roteiro.get("objetivo_missao")):
+        roteiro["objetivo_missao"] = char.objetivo
 
-    # A instrução acima é a primeira linha (ADR-0002); esta checagem é a
+    # A instrução do prompt é a primeira linha (ADR-0002); esta checagem é a
     # que vale — pedir com educação não impede o modelo de inventar um
     # nome (já aconteceu ao vivo: "Ruínas de Gralhoth" e "Ruínas de
     # Acheron", nenhum dos dois no catálogo).
@@ -523,25 +793,25 @@ def gerar_prologo_missao(
     # o que sobrevive no `roteiro` devolvido. Vilas-chave do catálogo
     # continuam disponíveis e continuam sendo a maioria dos casos válidos.
     descricao_local_novo = roteiro.get("local_inicial_descricao")
-    if roteiro.get("local_inicial") not in locais_validos:
+    if roteiro["local_inicial"] not in locais_validos:
         if isinstance(descricao_local_novo, str) and descricao_local_novo.strip():
             roteiro["local_inicial_descricao"] = descricao_local_novo.strip()
         else:
-            roteiro["local_inicial"] = local_padrao
+            roteiro["local_inicial"] = abertura["local_inicial"]
             roteiro["local_inicial_descricao"] = abertura["local_inicial_descricao"]
     else:
         roteiro["local_inicial_descricao"] = None
+    local = roteiro["local_inicial"]
     try:
-        normalizado = _normalizar_mundo_inicial(roteiro, abertura["mundo_inicial"])
-        ids_sanos = _sanitizar_ids_mundo_inicial(normalizado)
-        saneado = _sanitizar_enums_mundo_inicial(ids_sanos)
-        reparado = _reparar_lacunas_mundo_inicial(saneado, roteiro["local_inicial"])
-        roteiro["mundo_inicial"] = validar_mundo_inicial(reparado, roteiro["local_inicial"])
+        mundo = _normalizar_mundo_inicial(roteiro, abertura["mundo_inicial"])
+        mundo = _reparar_estrutura_mundo_inicial(mundo, local)
+        mundo = _sanitizar_ids_mundo_inicial(mundo)
+        mundo = _sanitizar_enums_mundo_inicial(mundo)
+        mundo = _aparar_mundo_inicial(mundo)
+        mundo = _reparar_lacunas_mundo_inicial(mundo, local)
+        roteiro["mundo_inicial"] = validar_mundo_inicial(mundo, local)
     except (ValueError, TypeError) as e:
-        # Sem isto o descarte era mudo: o jogador via o texto de reserva e
-        # nada no log dizia que o modelo tinha respondido.
-        print("PRÓLOGO DESCARTADO NA VALIDAÇÃO:", str(e)[:300])
-        return abertura
+        raise _RoteiroInvalido(f'"mundo_inicial" inválido: {str(e)[:300]}') from e
     # O modelo não vê mais a origem determinística, então o que ele copiava
     # dela passa a ser posto pelo servidor: o chefe do arco (catálogo do
     # nível 1) e o objetivo declarado na ficha.
@@ -549,15 +819,25 @@ def gerar_prologo_missao(
     for arco in roteiro["mundo_inicial"]["arcos"]:
         arco["chefe"] = chefe_padrao
     roteiro["mundo_inicial"]["objetivos"] = [char.objetivo]
+    if not _texto(roteiro.get("nome_missao")):
+        # `name_missao` é o deslize que o Flash Lite repete (4 vezes em 18
+        # prólogos medidos): a chave certa trocada por esta, sem aspas.
+        arcos = roteiro["mundo_inicial"]["arcos"]
+        roteiro["nome_missao"] = (
+            _texto(roteiro.pop("name_missao", "")) or (arcos[0]["titulo"] if arcos else abertura["nome_missao"])
+        )
     opcoes = roteiro.get("opcoes")
     if not isinstance(opcoes, list) or len(opcoes) != 3 or any(
-        not isinstance(opcao, str) or not opcao.strip() or len(opcao) > 160 for opcao in opcoes
+        not isinstance(opcao, str) or not opcao.strip() or len(opcao) > 160 or _MOLDE_NAO_PREENCHIDO.search(opcao)
+        for opcao in opcoes
     ):
-        roteiro["opcoes"] = abertura["opcoes"]
+        roteiro["opcoes"] = _opcoes_do_mundo(roteiro["mundo_inicial"], local)
+    else:
+        roteiro["opcoes"] = [sem_negrito(opcao).strip() for opcao in opcoes]
     # Identidade/seed são do servidor; não aceite uma campanha diferente vinda do modelo.
     for campo in ("inicio_aventura", "semente_aventura", "hora_do_dia", "chaves", "direcao"):
         roteiro[campo] = abertura[campo]
-    roteiro["chaves"] = [f"Chegou a {roteiro['local_inicial']}; seu caminho continua aberto."]
+    roteiro["chaves"] = [f"Chegou a {local}; seu caminho continua aberto."]
     return roteiro
 
 
@@ -615,6 +895,8 @@ def gerar_epitafio(
         resultado["retrospectiva"] = f"{heroi.nome} caiu, e o mundo seguiu em frente."
     if not isinstance(resultado.get("epitafio_curto"), str) or not resultado["epitafio_curto"].strip():
         resultado["epitafio_curto"] = f"Aqui jaz {heroi.nome}."
+    resultado["retrospectiva"] = _texto_puro(resultado["retrospectiva"])
+    resultado["epitafio_curto"] = _texto_puro(resultado["epitafio_curto"])
     return resultado
 
 
@@ -668,7 +950,7 @@ def gerar_desfecho_arco(
     titulo = str(resultado.get("titulo") or arco["titulo"])
     texto_ok = isinstance(resultado.get("texto"), str) and resultado["texto"].strip()
     texto = resultado["texto"] if texto_ok else padrao["texto"]
-    return {"titulo": titulo.strip()[:100] or arco["titulo"], "texto": texto.strip()}
+    return {"titulo": _texto_puro(titulo).strip()[:100] or arco["titulo"], "texto": _texto_puro(texto).strip()}
 
 
 def gerar_cronica(heroi: Personagem, eventos: list[str], chamar_fn: Callable[..., Any] | None = None) -> str:
@@ -701,7 +983,7 @@ def gerar_cronica(heroi: Personagem, eventos: list[str], chamar_fn: Callable[...
     try:
         msgs = [{"role": "user", "content": prompt}]
         resp = chamar_fn(msgs) if chamar_fn is not None else llm_client.chamar_com_fallback(msgs, papel="destaque")
-        return resp.choices[0].message.content or "\n\n".join(eventos)
+        return _texto_puro(resp.choices[0].message.content or "") or "\n\n".join(eventos)
     except ErroMestre as e:
         print("ERRO NA CRÔNICA:", e.mensagem)
         return "\n\n".join(eventos)

@@ -51,21 +51,28 @@ class Settings(BaseSettings):
         "groq:openai/gpt-oss-20b",
     ]
     # destaque — poucas chamadas, lidas com atenção: prólogo, turno de
-    # morte, epitáfio, desfecho de capítulo, crônica. Cada Flash dá 20/dia.
-    # A ordem segue o que foi medido em 05/10/2026. O 3.5 Flash Lite vem
-    # logo depois dos dois Flash que responderam bem porque é o único com
-    # prólogo bom comprovado E cota para repetir. O 2.5 Flash respondeu
-    # rápido a pedidos mínimos, mas no prólogo teve 1 resultado válido em
-    # 5 (2 descartados na validação, 2 estouros de tempo). O 3.7 levou 13 s
-    # num pedido mínimo e o 3.8 devolveu 503 em todas as tentativas.
+    # morte, epitáfio, desfecho de capítulo, crônica.
+    #
+    # A ideia original era abrir pelos Flash (modelo maior, 20/dia cada).
+    # Medido em 05/10/2026, só no prólogo: o 3.5 Flash Lite entregou 13 de
+    # 13 em cerca de 6 s; os Flash, quando responderam, levaram de 28 a
+    # 47 s, e em duas baterias seguidas (2.5 e 3.6) não entregaram nenhum de
+    # 7 — só 503, estouro de tempo e cota. Com 80 s de prazo para o prólogo
+    # inteiro, dois Flash pendurados gastavam tudo antes de o Lite ser
+    # tentado. Por isso os dois Lite abrem a fila (rápidos: falham ou
+    # respondem em segundos, ver `timeouts_modelo`) e os Flash ficam com o
+    # tempo que sobrar. O 3.1 Flash Lite foi mal nos turnos (ferramentas,
+    # injeção de prompt), mas o prólogo é só texto e o dele saiu bom. Se o
+    # Google estabilizar os Flash, basta reordenar aqui (ou em
+    # `CADEIA_DESTAQUE`).
     cadeia_destaque: list[str] = [
+        "gemini:gemini-3.5-flash-lite",
+        "gemini:gemini-3.1-flash-lite",
         "gemini:gemini-3.5-flash",
         "gemini:gemini-3.6-flash",
-        "gemini:gemini-3.5-flash-lite",
-        "gemini:gemini-3.7-flash",
         "gemini:gemini-2.5-flash",
+        "gemini:gemini-3.7-flash",
         "gemini:gemini-3.8-flash",
-        "gemini:gemini-3.1-flash-lite",
         "groq:openai/gpt-oss-120b",
     ]
     # fundo — o resumo rolante da memória (services/memory.py): roda em
@@ -81,6 +88,12 @@ class Settings(BaseSettings):
     # 5 s no Flash Lite (p95 de 20 s na avaliação); o prólogo é um JSON
     # grande e já levou 47 s num Flash, por isso o destaque tem mais folga.
     timeouts_ia: dict[str, float] = {"volume": 25.0, "destaque": 50.0, "fundo": 30.0}
+    # Tempo limite mais curto para modelos que respondem rápido quando
+    # estão bem. O Flash Lite fez os prólogos medidos em 4 a 21 s; esperar os 50 s
+    # do papel de destaque por ele, num dia ruim do Google, gastava mais da
+    # metade do prazo do prólogo com um modelo que não ia responder. Vale o
+    # menor entre este e o do papel.
+    timeouts_modelo: dict[str, float] = {"gemini-3.5-flash-lite": 22.0, "gemini-3.1-flash-lite": 22.0}
     # Prazo da cadeia inteira, por papel: quanto o jogador espera no pior
     # caso, somando todos os modelos tentados. Acabou o prazo, a chamada
     # falha e quem chamou usa a sua saída de emergência (texto de reserva

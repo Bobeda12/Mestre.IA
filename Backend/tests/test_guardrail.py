@@ -68,8 +68,25 @@ class TestLimparFormatacao:
         texto = "Você avança pela vila, atento ao goblin ferido."
         assert guardrail.limpar_formatacao(texto) == texto
 
-    def test_remove_negrito(self):
-        assert guardrail.limpar_formatacao("O golpe é **certeiro** e brutal.") == "O golpe é certeiro e brutal."
+    def test_negrito_sobrevive_para_virar_destaque_dourado(self):
+        # Até 05/10/2026 era apagado aqui: o dourado aparecia durante o
+        # streaming e sumia quando o turno fechava.
+        texto = "Sob a tábua solta há um **anel de sinete**."
+        assert guardrail.limpar_formatacao(texto) == texto
+
+    def test_so_os_primeiros_destaques_sobrevivem(self):
+        texto = "**Um**, **dois**, **três**, **quatro** e **cinco**."
+        assert guardrail.limpar_formatacao(texto) == "**Um**, **dois**, **três**, quatro e cinco."
+
+    def test_negrito_com_italico_vira_so_negrito(self):
+        assert guardrail.limpar_formatacao("Um ***grito*** corta a noite.") == "Um **grito** corta a noite."
+
+    def test_italico_ao_lado_de_negrito_some_sem_tocar_o_negrito(self):
+        texto = "O **Lobo** solta um *rosnado* baixo."
+        assert guardrail.limpar_formatacao(texto) == "O **Lobo** solta um rosnado baixo."
+
+    def test_sem_negrito_tira_os_asteriscos(self):
+        assert guardrail.sem_negrito("O **Lobo** ataca.") == "O Lobo ataca."
 
     def test_remove_italico(self):
         assert guardrail.limpar_formatacao("Um *sussurro* ecoa nas pedras.") == "Um sussurro ecoa nas pedras."
@@ -91,6 +108,20 @@ class TestLimparFormatacao:
         # Heurística, não parser de markdown de verdade — um `*` solto
         # (não é marcação, é só um caractere) não deveria sumir do texto.
         assert guardrail.limpar_formatacao("3 * 4 = 12") == "3 * 4 = 12"
+
+
+class TestNegritoNoGuardrail:
+    def test_inimigo_morto_em_negrito_ainda_e_pego(self):
+        # "**Lobo** ataca" tem de casar com a checagem de "lobo ataca".
+        combate = CombatState(ativo=True, inimigos=[Inimigo(nome="Lobo", hp=0, max_hp=11, ca=13)])
+        violacoes = guardrail.validar_narrativa("O **Lobo** ataca de novo.", _heroi(), combate, WorldState())
+        assert any("já morto" in v for v in violacoes)
+
+
+class TestNegritoForaDaTela:
+    def test_opcoes_nunca_levam_asteriscos_para_os_botoes(self):
+        _texto, opcoes = guardrail.extrair_opcoes("Cena.\n[OPCOES]: Atacar o **Lobo**|Fugir|Falar")
+        assert opcoes == ["Atacar o Lobo", "Fugir", "Falar"]
 
 
 class TestExtrairOpcoes:

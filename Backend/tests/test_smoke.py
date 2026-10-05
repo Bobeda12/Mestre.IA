@@ -449,7 +449,7 @@ def test_chat_stream_frame_de_correcao_nao_vaza_tag_nem_markdown(monkeypatch):
     monkeypatch.setattr(
         game,
         "corrigir_narrativa",
-        lambda *a, **k: "**Corrigido.**\n[OPCOES]: Atacar|Recuar|Esperar",
+        lambda *a, **k: "# *Corrigido.*\n[OPCOES]: Atacar|Recuar|Esperar",
     )
 
     resp = client.post("/chat/stream", json={"session_id": session_id, "action": "Eu ataco"})
@@ -459,7 +459,8 @@ def test_chat_stream_frame_de_correcao_nao_vaza_tag_nem_markdown(monkeypatch):
     frame_correcao = next(f for f in frames if f.startswith("event: correcao"))
     dados_correcao = json.loads(frame_correcao.split("data: ", 1)[1])
     assert "[OPCOES" not in dados_correcao["narrativa"]
-    assert "**" not in dados_correcao["narrativa"]
+    # Título e itálico saem; só `**negrito**` sobrevive (vira destaque dourado).
+    assert "*" not in dados_correcao["narrativa"] and "#" not in dados_correcao["narrativa"]
     assert dados_correcao["narrativa"] == "Corrigido."
 
     dados_state = json.loads(frames[-1].split("data: ", 1)[1])
