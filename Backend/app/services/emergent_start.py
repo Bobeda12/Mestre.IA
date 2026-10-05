@@ -258,12 +258,18 @@ def criar_origem(char, semente: int | None = None) -> dict:
         "clima_inicial": clima,
         "nome_missao": "Seu próximo passo",
         "objetivo_missao": char.objetivo,
+        # Mesma ordem do prólogo com IA (narrator.gerar_prologo_missao):
+        # herói → chegada de forasteiro → gancho. O objetivo vai entre aspas
+        # porque é texto livre do jogador ("Encontrar meu irmão") e não
+        # encaixa em nenhuma frase pronta sem quebrar a gramática.
         "intro_narrativa": (
-            f"O movimento em {lugar} para por um instante: {evento}. {descricao}\n\n"
-            f"{fala} Nenhum dos dois parece disposto a contar tudo na frente dos curiosos.\n\n"
-            f"{char.nome}, sua busca por {char.objetivo.rstrip('.')} trouxe você até este lugar. "
-            "O registro está ao alcance, há espaço para uma conversa e a estrada continua aberta. "
-            "Você ainda não prometeu nada a ninguém."
+            f"{char.nome}, você está na estrada há dias com uma coisa só na cabeça: "
+            f"“{char.objetivo.rstrip('.')}”. Foi atrás disso que você chegou a {lugar}, "
+            "um lugar onde nunca pisou e onde ninguém sabe o seu nome.\n\n"
+            f"{descricao} Você mal entrou e o movimento para por um instante: {evento}.\n\n"
+            f"Duas pessoas discutem a poucos passos de você; pelo que dizem uma à outra, chamam-se "
+            f"{aliada} e {rival}. {fala} Nenhum dos dois parece disposto a contar tudo na frente dos "
+            "curiosos. Você ainda não prometeu nada a ninguém, e a estrada continua aberta."
         ),
         "opcoes": [
             f"Examinar {cena.entidades['registro'].nome}",

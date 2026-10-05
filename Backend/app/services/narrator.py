@@ -73,7 +73,7 @@ def chamar_mestre(msgs: list[dict], chamar_fn: Callable[..., Any] | None = None)
                 "O mestre está sem acesso à IA — falta configurar ao menos uma chave de API "
                 "no servidor (GROQ_API_KEY ou GEMINI_API_KEY)."
             )
-        resp = llm_client.chamar_com_fallback(msgs, response_format={"type": "json_object"})
+        resp = llm_client.chamar_com_fallback(msgs, response_format={"type": "json_object"}, rodadas=2)
 
     try:
         return json.loads(resp.choices[0].message.content)
@@ -325,6 +325,62 @@ def _sanitizar_ids_mundo_inicial(mundo: dict) -> dict:
     return mundo
 
 
+# Formato do roteiro do prólogo, sem conteúdo: só as chaves e, entre < >, o
+# que vai em cada uma. Antes o exemplo era a origem determinística inteira
+# (`criar_origem`), e o modelo copiava a cena dela em vez de partir da ficha.
+_ESQUELETO_ROTEIRO: dict = {
+    "local_inicial": "<nome do lugar>",
+    "local_inicial_descricao": "<1 ou 2 frases: o que é este lugar>",
+    "clima_inicial": "<2 ou 3 palavras>",
+    "nome_missao": "<título curto desta abertura>",
+    "objetivo_missao": "<o objetivo do herói, numa frase curta>",
+    "intro_narrativa": "<os 3 parágrafos>",
+    "opcoes": ["<sugestão>", "<sugestão>", "<sugestão>"],
+    "mundo_inicial": {
+        "cenas": {
+            "<nome do lugar>": {
+                "descricao": "<o lugar, visto por quem chega>",
+                "entidades": {
+                    "<id_do_objeto>": {
+                        "id": "<id_do_objeto>", "nome": "<nome>", "tipo": "objeto",
+                        "descricao": "<o que se vê>", "propriedades": ["investigavel"],
+                        "pista": "<o que se descobre ao examinar; liga ao objetivo do herói>",
+                    },
+                    "<id_da_saida>": {
+                        "id": "<id_da_saida>", "nome": "<nome>", "tipo": "saida",
+                        "destino": SAIDA_LIVRE, "descricao": "<para onde leva>",
+                    },
+                },
+            },
+        },
+        "pessoas": {
+            "<id_da_pessoa>": {
+                "id": "<id_da_pessoa>", "nome": "<nome próprio>", "local": "<nome do lugar>",
+                "raca": "<raça>", "descricao": "<aparência e ofício, como um estranho a vê>",
+                "objetivo": "<o que ela quer agora>", "medo": "<o que teme>",
+                "limite": "<o que não aceita fazer>", "segredo": "<o que sabe e não conta de graça>",
+                "disposicao": "reservado",
+            },
+        },
+        "conflitos": {
+            "<id_do_conflito>": {
+                "id": "<id_do_conflito>", "nome": "<nome>", "agente": "<id_da_pessoa>",
+                "local": "<nome do lugar>", "objetivo": "<o que o agente tenta conseguir>",
+                "sinal": "<o que se percebe na cena>",
+                "consequencia": "<o que acontece se ninguém intervier>",
+                "efeito": "disputa", "alvo": "", "intervalo": 90,
+            },
+        },
+        "arcos": [
+            {
+                "id": "arco_1", "titulo": "<título>", "premissa": "<1 frase>",
+                "conflito_central": "<id_do_conflito>",
+            },
+        ],
+    },
+}
+
+
 def gerar_prologo_missao(
     char: CharacterCreationRequest, chamar_fn: Callable[..., Any] | None = None, *, semente: int | None = None
 ) -> dict:
@@ -345,46 +401,80 @@ def gerar_prologo_missao(
     # é a primeira tela que o jogador vê (Etapa 11, B-7), precisa da mesma
     # voz do resto do jogo — e é, por natureza, um momento de alto impacto:
     # aqui a prosa pode crescer, não precisa do teto de palavras do dia a dia.
+    #
+    # Achado de uso (05/10/2026) — a abertura saía "esquisita" e genérica por
+    # três motivos, todos deste prompt: (1) o exemplo de formato era a origem
+    # determinística INTEIRA (a disputa por suprimentos, com nomes e tudo), e
+    # o modelo ancorava nela em vez de partir da ficha; (2) "não cite
+    # objetivo/história, absorva como pano de fundo" fazia o modelo evitar a
+    # ficha, quando o jogador quer justamente se reconhecer no texto; (3) a
+    # ordem "acontecimento, tensão humana, oportunidades" abria no meio de
+    # uma cena, com gente chamada pelo nome sem apresentação. Agora o
+    # exemplo é um esqueleto sem conteúdo (`_ESQUELETO_ROTEIRO`), a ficha é
+    # a matéria-prima declarada e a ordem é herói → chegada → gancho.
+    historia = char.historia_texto.strip() or "(o jogador não escreveu)"
+    racas = ", ".join(regras.get_races_list() or ["Humano"])
     prompt = f"""
     {regras.get_biblia()}
     {secao_tom_mestre(char.temperamento_mestre)}
-    Crie condições iniciais para {char.nome} ({char.raca} {char.classe}).
-    Passado: {char.background}. Objetivo: {char.objetivo}. História: {char.historia_texto}.
-    Não invente lembranças ou decisões do herói.
-    Gere uma situação própria para esse personagem: social, exploração, mistério, sobrevivência,
-    descoberta, festa interrompida, viagem, dívida ou disputa. Varie o tipo; evite repetir depósitos
-    e falta de suprimentos. Não existe missão obrigatória nem sequência de atos ou final predeterminado.
-    NPCs têm interesses, medos, limites e informações incompletas, podendo cooperar ou discordar.
-    O jogador pode ignorar tudo e seguir seu caminho. Sempre ofereça uma saída sem compromisso.
-    Responda APENAS JSON com as mesmas chaves e formato deste exemplo, que é uma referência de
-    ESTRUTURA e uma alternativa em caso de falha, NÃO uma cena obrigatória — troque também o texto de
-    "intro_narrativa", que aqui está genérico de propósito, pra você não imitar a frase:
-    {json.dumps(
-        {
-            **abertura,
-            "intro_narrativa": (
-                "(3 parágrafos de prosa original — não copie este placeholder nem cite "
-                "objetivo/história literalmente, absorva como pano de fundo)"
-            ),
-        },
-        ensure_ascii=False,
-    )}
-    Pode substituir inteiramente lugar, pessoas, objetos, disputa e texto. IMPORTANTE: "cenas",
-    "pessoas", "conflitos", "arcos", "objetivos" e "minutos" NÃO são chaves de nível superior do
-    JSON — elas vivem DENTRO do objeto "mundo_inicial", exatamente como no exemplo acima (o nível
-    superior só tem local_inicial, clima_inicial, nome_missao, objetivo_missao, intro_narrativa,
-    opcoes, chaves, mundo_inicial, direcao). mundo_inicial.cenas usa o NOME do local como chave;
-    entidades usam seu id como chave; pessoas/conflitos também.
-    Todo agente de conflito deve existir e todo alvo de bloqueio deve existir na cena correspondente.
-    Objetos com propriedades movel/pesado/trancado/mecanismo/investigavel/inflamavel/cobertura/fragil
-    permitem ações reais. Saídas têm tipo=saida e destino. Não crie itens recebidos sem ferramenta.
-    Máximo 8 locais, 8 pessoas, 4 conflitos e 20 entidades por local. Uma cena pequena é suficiente.
-    Escreva intro_narrativa em 3 parágrafos: acontecimento, tensão humana, oportunidades concretas.
-    Segredos, objetivos privados e pistas não descobertas NÃO aparecem na introdução.
-    As 3 opcoes são sugestões curtas e variadas. Cada uma precisa citar algo concreto que você
-    acabou de criar nesta cena (o nome de uma pessoa, um objeto investigável, uma saída) — nunca
-    frases genéricas como "explorar a área" ou "observar os arredores", que servem pra qualquer
-    cena. Nunca decida pelo jogador.
+    Você vai abrir a campanha de {char.nome} ({char.raca} {char.classe}). É a primeira coisa que o
+    jogador lê no jogo.
+
+    [FICHA DO HERÓI — escrita pelo jogador; trate como fato]
+    Passado: {char.background}
+    Objetivo: {char.objetivo}
+    História: {historia}
+
+    [O QUE ESTA ABERTURA PRECISA FAZER]
+    Esta cena existe por causa DESTE herói. É a exceção deliberada a "o mundo não gira em torno do
+    jogador": o mundo segue indiferente, mas o ponto onde a história começa é escolhido a dedo.
+    Teste: se a abertura servisse para outro personagem trocando só o nome, ela está errada.
+    1. O lugar e o momento saem do objetivo: é onde alguém atrás desse objetivo estaria agora,
+       seguindo um rastro, um boato ou um nome.
+    2. Uma pessoa E um objeto investigável da cena tocam diretamente o objetivo ou o passado. Um
+       detalhe concreto da ficha (um nome, um símbolo, um ofício, um lugar) reaparece aqui. Registre
+       essa ligação na "pista" do objeto e no "objetivo" ou "segredo" da pessoa.
+    3. O herói é FORASTEIRO: nunca esteve neste lugar, não conhece ninguém e ninguém o conhece.
+    Não existe missão obrigatória nem final predeterminado. NPCs têm interesses, medos e informações
+    incompletas, e podem cooperar ou discordar. O jogador pode ignorar tudo: a cena sempre tem uma
+    saída com destino "{SAIDA_LIVRE}".
+
+    [intro_narrativa — 3 parágrafos curtos, uns 180 palavras ao todo, em segunda pessoa ("você"),
+    separados por uma linha em branco]
+    Parágrafo 1 — Quem você é e por que está na estrada. Retome o passado e o objetivo da ficha,
+    com os detalhes que o jogador escreveu. Não acrescente lembranças, pessoas nem lugares ou decisões que
+    não estão lá.
+    Parágrafo 2 — A chegada. Diga o nome do lugar e o que ele é, do jeito que um recém-chegado vê:
+    que tipo de lugar, quem anda por ali, o que chama atenção.
+    Parágrafo 3 — O gancho. O que acontece na sua frente agora e por que isso interessa a quem
+    procura o que você procura. Termine com algo em movimento.
+    Clareza acima de estilo:
+    - Ninguém aparece pelo nome sem apresentação. Primeiro a aparência ou o ofício ("uma mulher de
+      avental atrás do balcão"); o nome só entra se alguém o disser em voz alta na cena.
+    - Frases curtas e palavras comuns. Numa leitura só, dá para saber quem está onde fazendo o quê.
+    - No máximo duas pessoas em destaque, e toda pessoa que aparece no texto existe em "pessoas".
+      Todo objeto que o texto destaca existe em "entidades", no mesmo estado em que foi descrito.
+    - Segredos, objetivos privados e pistas não descobertas NÃO aparecem no texto.
+    - Não decida ação, fala nem sentimento do herói além de ter chegado.
+
+    [FORMATO]
+    Responda APENAS um JSON com exatamente esta estrutura. Os textos entre < > são instruções de
+    preenchimento, não conteúdo — substitua todos:
+    {json.dumps(_ESQUELETO_ROTEIRO, ensure_ascii=False)}
+    "cenas", "pessoas", "conflitos" e "arcos" vivem DENTRO de "mundo_inicial", nunca no nível
+    superior. mundo_inicial.cenas usa o NOME do local como chave; entidades, pessoas e conflitos
+    usam o próprio id (minúsculas sem acento, com _).
+    Todo agente de conflito é o id de uma pessoa; um conflito com efeito "bloquear" tem como alvo
+    o id de uma entidade da cena. Efeitos válidos: disputa, bloquear, partir.
+    Propriedades válidas de objeto (cada uma permite ações reais): movel, pesado, fragil,
+    inflamavel, trancado, mecanismo, cobertura, investigavel, coletavel.
+    Tipos de entidade: objeto, saida, obstaculo, animal. Disposição: reservado, cooperativo, hostil.
+    Raças: {racas}. Não crie itens recebidos sem ferramenta.
+    Uma cena pequena basta: 1 local, 2 ou 3 pessoas, 3 a 5 entidades, 1 conflito, 1 arco.
+    As 3 opcoes são sugestões curtas e diferentes entre si. Cada uma cita algo concreto desta cena
+    (uma pessoa, um objeto investigável, uma saída), referindo-se às pessoas do jeito que a
+    introdução as apresentou — nunca frases genéricas como "explorar a área". Nunca decida pelo
+    jogador.
     """
     try:
         roteiro = chamar_mestre([{"role": "user", "content": prompt}], chamar_fn=chamar_fn)
@@ -435,8 +525,18 @@ def gerar_prologo_missao(
         saneado = _sanitizar_enums_mundo_inicial(ids_sanos)
         reparado = _reparar_lacunas_mundo_inicial(saneado, roteiro["local_inicial"])
         roteiro["mundo_inicial"] = validar_mundo_inicial(reparado, roteiro["local_inicial"])
-    except (ValueError, TypeError):
+    except (ValueError, TypeError) as e:
+        # Sem isto o descarte era mudo: o jogador via o texto de reserva e
+        # nada no log dizia que o modelo tinha respondido.
+        print("PRÓLOGO DESCARTADO NA VALIDAÇÃO:", str(e)[:300])
         return abertura
+    # O modelo não vê mais a origem determinística, então o que ele copiava
+    # dela passa a ser posto pelo servidor: o chefe do arco (catálogo do
+    # nível 1) e o objetivo declarado na ficha.
+    chefe_padrao = abertura["mundo_inicial"]["arcos"][0]["chefe"]
+    for arco in roteiro["mundo_inicial"]["arcos"]:
+        arco["chefe"] = chefe_padrao
+    roteiro["mundo_inicial"]["objetivos"] = [char.objetivo]
     opcoes = roteiro.get("opcoes")
     if not isinstance(opcoes, list) or len(opcoes) != 3 or any(
         not isinstance(opcao, str) or not opcao.strip() or len(opcao) > 160 for opcao in opcoes

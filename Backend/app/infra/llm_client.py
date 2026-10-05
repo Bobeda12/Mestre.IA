@@ -210,11 +210,17 @@ def chamar_modelo_unico(
         raise ErroMestre(f"O serviço de IA recusou o pedido (código {e.status_code}).") from e
 
 
+# Espera antes de repassar a cadeia inteira (ver `rodadas` abaixo). Curta de
+# propósito: o 503 "high demand" do Gemini costuma passar em segundos.
+_ESPERA_ENTRE_RODADAS = 3.0
+
+
 def chamar_com_fallback(
     msgs: list[dict],
     tools: list[dict] | None = None,
     tool_choice: str | dict = "auto",
     response_format: dict | None = None,
+    rodadas: int = 1,
 ) -> Any:
     """Tenta cada elo de `CADEIA` em ordem, pulando qualquer provedor sem
     chave configurada. Por elo, `tenacity` cobre até 2 tentativas com
@@ -230,30 +236,53 @@ def chamar_com_fallback(
     resto da cadeia (que `chamar_com_fallback` já cobre pra todo turno de
     jogo). Isso fazia o prólogo cair no fallback determinístico (que cita o
     objetivo do jogador literalmente) por um motivo que nada tinha a ver
-    com o conteúdo gerado."""
+    com o conteúdo gerado.
+
+    `rodadas` — quantas vezes a cadeia inteira pode ser percorrida. O padrão
+    (1) é o do turno de jogo, onde esperar custa mais que falhar. O prólogo
+    usa 2: em produção a cadeia tem um provedor só (Gemini), então "cair pro
+    próximo" não existe, e um 503 de alta demanda — medido ao vivo em metade
+    das chamadas — jogava o jogador direto no texto de reserva."""
     if not clients:
         raise ErroMestre(_SEM_PROVEDOR)
     ultimo_erro: Exception | None = None
-    for provedor, modelo in CADEIA:
-        cliente = clients.get(provedor)
-        if cliente is None or _em_pausa(cliente, modelo):
-            continue  # provedor sem chave configurada — pulado, não é uma falha
-        try:
-            return _chamar_modelo(cliente, provedor, modelo, msgs, tools, tool_choice, response_format)
-        except _ERROS_TRANSITORIOS as e:
-            _registrar_pausa(cliente, modelo, e)
-            ultimo_erro = e
-            continue
-        except openai.APIStatusError as e:
-            # Fase 0 do plano "jogo completo" — o log do httpx só mostra o
-            # status; o CORPO é o que diz se foi teto de tokens, chave
-            # extra na mensagem ou uma chamada de ferramenta malformada
-            # que o próprio modelo gerou (`tool_use_failed` na Groq).
-            logger.warning(
-                "provedor=%s modelo=%s status=%s corpo=%s", provedor, modelo, e.status_code, str(e.body)[:300]
-            )
-            ultimo_erro = e
-            continue
+    for rodada in range(rodadas):
+        # Só vale repassar a cadeia se algum elo caiu por sobrecarga/timeout
+        # (some sozinho em segundos). Cota (429) e pedido recusado (4xx) dão
+        # a mesma resposta na segunda vez.
+        vale_repetir = False
+        if rodada:
+            time.sleep(_ESPERA_ENTRE_RODADAS)
+        for provedor, modelo in CADEIA:
+            cliente = clients.get(provedor)
+            if cliente is None or _em_pausa(cliente, modelo):
+                continue  # provedor sem chave configurada — pulado, não é uma falha
+            try:
+                return _chamar_modelo(cliente, provedor, modelo, msgs, tools, tool_choice, response_format)
+            except _ERROS_TRANSITORIOS as e:
+                # Achado de uso (05/10/2026): este ramo era mudo — com um
+                # provedor só, o jogador via "todos os modelos falharam" e o
+                # log não dizia se era cota do dia (429) ou sobrecarga (503).
+                logger.warning(
+                    "provedor=%s modelo=%s transitorio=%s corpo=%s",
+                    provedor, modelo, type(e).__name__, str(getattr(e, "body", ""))[:300],
+                )
+                _registrar_pausa(cliente, modelo, e)
+                vale_repetir = vale_repetir or not isinstance(e, openai.RateLimitError)
+                ultimo_erro = e
+                continue
+            except openai.APIStatusError as e:
+                # Fase 0 do plano "jogo completo" — o log do httpx só mostra o
+                # status; o CORPO é o que diz se foi teto de tokens, chave
+                # extra na mensagem ou uma chamada de ferramenta malformada
+                # que o próprio modelo gerou (`tool_use_failed` na Groq).
+                logger.warning(
+                    "provedor=%s modelo=%s status=%s corpo=%s", provedor, modelo, e.status_code, str(e.body)[:300]
+                )
+                ultimo_erro = e
+                continue
+        if not vale_repetir:
+            break
     raise ErroMestre(
         "Todos os modelos configurados falharam ao responder. Tente de novo em instantes."
     ) from ultimo_erro

@@ -423,6 +423,63 @@ class TestGerarPrologoMissaoLocalInicial:
         cena = roteiro["mundo_inicial"]["cenas"][roteiro["local_inicial"]]
         assert any(e["tipo"] == "saida" for e in cena["entidades"].values())
 
+    def test_prompt_parte_da_ficha_e_nao_da_cena_de_reserva(self, monkeypatch):
+        # Achado de uso (05/10/2026): o "exemplo de formato" do prompt era a
+        # origem determinística inteira, e o modelo copiava a cena dela em
+        # vez de escrever uma abertura para a ficha do jogador.
+        from app.services.emergent_start import criar_origem
+        heroi = _personagem_criacao(
+            background="Ferreira de um templo nas montanhas", objetivo="Achar o martelo roubado",
+            historia_texto="O ladrão deixou uma luva com um corvo bordado.",
+        )
+        reserva = criar_origem(heroi, 5)
+        pedidos: list[dict] = []
+
+        class _ClienteEspiao(_ClienteFalso):
+            def create(self, **kwargs):
+                pedidos.append(kwargs)
+                return super().create(**kwargs)
+
+        monkeypatch.setattr(llm_client, "clients", {llm_client.CADEIA[0][0]: _ClienteEspiao(criar_origem(heroi, 9))})
+
+        gerar_prologo_missao(heroi, semente=5)
+
+        prompt = pedidos[0]["messages"][0]["content"]
+        for trecho in (heroi.background, heroi.objetivo, heroi.historia_texto):
+            assert trecho in prompt
+        assert reserva["local_inicial"] not in prompt
+        assert all(p["nome"] not in prompt for p in reserva["mundo_inicial"]["pessoas"].values())
+
+    def test_chefe_do_arco_e_objetivo_sao_do_servidor(self, monkeypatch):
+        # O modelo não vê mais a origem determinística, então não tem de
+        # onde copiar um chefe válido do catálogo — o servidor preenche.
+        from app.services.emergent_start import criar_origem
+        heroi = _personagem_criacao()
+        corpo = criar_origem(heroi, 9)
+        corpo["mundo_inicial"]["arcos"][0]["chefe"] = "Dragão Inventado"
+        corpo["mundo_inicial"]["objetivos"] = []
+        monkeypatch.setattr(llm_client, "clients", {llm_client.CADEIA[0][0]: _ClienteFalso(corpo)})
+
+        roteiro = gerar_prologo_missao(heroi, semente=5)
+
+        chefe_do_servidor = criar_origem(heroi, 5)["mundo_inicial"]["arcos"][0]["chefe"]
+        assert [a["chefe"] for a in roteiro["mundo_inicial"]["arcos"]] == [chefe_do_servidor]
+        assert roteiro["mundo_inicial"]["objetivos"] == [heroi.objetivo]
+
+    def test_texto_de_reserva_apresenta_heroi_e_pessoas_antes_da_cena(self, monkeypatch):
+        monkeypatch.setattr(llm_client, "clients", {})
+        heroi = _personagem_criacao(nome="Kaela", objetivo="Encontrar meu irmão Teo.")
+
+        roteiro = gerar_prologo_missao(heroi, semente=5)
+
+        paragrafos = roteiro["intro_narrativa"].split("\n\n")
+        assert len(paragrafos) == 3
+        assert paragrafos[0].startswith("Kaela,")
+        assert "“Encontrar meu irmão Teo”" in paragrafos[0]
+        assert roteiro["local_inicial"] in paragrafos[0]
+        for pessoa in roteiro["mundo_inicial"]["pessoas"].values():
+            assert f"chamam-se {pessoa['nome']}" in paragrafos[2] or f"e {pessoa['nome']}." in paragrafos[2]
+
 
 
 

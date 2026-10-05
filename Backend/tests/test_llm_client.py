@@ -121,6 +121,37 @@ def test_erro_503_e_tratado_como_transitorio_e_faz_retry(monkeypatch):
     assert fake.chat.completions.chamadas == [modelo_1, modelo_1]
 
 
+def test_segunda_rodada_recupera_sobrecarga_com_um_provedor_so(monkeypatch):
+    # Achado de uso (05/10/2026): produção tem um elo só (Gemini). Um 503
+    # que sobrevive ao retry curto não tinha "próximo modelo" pra onde cair.
+    modelo = llm_client.CADEIA[0][1]
+    resultado_ok = object()
+    clients, fake = _fake_clients({modelo: [_erro_servidor(503), _erro_servidor(503), resultado_ok]})
+    monkeypatch.setattr(llm_client, "clients", clients)
+    monkeypatch.setattr(llm_client, "CADEIA", llm_client.CADEIA[:1])
+    monkeypatch.setattr(llm_client, "_ESPERA_ENTRE_RODADAS", 0)
+
+    resultado = chamar_com_fallback([{"role": "user", "content": "oi"}], rodadas=2)
+
+    assert resultado is resultado_ok
+    assert fake.chat.completions.chamadas == [modelo] * 3
+
+
+def test_segunda_rodada_nao_insiste_em_cota_esgotada(monkeypatch):
+    # 429 não se resolve esperando 3 segundos (a cota diária do Gemini volta
+    # em horas): repetir só gastaria tempo do jogador.
+    modelo = llm_client.CADEIA[0][1]
+    clients, fake = _fake_clients({modelo: [_erro_rate_limit(), object()]})
+    monkeypatch.setattr(llm_client, "clients", clients)
+    monkeypatch.setattr(llm_client, "CADEIA", llm_client.CADEIA[:1])
+    monkeypatch.setattr(llm_client, "_ESPERA_ENTRE_RODADAS", 0)
+
+    with pytest.raises(ErroMestre, match="Todos os modelos"):
+        chamar_com_fallback([{"role": "user", "content": "oi"}], rodadas=2)
+
+    assert fake.chat.completions.chamadas == [modelo]
+
+
 def test_todos_os_modelos_falhando_levanta_erro_mestre(monkeypatch):
     comportamento = {modelo: [_erro_rate_limit(), _erro_rate_limit()] for _, modelo in llm_client.CADEIA}
     clients, _ = _fake_clients(comportamento)
