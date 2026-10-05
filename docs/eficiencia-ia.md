@@ -72,10 +72,10 @@ uma pausa e o fallback segue para o próximo (ADR-0038). Pausas: 429 por minuto 
 Retry-After numérico entre 1 e 120 segundos (padrão: 30); 429 de cota diária, 15 minutos;
 5xx, 3 minutos; tempo estourado, 1 minuto. Se todos os elos estiverem pausados, os pausados
 por sobrecarga são tentados; os pausados por cota, não. Não há espera bloqueante; a pausa é
-local ao processo, não distribuída e não compartilhada por chaves BYOK criadas por chamadas
-distintas. Cada chamada tem tempo limite por papel (`TIMEOUTS_IA`: 25 s volume, 50 s
-destaque, 30 s fundo) e a cadeia inteira tem prazo por papel (`PRAZOS_IA`: 45 s, 90 s, 60 s). Chave BYOK e modelo fixo das avaliações, que não têm fila, mantêm o
-retry curto no mesmo modelo. Streaming já iniciado nunca troca de modelo silenciosamente.
+local ao processo e não distribuída. Cada chamada tem tempo limite por papel (`TIMEOUTS_IA`: 25 s volume, 50 s
+destaque, 30 s fundo) e a cadeia inteira tem prazo por papel (`PRAZOS_IA`: 45 s, 90 s, 60 s). A chave BYOK percorre os elos Gemini da mesma cadeia, com pausas e contagem por hash
+da chave; nunca cai para a chave do servidor. Só o modelo fixo das avaliações, que não
+tem fila, mantém o retry curto no mesmo modelo. Streaming já iniciado nunca troca de modelo silenciosamente.
 
 ## Cotas do provedor e modelo por papel
 

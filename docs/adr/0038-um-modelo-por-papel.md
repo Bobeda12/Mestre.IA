@@ -59,6 +59,12 @@ Junto com os papéis, a cadeia mudou de comportamento diante de erro:
   limites da tabela acima (`settings.limites_ia`) e tira da frente da fila o modelo que
   chegou ao limite, sem gastar uma chamada para descobrir. Conta a tentativa, não só o
   sucesso. O dia vira à meia-noite do Pacífico, como a cota do Gemini.
+- **A chave própria do jogador (BYOK) percorre as mesmas listas**, só os elos do Gemini, com
+  a chave dele. Antes usava o `gemini-3.5-flash` fixo: 20 chamadas por dia numa chave
+  gratuita. Nunca cai para outro provedor nem para a chave do servidor. Chave recusada
+  (401/403) encerra no primeiro modelo. Como o cliente da chave do jogador é criado a cada
+  chamada (para a chave não ficar guardada), as pausas e contagens dele ficam numa conta
+  identificada pelo hash SHA-256 da chave, no máximo 256 contas em memória.
 - **A fila inteira tem prazo por papel** (`settings.prazos_ia`: 45 s no volume, 90 s no
   destaque, 60 s no fundo). Só com o limite por chamada, um prólogo levou 201 s ao vivo: seis
   modelos falharam em sequência. Acabou o prazo, a chamada falha e quem chamou usa a sua saída
@@ -107,8 +113,9 @@ Junto com os papéis, a cadeia mudou de comportamento diante de erro:
   padrão (tokens de saída = tokens visíveis), então `minimal` não muda nada e `low` só
   acrescenta raciocínio. Nos Flash a latência variou de 10 a 20 s por chamada com e sem o
   parâmetro; a amostra (2 chamadas em cada) não permite concluir.
-- A chave própria do jogador (BYOK) ainda usa o `gemini-3.5-flash` fixo, ou seja, 20
-  chamadas por dia numa chave gratuita (Etapa 3).
+- Com a chave própria, um 400 (pedido recusado) ainda percorre a fila inteira antes de virar
+  erro: até 7 chamadas para um problema que provavelmente é igual em todos os modelos. Não
+  parei no primeiro porque um 400 também pode ser específico de um modelo.
 - `teto_turnos_conta` (20) e `teto_turnos_convidado` (8) não foram recalibrados.
 - Sondagem de 05/10/2026, 3 chamadas mínimas em cada: 3.6 e 2.5 Flash responderam as 3 (até
   4 s e menos de 1 s); 3.7 falhou 1 e levou 13 s nas outras; 3.8 devolveu 503 nas 3; o 3 Flash

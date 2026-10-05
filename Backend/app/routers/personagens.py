@@ -159,5 +159,5 @@ def exportar_cronica(
         raise HTTPException(status_code=403, detail="Este personagem não pertence a você.")
     eventos = memory.eventos_cronologicos(db, personagem.id)
     chave = ChaveUsuario(chave_usuario)
-    texto = gerar_cronica(personagem, eventos, chamar_fn=chave.chamar_fn)
+    texto = gerar_cronica(personagem, eventos, chamar_fn=chave.chamar_fn_destaque)
     return {"nome": personagem.nome, "cronica": texto}

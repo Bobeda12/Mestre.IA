@@ -1,3 +1,4 @@
+import functools
 import json
 from collections.abc import Callable, Generator
 from datetime import UTC, datetime
@@ -251,7 +252,7 @@ def _persistir_desfecho_arco(
         return
     eventos = w_state.marcos[arco.marcos_no_inicio:]
     arco.desfecho = gerar_desfecho_arco(
-        heroi, arco.model_dump(), eventos, chamar_fn=chave.chamar_fn if chave else None
+        heroi, arco.model_dump(), eventos, chamar_fn=chave.chamar_fn_destaque if chave else None
     )
     memory.registrar_evento(
         db, heroi.id, w_state.turno, "arco",
@@ -283,7 +284,7 @@ def _persistir_epitafio_se_confirmado(
         return
     resumo = ResumoRolante.model_validate(heroi.resumo_rolante or {})
     marcantes = memory.eventos_marcantes(db, heroi.id)
-    heroi.epitafio = gerar_epitafio(heroi, marcantes, resumo, chamar_fn=chave.chamar_fn)
+    heroi.epitafio = gerar_epitafio(heroi, marcantes, resumo, chamar_fn=chave.chamar_fn_destaque)
     heroi.morto_em = datetime.now(UTC)
     total_abates = sum((heroi.monstros_derrotados or {}).values())
     heroi.pontuacao_final = (heroi.xp or 0) + w_state.turno + total_abates * 10
@@ -520,7 +521,7 @@ async def chat_endpoint(
         msgs = [{"role": "system", "content": prompt_morte}] + hist + [{"role": "user", "content": user_input.action}]
         try:
             with turno_span(personagem_id=heroi.id, usuario_id=current_user.id, turno=w_state.turno):
-                resp = chave.chamar_fn(msgs) if chave.chamar_fn else chamar_com_fallback(msgs, papel="destaque")
+                resp = (chave.chamar_fn_destaque or functools.partial(chamar_com_fallback, papel="destaque"))(msgs)
             narrativa = resp.choices[0].message.content or ""
         except ErroMestre:
             narrativa = ""
@@ -719,7 +720,7 @@ def chat_stream_endpoint(
             )
             try:
                 with turno_span(personagem_id=heroi.id, usuario_id=current_user.id, turno=w_state.turno):
-                    resp = chave.chamar_fn(msgs) if chave.chamar_fn else chamar_com_fallback(msgs, papel="destaque")
+                    resp = (chave.chamar_fn_destaque or functools.partial(chamar_com_fallback, papel="destaque"))(msgs)
                 narrativa = resp.choices[0].message.content or ""
             except ErroMestre:
                 narrativa = ""

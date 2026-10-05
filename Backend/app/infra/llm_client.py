@@ -17,10 +17,12 @@ serviços (`services/agent_loop.py`) precisam levantá-lo sem importar de
 ADR-0003 (routers → services → domain/infra)."""
 
 import contextlib
+import hashlib
 import logging
 import threading
 import time
 import weakref
+from collections import OrderedDict
 from collections.abc import Iterator
 from typing import Any, Literal
 
@@ -188,7 +190,36 @@ def _uso_no_log(cliente, modelo: str) -> str:
     return f"{por_minuto}/{limite[0]}min {por_dia}/{limite[1]}dia" if limite else f"{por_minuto}min {por_dia}dia"
 
 
-def _elos_dentro_do_prazo(papel: str) -> Iterator[tuple[str, str, Any, float]]:
+class _Conta:
+    """Dono de pausas e contagens que não é um cliente — ver `_conta_byok`."""
+
+    __slots__ = ("__weakref__",)
+
+
+# Com a chave do próprio jogador o cliente `openai.OpenAI` é efêmero (um por
+# chamada, para a chave nunca ficar guardada), então não serve de dono de
+# pausa nem de contagem: a chamada seguinte não lembraria que um modelo
+# acabou de falhar. O dono é um `_Conta` por HASH da chave — o hash não
+# permite recuperar a chave. No máximo `_MAX_CONTAS_BYOK`; a mais antiga sai
+# e as pausas/contagens dela somem junto (os dicionários são fracos).
+_MAX_CONTAS_BYOK = 256
+_contas_byok: OrderedDict[str, _Conta] = OrderedDict()
+_contas_byok_lock = threading.Lock()
+
+
+def _conta_byok(api_key: str) -> _Conta:
+    marca = hashlib.sha256(api_key.encode()).hexdigest()
+    with _contas_byok_lock:
+        conta = _contas_byok.pop(marca, None) or _Conta()
+        _contas_byok[marca] = conta
+        while len(_contas_byok) > _MAX_CONTAS_BYOK:
+            _contas_byok.popitem(last=False)
+        return conta
+
+
+def _elos_dentro_do_prazo(
+    papel: str, clientes: dict[str, Any] | None = None, dono: Any = None
+) -> Iterator[tuple[str, str, Any, Any, float]]:
     """Percorre `_elos_disponiveis(papel)` enquanto houver prazo total do
     papel (`settings.prazos_ia`), entregando também o tempo limite daquela
     chamada: o do papel ou o que resta do prazo, o que for menor.
@@ -197,29 +228,41 @@ def _elos_dentro_do_prazo(papel: str) -> Iterator[tuple[str, str, Any, float]]:
     levou 201 s — seis modelos falharam em fila e dois deles gastaram os
     60 s inteiros cada. O jogador espera a soma, não cada parcela."""
     limite = time.monotonic() + settings.prazos_ia[papel]
-    for provedor, modelo, cliente in _elos_disponiveis(papel):
+    for provedor, modelo, cliente, dono_do_elo in _elos_disponiveis(papel, clientes, dono):
         restante = limite - time.monotonic()
         if restante < _PRAZO_MINIMO:
             logger.warning("ia papel=%s prazo total esgotado antes de %s", papel, modelo)
             return
-        _contar_chamada(cliente, modelo)
-        yield provedor, modelo, cliente, min(settings.timeouts_ia[papel], restante)
+        _contar_chamada(dono_do_elo, modelo)
+        yield provedor, modelo, cliente, dono_do_elo, min(settings.timeouts_ia[papel], restante)
 
 
-def _elos_disponiveis(papel: str) -> list[tuple[str, str, Any]]:
+def _elos_disponiveis(
+    papel: str, clientes: dict[str, Any] | None = None, dono: Any = None
+) -> list[tuple[str, str, Any, Any]]:
     """Elos da cadeia do papel que têm chave configurada, não estão em pausa
     e não chegaram ao limite no contador local (`_no_limite`). Se não sobrar
     NENHUM, devolve os que só estão fora por sobrecarga ou pelo contador:
     tentar um modelo que talvez já tenha voltado (ou cuja contagem local
     esteja errada para mais) é melhor do que falhar sem chamar ninguém. Os
-    pausados por cota ficam de fora — ali o provedor já respondeu 429."""
-    elos = [(provedor, modelo, clients[provedor]) for provedor, modelo in CADEIAS[papel] if provedor in clients]
-    livres = [elo for elo in elos if not _em_pausa(elo[2], elo[1]) and not _no_limite(elo[2], elo[1])]
+    pausados por cota ficam de fora — ali o provedor já respondeu 429.
+
+    Cada elo é (provedor, modelo, cliente, dono). `clientes` e `dono` só
+    são passados pelo caminho da chave do jogador: o cliente é o efêmero
+    dele e o dono das pausas/contagens é a `_Conta` da chave. Sem eles,
+    valem os clientes do servidor, e cada cliente é o próprio dono."""
+    clientes = clients if clientes is None else clientes
+    elos = [
+        (provedor, modelo, clientes[provedor], dono or clientes[provedor])
+        for provedor, modelo in CADEIAS[papel]
+        if provedor in clientes
+    ]
+    livres = [elo for elo in elos if not _em_pausa(elo[3], elo[1]) and not _no_limite(elo[3], elo[1])]
     if livres:
         return livres
     return [
         elo for elo in elos
-        if not _em_pausa(elo[2], elo[1]) or _pausa(elo[2], elo[1])[1] == "sobrecarga"
+        if not _em_pausa(elo[3], elo[1]) or _pausa(elo[3], elo[1])[1] == "sobrecarga"
     ]
 
 
@@ -357,6 +400,81 @@ def chamar_modelo_unico(
         raise ErroMestre(f"O serviço de IA recusou o pedido (código {e.status_code}).") from e
 
 
+class _CadeiaEsgotada(Exception):
+    """Nenhum elo da cadeia respondeu. Interna: quem chama traduz para o
+    `ErroMestre` certo (servidor ou chave do jogador)."""
+
+    def __init__(self, ultimo_erro: Exception | None, modelo: str = "") -> None:
+        self.ultimo_erro = ultimo_erro
+        self.modelo = modelo
+        super().__init__(str(ultimo_erro))
+
+
+class _StreamCaiuNoMeio(Exception):
+    """A stream falhou depois do primeiro chunk — não dá mais para trocar de modelo."""
+
+
+def _registrar_falha(provedor: str, modelo: str, dono: Any, erro: Exception) -> None:
+    """Log e pausa de um elo que falhou. Antes de 05/10/2026 o erro
+    transitório era mudo: o jogador via "todos os modelos falharam" e o log
+    não dizia se era cota do dia (429) ou sobrecarga (503). Para os demais
+    status, o CORPO é o que diz se foi teto de tokens, chave extra na
+    mensagem ou uma chamada de ferramenta malformada (`tool_use_failed`)."""
+    if isinstance(erro, _ERROS_TRANSITORIOS):
+        logger.warning(
+            "provedor=%s modelo=%s transitorio=%s corpo=%s",
+            provedor, modelo, type(erro).__name__, str(getattr(erro, "body", ""))[:300],
+        )
+        _registrar_pausa(dono, modelo, erro)
+    elif isinstance(erro, openai.APIStatusError):
+        logger.warning(
+            "provedor=%s modelo=%s status=%s corpo=%s", provedor, modelo, erro.status_code, str(erro.body)[:300]
+        )
+
+
+def _chave_recusada(erro: Exception) -> bool:
+    return isinstance(erro, openai.APIStatusError) and erro.status_code in (401, 403)
+
+
+def _percorrer_cadeia(
+    papel: str,
+    msgs: list[dict],
+    tools: list[dict] | None,
+    tool_choice: str | dict,
+    response_format: dict | None,
+    clientes: dict[str, Any] | None = None,
+    dono: Any = None,
+    parar_se_chave_recusada: bool = False,
+) -> Any:
+    """Tenta cada elo de `CADEIAS[papel]` em ordem, pulando provedor sem chave
+    e modelo em pausa ou no limite (ver `_elos_disponiveis`). Um erro
+    transitório — cota, sobrecarga, tempo estourado — pausa aquele modelo e
+    passa para o próximo, enquanto couber no prazo total do papel, sem
+    repetir no mesmo: a fila tem vários modelos do mesmo provedor, cada um
+    com cota própria, e no plano gratuito do Gemini insistir num 503 parece
+    gastar a cota do dia (ADR-0038)."""
+    ultimo_erro: Exception | None = None
+    ultimo_modelo = ""
+    for provedor, modelo, cliente, dono_do_elo, timeout in _elos_dentro_do_prazo(papel, clientes, dono):
+        try:
+            resp = _chamar_modelo(
+                cliente, provedor, modelo, msgs, tools, tool_choice, response_format, papel=papel, timeout=timeout
+            )
+        except (*_ERROS_TRANSITORIOS, openai.APIStatusError) as e:
+            _registrar_falha(provedor, modelo, dono_do_elo, e)
+            ultimo_erro, ultimo_modelo = e, modelo
+            if parar_se_chave_recusada and _chave_recusada(e):
+                break  # a mesma chave seria recusada em todos os modelos
+            continue
+        # Uma linha por chamada atendida: é o que permite somar, no log,
+        # quantas chamadas um turno faz e em qual modelo caíram.
+        logger.info(
+            "ia papel=%s provedor=%s modelo=%s uso=%s", papel, provedor, modelo, _uso_no_log(dono_do_elo, modelo)
+        )
+        return resp
+    raise _CadeiaEsgotada(ultimo_erro, ultimo_modelo)
+
+
 def chamar_com_fallback(
     msgs: list[dict],
     tools: list[dict] | None = None,
@@ -364,50 +482,16 @@ def chamar_com_fallback(
     response_format: dict | None = None,
     papel: Papel = "volume",
 ) -> Any:
-    """Tenta cada elo de `CADEIAS[papel]` em ordem, pulando provedor sem chave
-    e modelo em pausa (ver `_elos_disponiveis`). Um erro transitório — cota,
-    sobrecarga, tempo estourado — pausa aquele modelo e passa para o
-    próximo, enquanto couber no prazo total do papel, sem repetir no mesmo: a fila tem vários modelos do mesmo
-    provedor, cada um com cota própria, e no plano gratuito do Gemini
-    insistir num 503 parece gastar a cota do dia (ADR-0038)."""
+    """Chama a IA com a chave do servidor, pela cadeia do papel (ver
+    `_percorrer_cadeia`)."""
     if not clients:
         raise ErroMestre(_SEM_PROVEDOR)
-    ultimo_erro: Exception | None = None
-    for provedor, modelo, cliente, timeout in _elos_dentro_do_prazo(papel):
-        try:
-            resp = _chamar_modelo(
-                cliente, provedor, modelo, msgs, tools, tool_choice, response_format, papel=papel, timeout=timeout
-            )
-            # Uma linha por chamada atendida: é o que permite somar, no
-            # log, quantas chamadas um turno faz e em qual modelo caíram.
-            logger.info(
-                "ia papel=%s provedor=%s modelo=%s uso=%s", papel, provedor, modelo, _uso_no_log(cliente, modelo)
-            )
-            return resp
-        except _ERROS_TRANSITORIOS as e:
-            # Achado de uso (05/10/2026): este ramo era mudo — o jogador via
-            # "todos os modelos falharam" e o log não dizia se era cota do
-            # dia (429) ou sobrecarga (503).
-            logger.warning(
-                "provedor=%s modelo=%s transitorio=%s corpo=%s",
-                provedor, modelo, type(e).__name__, str(getattr(e, "body", ""))[:300],
-            )
-            _registrar_pausa(cliente, modelo, e)
-            ultimo_erro = e
-            continue
-        except openai.APIStatusError as e:
-            # Fase 0 do plano "jogo completo" — o log do httpx só mostra o
-            # status; o CORPO é o que diz se foi teto de tokens, chave
-            # extra na mensagem ou uma chamada de ferramenta malformada
-            # que o próprio modelo gerou (`tool_use_failed` na Groq).
-            logger.warning(
-                "provedor=%s modelo=%s status=%s corpo=%s", provedor, modelo, e.status_code, str(e.body)[:300]
-            )
-            ultimo_erro = e
-            continue
-    raise ErroMestre(
-        "Todos os modelos configurados falharam ao responder. Tente de novo em instantes."
-    ) from ultimo_erro
+    try:
+        return _percorrer_cadeia(papel, msgs, tools, tool_choice, response_format)
+    except _CadeiaEsgotada as e:
+        raise ErroMestre(
+            "Todos os modelos configurados falharam ao responder. Tente de novo em instantes."
+        ) from e.ultimo_erro
 
 
 def _detalhe_erro_gemini(e: openai.APIStatusError) -> str:
@@ -453,34 +537,52 @@ def validar_chave_usuario(api_key: str) -> None:
         raise ErroMestre(_mensagem_erro_byok(e, modelo="gemini-3.5-flash")) from e
 
 
+def _clientes_do_jogador(api_key: str) -> tuple[dict[str, Any], _Conta]:
+    cliente = openai.OpenAI(api_key=api_key, base_url=_BASE_URLS["gemini"], max_retries=0, timeout=_TIMEOUT_PADRAO)
+    return {"gemini": cliente}, _conta_byok(api_key)
+
+
+def _erro_mestre_byok(esgotada: _CadeiaEsgotada, transitorio: str) -> ErroMestre:
+    erro = esgotada.ultimo_erro
+    if isinstance(erro, openai.APIStatusError) and not isinstance(erro, _ERROS_TRANSITORIOS):
+        return ErroMestre(_mensagem_erro_byok(erro, esgotada.modelo))
+    return ErroMestre(transitorio)
+
+
 def chamar_com_chave_usuario(
     msgs: list[dict],
     api_key: str,
     tools: list[dict] | None = None,
     tool_choice: str | dict = "auto",
-    modelo: str = "gemini-3.5-flash",
     response_format: dict | None = None,
+    papel: Papel = "volume",
 ) -> Any:
-    """BYOK (Etapa 15) — mesma forma de `chamar_modelo_unico`, mas o cliente
-    é efêmero (chave do jogador, nunca guardada em `clients`) e sem cadeia
-    de fallback: é só o Gemini, com a chave que ele forneceu. Erros viram
+    """BYOK (Etapa 15) — chama o Gemini com a chave que o jogador forneceu.
+    O cliente é efêmero (a chave nunca é guardada em `clients`). Erros viram
     `ErroMestre` com mensagens específicas ("sua chave..."), pra o router
     distinguir de uma falha da chave do servidor e não cair num fallback
     silencioso que gastaria a cota do servidor sem o jogador perceber.
+
+    ADR-0038 — antes era um modelo fixo (`gemini-3.5-flash`), que numa chave
+    gratuita dá 20 chamadas por dia: quem trazia a própria chave jogava uns
+    7 turnos. Agora percorre os elos Gemini da cadeia do papel, igual à
+    chave do servidor, só que com a chave dele; pausas e contagens ficam
+    numa conta por hash da chave (`_conta_byok`). Chave recusada (401/403)
+    encerra na hora: seria recusada em todos os modelos.
 
     `response_format` (rodada de conserto) — as chamadas de JSON solto do
     prólogo/epitáfio (`services/narrator.py`) passaram a poder usar a
     chave do jogador também; sem este parâmetro elas caíam sempre na conta
     do servidor, mesmo com "Traga sua própria chave" ativado."""
-    cliente = openai.OpenAI(api_key=api_key, base_url=_BASE_URLS["gemini"], max_retries=0, timeout=_TIMEOUT_PADRAO)
+    clientes, conta = _clientes_do_jogador(api_key)
     try:
-        return _chamar_modelo_com_retry(cliente, "gemini", modelo, msgs, tools, tool_choice, response_format)
-    except _ERROS_TRANSITORIOS as e:
-        raise ErroMestre(
-            "Sua chave bateu no limite de uso, o Gemini está sobrecarregado, ou demorou demais para responder."
-        ) from e
-    except openai.APIStatusError as e:
-        raise ErroMestre(_mensagem_erro_byok(e, modelo)) from e
+        return _percorrer_cadeia(
+            papel, msgs, tools, tool_choice, response_format, clientes, conta, parar_se_chave_recusada=True
+        )
+    except _CadeiaEsgotada as e:
+        raise _erro_mestre_byok(
+            e, "Sua chave bateu no limite de uso, o Gemini está sobrecarregado, ou demorou demais para responder."
+        ) from e.ultimo_erro
 
 
 def chamar_stream_com_chave_usuario(
@@ -488,28 +590,49 @@ def chamar_stream_com_chave_usuario(
     api_key: str,
     tools: list[dict] | None = None,
     tool_choice: str | dict = "auto",
-    modelo: str = "gemini-3.5-flash",
+    papel: Papel = "volume",
 ) -> Iterator[Any]:
-    """Versão em streaming de `chamar_com_chave_usuario`. Sem cadeia pra
-    cair — qualquer falha (antes ou depois do primeiro chunk) vira
-    `ErroMestre` direto, nunca um fallback silencioso para outro provedor
-    ou pra chave do servidor (ver docstring acima)."""
-    cliente = openai.OpenAI(api_key=api_key, base_url=_BASE_URLS["gemini"], max_retries=0, timeout=_TIMEOUT_PADRAO)
+    """Versão em streaming de `chamar_com_chave_usuario`: percorre os elos
+    Gemini da cadeia do papel com a chave do jogador, trocando de modelo só
+    antes do primeiro chunk. Nunca cai para outro provedor nem para a chave
+    do servidor (ver docstring acima)."""
+    clientes, conta = _clientes_do_jogador(api_key)
+    mensagem = "Sua chave bateu no limite de uso, o Gemini está sobrecarregado, ou a conexão caiu no meio da resposta."
     try:
-        stream = _chamar_modelo_com_retry(cliente, "gemini", modelo, msgs, tools, tool_choice, stream=True)
-        yield from stream
-    except _ERROS_TRANSITORIOS as e:
-        raise ErroMestre(
-            "Sua chave bateu no limite de uso, o Gemini está sobrecarregado, ou a conexão caiu no meio da resposta."
-        ) from e
-    except openai.APIStatusError as e:
-        raise ErroMestre(_mensagem_erro_byok(e, modelo)) from e
+        yield from _stream_cadeia(papel, msgs, tools, tool_choice, clientes, conta, parar_se_chave_recusada=True)
+    except _StreamCaiuNoMeio as e:
+        raise ErroMestre(mensagem) from e.__cause__
+    except _CadeiaEsgotada as e:
+        raise _erro_mestre_byok(e, mensagem) from e.ultimo_erro
 
 
 def chamar_stream_com_fallback(
     msgs: list[dict], tools: list[dict] | None = None, tool_choice: str | dict = "auto", papel: Papel = "volume"
 ) -> Iterator[Any]:
-    """Versão em streaming de `chamar_com_fallback` (Etapa 7, ADR-0012).
+    """Versão em streaming de `chamar_com_fallback` (Etapa 7, ADR-0012), com
+    a chave do servidor. Ver `_stream_cadeia`."""
+    if not clients:
+        raise ErroMestre(_SEM_PROVEDOR)
+    try:
+        yield from _stream_cadeia(papel, msgs, tools, tool_choice)
+    except _StreamCaiuNoMeio as e:
+        raise ErroMestre("A conexão com a IA caiu no meio da resposta.") from e.__cause__
+    except _CadeiaEsgotada as e:
+        raise ErroMestre(
+            "Todos os modelos configurados falharam ao responder. Tente de novo em instantes."
+        ) from e.ultimo_erro
+
+
+def _stream_cadeia(
+    papel: str,
+    msgs: list[dict],
+    tools: list[dict] | None,
+    tool_choice: str | dict,
+    clientes: dict[str, Any] | None = None,
+    dono: Any = None,
+    parar_se_chave_recusada: bool = False,
+) -> Iterator[Any]:
+    """Percorre a cadeia do papel em streaming.
 
     A cadeia de fallback do ADR-0008 troca de modelo depois de um erro —
     seguro quando nada foi mandado pro cliente ainda. Streaming quebra essa
@@ -521,32 +644,24 @@ def chamar_stream_com_fallback(
     Por isso o fallback aqui só vale **antes do primeiro chunk** — troca de
     modelo (ou provedor) se a conexão falhar na hora de abrir o stream (rate
     limit, 4xx/5xx, timeout). Depois do primeiro chunk, a stream está
-    "comprometida" com aquele modelo: uma falha a partir daí vira `ErroMestre`
-    (o router traduz isso num evento SSE `error`), não uma troca silenciosa."""
-    if not clients:
-        raise ErroMestre(_SEM_PROVEDOR)
+    "comprometida" com aquele modelo: uma falha a partir daí levanta
+    `_StreamCaiuNoMeio` (que vira `ErroMestre`; o router traduz isso num
+    evento SSE `error`), não uma troca silenciosa."""
     ultimo_erro: Exception | None = None
-    for provedor, modelo, cliente, timeout in _elos_dentro_do_prazo(papel):
+    ultimo_modelo = ""
+    for provedor, modelo, cliente, dono_do_elo, timeout in _elos_dentro_do_prazo(papel, clientes, dono):
         try:
             stream = _chamar_modelo(
                 cliente, provedor, modelo, msgs, tools, tool_choice, stream=True, papel=papel, timeout=timeout
             )
-        except _ERROS_TRANSITORIOS as e:
-            logger.warning(
-                "provedor=%s modelo=%s transitorio=%s corpo=%s",
-                provedor, modelo, type(e).__name__, str(getattr(e, "body", ""))[:300],
-            )
-            _registrar_pausa(cliente, modelo, e)
-            ultimo_erro = e
-            continue
-        except openai.APIStatusError as e:
-            logger.warning(
-                "provedor=%s modelo=%s status=%s corpo=%s", provedor, modelo, e.status_code, str(e.body)[:300]
-            )
-            ultimo_erro = e
+        except (*_ERROS_TRANSITORIOS, openai.APIStatusError) as e:
+            _registrar_falha(provedor, modelo, dono_do_elo, e)
+            ultimo_erro, ultimo_modelo = e, modelo
+            if parar_se_chave_recusada and _chave_recusada(e):
+                break
             continue
         logger.info(
-            "ia papel=%s provedor=%s modelo=%s uso=%s stream", papel, provedor, modelo, _uso_no_log(cliente, modelo)
+            "ia papel=%s provedor=%s modelo=%s uso=%s stream", papel, provedor, modelo, _uso_no_log(dono_do_elo, modelo)
         )
 
         comprometido = False
@@ -587,12 +702,10 @@ def chamar_stream_com_fallback(
                     )
                 return
             except _ERROS_TRANSITORIOS as e:
-                _registrar_pausa(cliente, modelo, e)
+                _registrar_pausa(dono_do_elo, modelo, e)
                 if comprometido:
-                    raise ErroMestre("A conexão com a IA caiu no meio da resposta.") from e
-                ultimo_erro = e
+                    raise _StreamCaiuNoMeio() from e
+                ultimo_erro, ultimo_modelo = e, modelo
                 continue
 
-    raise ErroMestre(
-        "Todos os modelos configurados falharam ao responder. Tente de novo em instantes."
-    ) from ultimo_erro
+    raise _CadeiaEsgotada(ultimo_erro, ultimo_modelo)

@@ -13,13 +13,6 @@ from collections.abc import Callable
 from typing import Any
 
 from app.infra import embeddings, llm_client
-from app.infra.settings import settings
-
-# Modelo usado pro resumo rolante quando ligado à chave do jogador
-# (`chamar_com_chave_usuario`), no mesmo tier barato de
-# `settings.modelo_barato` ("gemini:gemini-3.5-flash-lite"), só que sem o
-# prefixo "provedor:" (que `chamar_com_chave_usuario` já fixa em "gemini").
-MODELO_BARATO_BYOK = settings.modelo_barato.rsplit(":", 1)[-1]
 
 
 class ChaveUsuario:
@@ -31,17 +24,23 @@ class ChaveUsuario:
         # `X-Gemini-Key: ` (vazio) não deveria isentar o teto diário nem
         # tentar autenticar no Gemini com nada.
         self.presente = bool(chave)
+        # Um por papel (ADR-0038): `chamar_fn`/`chamar_fn_stream` são o
+        # turno de jogo e o Oráculo (volume); `chamar_fn_destaque`, o
+        # prólogo, a morte e os desfechos; `chamar_fn_barato`, o resumo
+        # rolante (fundo).
         self.chamar_fn: Callable[..., Any] | None = None
         self.chamar_fn_stream: Callable[..., Any] | None = None
+        self.chamar_fn_destaque: Callable[..., Any] | None = None
         self.chamar_fn_barato: Callable[..., Any] | None = None
         self.embed_fn: Callable[[str], list[float]] | None = None
         if self.presente:
             assert chave is not None
             self.chamar_fn = functools.partial(llm_client.chamar_com_chave_usuario, api_key=chave)
             self.chamar_fn_stream = functools.partial(llm_client.chamar_stream_com_chave_usuario, api_key=chave)
-            self.chamar_fn_barato = functools.partial(
-                llm_client.chamar_com_chave_usuario, api_key=chave, modelo=MODELO_BARATO_BYOK
+            self.chamar_fn_destaque = functools.partial(
+                llm_client.chamar_com_chave_usuario, api_key=chave, papel="destaque"
             )
+            self.chamar_fn_barato = functools.partial(llm_client.chamar_com_chave_usuario, api_key=chave, papel="fundo")
             self.embed_fn = functools.partial(embeddings.embed_um, api_key=chave)
         # Memória e regras consultam a mesma ação: um embedding por request,
         # sem compartilhar texto/chave/cache entre jogadores ou background tasks.

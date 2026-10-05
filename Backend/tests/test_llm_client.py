@@ -469,90 +469,136 @@ class TestChamarStreamComFallback:
             list(chamar_stream_com_fallback([{"role": "user", "content": "oi"}]))
 
 
+def _gemini_do_papel(papel: str = "volume") -> list[str]:
+    return [modelo for provedor, modelo in llm_client.CADEIAS[papel] if provedor == "gemini"]
+
+
 class TestChamarComChaveUsuario:
     """BYOK (Etapa 15) — `chamar_com_chave_usuario`/`chamar_stream_com_chave_usuario`
     constroem um `openai.OpenAI` efêmero, fora do dict global `clients`
     (nunca guardado, nunca reaproveitado entre requests) — por isso o dublê
-    aqui substitui `openai.OpenAI` em si, não `llm_client.clients`."""
+    aqui substitui `openai.OpenAI` em si, não `llm_client.clients`.
+
+    ADR-0038 — a chave do jogador percorre os elos Gemini da cadeia do
+    papel, em vez do `gemini-3.5-flash` fixo (20 chamadas por dia numa
+    chave gratuita)."""
+
+    MSGS = [{"role": "user", "content": "oi"}]
+
+    @pytest.fixture(autouse=True)
+    def _contas_limpas(self, monkeypatch):
+        # Pausas e contagens ficam por hash da chave; cada teste começa do zero.
+        monkeypatch.setattr(llm_client, "_contas_byok", type(llm_client._contas_byok)())
 
     def _fake_openai(self, monkeypatch, comportamento: dict[str, list]) -> _FakeClient:
         fake = _FakeClient(comportamento)
         monkeypatch.setattr(llm_client.openai, "OpenAI", lambda **kwargs: fake)
         return fake
 
-    def test_chama_o_gemini_com_a_chave_do_usuario_sem_tocar_clients(self, monkeypatch):
+    def test_chama_o_primeiro_gemini_do_papel_sem_tocar_clients(self, monkeypatch):
         resultado_ok = object()
-        fake = self._fake_openai(monkeypatch, {"gemini-3.5-flash": [resultado_ok]})
+        primeiro = _gemini_do_papel()[0]
+        fake = self._fake_openai(monkeypatch, {primeiro: [resultado_ok]})
         # `clients` fica vazio de propósito — o caminho BYOK não depende
         # dele nem o toca.
         monkeypatch.setattr(llm_client, "clients", {})
 
-        resultado = chamar_com_chave_usuario([{"role": "user", "content": "oi"}], api_key="chave-do-jogador")
+        resultado = chamar_com_chave_usuario(self.MSGS, api_key="chave-do-jogador")
 
         assert resultado is resultado_ok
-        assert fake.chat.completions.chamadas == ["gemini-3.5-flash"]
+        assert fake.chat.completions.chamadas == [primeiro]
 
-    def test_chave_invalida_vira_erro_mestre_especifico(self, monkeypatch):
-        self._fake_openai(monkeypatch, {"gemini-3.5-flash": [_erro_autenticacao()]})
+    def test_cada_papel_usa_a_propria_cadeia(self, monkeypatch):
+        volume, destaque = _gemini_do_papel("volume")[0], _gemini_do_papel("destaque")[0]
+        assert volume != destaque
+        fake = self._fake_openai(monkeypatch, {volume: ["do volume"], destaque: ["do destaque"]})
 
-        with pytest.raises(ErroMestre, match="recusada"):
-            chamar_com_chave_usuario([{"role": "user", "content": "oi"}], api_key="chave-invalida")
+        assert chamar_com_chave_usuario(self.MSGS, api_key="chave") == "do volume"
+        assert chamar_com_chave_usuario(self.MSGS, api_key="chave", papel="destaque") == "do destaque"
+        assert fake.chat.completions.chamadas == [volume, destaque]
 
-    def test_falha_transitoria_nao_cai_para_a_chave_do_servidor(self, monkeypatch):
-        # Sem cadeia de fallback no caminho BYOK: uma falha (rate limit,
-        # timeout) vira ErroMestre direto — nunca um fallback silencioso
-        # que gastaria a cota do servidor sem o jogador perceber.
-        self._fake_openai(monkeypatch, {"gemini-3.5-flash": [_erro_rate_limit(), _erro_rate_limit()]})
+    def test_nunca_usa_outro_provedor_nem_a_chave_do_servidor(self, monkeypatch):
+        # Todos os elos Gemini falham por cota: vira ErroMestre. Os elos da
+        # Groq da cadeia e os `clients` do servidor não são tocados — seria
+        # gastar a cota do servidor sem o jogador perceber.
+        modelos = _gemini_do_papel()
+        fake = self._fake_openai(monkeypatch, {m: [_erro_rate_limit()] for m in modelos})
+        servidor = _FakeClient({})
+        monkeypatch.setattr(llm_client, "clients", {"gemini": servidor, "groq": servidor})
 
         with pytest.raises(ErroMestre, match="limite de uso"):
-            chamar_com_chave_usuario([{"role": "user", "content": "oi"}], api_key="chave-do-jogador")
+            chamar_com_chave_usuario(self.MSGS, api_key="chave-do-jogador")
 
-    def test_503_esgota_o_retry_embutido_e_vira_erro_mestre(self, monkeypatch):
-        # `chamar_com_chave_usuario` não tem `@retry` próprio, mas chama
-        # `_chamar_modelo` diretamente — que já é decorada com retry — então
-        # o 503 é tentado 2x (stop_after_attempt(2)) antes de virar ErroMestre.
-        fake = self._fake_openai(monkeypatch, {"gemini-3.5-flash": [_erro_servidor(503), _erro_servidor(503)]})
+        assert fake.chat.completions.chamadas == modelos
+        assert servidor.chat.completions.chamadas == []
 
-        with pytest.raises(ErroMestre, match="sobrecarregado"):
-            chamar_com_chave_usuario([{"role": "user", "content": "oi"}], api_key="chave-do-jogador")
+    def test_chave_invalida_para_no_primeiro_modelo(self, monkeypatch):
+        # 401 num modelo é 401 em todos: percorrer a fila seria fazer sete
+        # chamadas para ouvir a mesma recusa.
+        primeiro = _gemini_do_papel()[0]
+        fake = self._fake_openai(monkeypatch, {primeiro: [_erro_autenticacao()]})
 
-        assert fake.chat.completions.chamadas == ["gemini-3.5-flash", "gemini-3.5-flash"]
+        with pytest.raises(ErroMestre, match="recusada"):
+            chamar_com_chave_usuario(self.MSGS, api_key="chave-invalida")
 
-    def test_modelo_customizado_e_repassado(self, monkeypatch):
-        resultado_ok = object()
-        fake = self._fake_openai(monkeypatch, {"gemini-3.5-flash-lite": [resultado_ok]})
+        assert fake.chat.completions.chamadas == [primeiro]
 
-        resultado = chamar_com_chave_usuario(
-            [{"role": "user", "content": "oi"}], api_key="chave-do-jogador", modelo="gemini-3.5-flash-lite"
-        )
+    def test_503_passa_para_o_proximo_modelo_e_a_pausa_vale_para_a_proxima_chamada(self, monkeypatch):
+        # O cliente é efêmero, mas a pausa fica por hash da chave: a chamada
+        # seguinte do mesmo jogador não volta a bater no modelo sobrecarregado.
+        primeiro, segundo = _gemini_do_papel()[:2]
+        fake = self._fake_openai(monkeypatch, {primeiro: [_erro_servidor(503), "voltou"], segundo: ["ok", "ok"]})
 
-        assert resultado is resultado_ok
-        assert fake.chat.completions.chamadas == ["gemini-3.5-flash-lite"]
+        assert chamar_com_chave_usuario(self.MSGS, api_key="chave-a") == "ok"
+        assert chamar_com_chave_usuario(self.MSGS, api_key="chave-a") == "ok"
+        assert fake.chat.completions.chamadas == [primeiro, segundo, segundo]
+        # Outra chave é outra conta: não herda a pausa.
+        assert chamar_com_chave_usuario(self.MSGS, api_key="chave-b") == "voltou"
+
+    def test_a_chave_nao_fica_guardada_so_o_hash(self, monkeypatch):
+        self._fake_openai(monkeypatch, {_gemini_do_papel()[0]: ["ok"]})
+
+        chamar_com_chave_usuario(self.MSGS, api_key="chave-secreta-do-jogador")
+
+        assert list(llm_client._contas_byok) != []
+        assert all("chave-secreta" not in marca for marca in llm_client._contas_byok)
 
     def test_400_nao_culpa_a_chave(self, monkeypatch):
         # Achado ao vivo (rodada de conserto) — um 400 quase sempre é outra
         # coisa (ex: `content: null` que `agent_loop.py` mandava numa
         # mensagem de tool_call). A mensagem antiga dizia "sua chave foi
         # recusada" para qualquer status; isso é o que passou a diferenciar.
-        self._fake_openai(
-            monkeypatch, {"gemini-3.5-flash": [_erro_status(400, {"error": {"message": "invalid content field"}})]}
-        )
+        corpo = {"error": {"message": "invalid content field"}}
+        self._fake_openai(monkeypatch, {m: [_erro_status(400, corpo)] for m in _gemini_do_papel()})
 
         with pytest.raises(ErroMestre) as exc_info:
-            chamar_com_chave_usuario([{"role": "user", "content": "oi"}], api_key="chave-do-jogador")
+            chamar_com_chave_usuario(self.MSGS, api_key="chave-do-jogador")
 
         mensagem = str(exc_info.value)
         assert "recusada" not in mensagem
         assert "invalid content field" in mensagem
 
-    def test_404_aponta_para_o_modelo_sem_acesso(self, monkeypatch):
-        self._fake_openai(monkeypatch, {"gemini-3.5-flash": [_erro_status(404)]})
+    def test_404_em_todos_aponta_para_o_modelo_sem_acesso(self, monkeypatch):
+        modelos = _gemini_do_papel()
+        self._fake_openai(monkeypatch, {m: [_erro_status(404)] for m in modelos})
 
-        with pytest.raises(ErroMestre, match="não tem acesso ao modelo 'gemini-3.5-flash'"):
-            chamar_com_chave_usuario([{"role": "user", "content": "oi"}], api_key="chave-do-jogador")
+        with pytest.raises(ErroMestre, match=f"não tem acesso ao modelo '{modelos[-1]}'"):
+            chamar_com_chave_usuario(self.MSGS, api_key="chave-do-jogador")
+
+    def test_404_num_modelo_so_passa_para_o_proximo(self, monkeypatch):
+        primeiro, segundo = _gemini_do_papel()[:2]
+        self._fake_openai(monkeypatch, {primeiro: [_erro_status(404)], segundo: ["ok"]})
+
+        assert chamar_com_chave_usuario(self.MSGS, api_key="chave-do-jogador") == "ok"
 
 
 class TestChamarStreamComChaveUsuario:
+    MSGS = [{"role": "user", "content": "oi"}]
+
+    @pytest.fixture(autouse=True)
+    def _contas_limpas(self, monkeypatch):
+        monkeypatch.setattr(llm_client, "_contas_byok", type(llm_client._contas_byok)())
+
     def _fake_openai(self, monkeypatch, comportamento: dict[str, list]) -> _FakeClient:
         fake = _FakeClient(comportamento)
         monkeypatch.setattr(llm_client.openai, "OpenAI", lambda **kwargs: fake)
@@ -560,27 +606,39 @@ class TestChamarStreamComChaveUsuario:
 
     def test_stream_da_chave_do_usuario_funciona_de_ponta_a_ponta(self, monkeypatch):
         chunks = ["a", "b", "c"]
-        fake = self._fake_openai(monkeypatch, {"gemini-3.5-flash": [chunks]})
+        primeiro = _gemini_do_papel()[0]
+        fake = self._fake_openai(monkeypatch, {primeiro: [chunks]})
 
-        resultado = list(chamar_stream_com_chave_usuario([{"role": "user", "content": "oi"}], api_key="chave"))
+        resultado = list(chamar_stream_com_chave_usuario(self.MSGS, api_key="chave"))
 
         assert resultado == chunks
-        assert fake.chat.completions.chamadas == ["gemini-3.5-flash"]
+        assert fake.chat.completions.chamadas == [primeiro]
+
+    def test_falha_antes_do_primeiro_chunk_passa_para_o_proximo_modelo(self, monkeypatch):
+        primeiro, segundo = _gemini_do_papel()[:2]
+        fake = self._fake_openai(monkeypatch, {primeiro: [_erro_servidor(503)], segundo: [["a", "b"]]})
+
+        assert list(chamar_stream_com_chave_usuario(self.MSGS, api_key="chave")) == ["a", "b"]
+        assert fake.chat.completions.chamadas == [primeiro, segundo]
 
     def test_falha_no_meio_da_stream_vira_erro_mestre_sem_fallback(self, monkeypatch):
         stream_quebrada = _StreamQuebrado(["a"], _erro_rate_limit())
-        self._fake_openai(monkeypatch, {"gemini-3.5-flash": [stream_quebrada]})
+        primeiro = _gemini_do_papel()[0]
+        fake = self._fake_openai(monkeypatch, {primeiro: [stream_quebrada]})
 
-        gerador = chamar_stream_com_chave_usuario([{"role": "user", "content": "oi"}], api_key="chave")
+        gerador = chamar_stream_com_chave_usuario(self.MSGS, api_key="chave")
         assert next(gerador) == "a"
         with pytest.raises(ErroMestre, match="limite de uso"):
             next(gerador)
+        assert fake.chat.completions.chamadas == [primeiro]
 
     def test_chave_invalida_vira_erro_mestre_antes_do_primeiro_chunk(self, monkeypatch):
-        self._fake_openai(monkeypatch, {"gemini-3.5-flash": [_erro_autenticacao()]})
+        primeiro = _gemini_do_papel()[0]
+        fake = self._fake_openai(monkeypatch, {primeiro: [_erro_autenticacao()]})
 
         with pytest.raises(ErroMestre, match="recusada"):
-            list(chamar_stream_com_chave_usuario([{"role": "user", "content": "oi"}], api_key="chave-invalida"))
+            list(chamar_stream_com_chave_usuario(self.MSGS, api_key="chave-invalida"))
+        assert fake.chat.completions.chamadas == [primeiro]
 
 
 class _FakeModels:

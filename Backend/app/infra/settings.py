@@ -104,9 +104,8 @@ class Settings(BaseSettings):
     # (`reasoning_effort`: minimal, low, medium, high). Papel ausente = o
     # padrão do modelo.
     esforco_raciocinio: dict[str, str] = {}
-    # Modelo fixo do LLM-as-judge (evals/judge.py) e do resumo rolante com
-    # a chave do próprio jogador (infra/byok.py). O resumo com a chave do
-    # servidor usa `cadeia_fundo` acima.
+    # Modelo fixo do LLM-as-judge (evals/judge.py). O resumo rolante usa
+    # `cadeia_fundo` acima, com a chave do servidor ou a do jogador.
     modelo_barato: str = "gemini:gemini-3.5-flash-lite"
     agent_max_passos: int = 6
     # Auditoria pré-lançamento (Fase 1/Mundo Vivo) mediu esta régua contra o

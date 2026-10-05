@@ -121,6 +121,28 @@ primeiras chamadas saíram por ele e a quarta foi direto para o modelo seguinte,
 erro. A linha de log de cada chamada agora mostra a contagem, por exemplo
 `uso=3/15min 120/500dia`.
 
+## Quem traz a própria chave
+
+O jogo deixa o jogador usar a própria chave do Gemini em vez da do servidor. Só que esse
+caminho continuava preso ao modelo antigo, o de 20 chamadas por dia. Quem trazia uma chave
+gratuita, justamente para jogar mais, jogava uns 7 turnos.
+
+Agora a chave do jogador percorre as mesmas filas por papel. Três regras que já valiam
+continuam valendo, e os testes travam cada uma:
+
+- **Nunca usa a chave do servidor nem outro provedor.** Se todos os modelos falharem com a
+  chave dele, o jogador vê o erro; o servidor não cobre a diferença em silêncio.
+- **Chave recusada para no primeiro modelo.** Uma chave inválida é inválida em todos; não
+  faz sentido perguntar sete vezes.
+- **A chave não fica guardada.** O servidor precisa lembrar, de uma chamada para a outra,
+  que um modelo acabou de falhar para aquele jogador. Para isso guarda uma "impressão
+  digital" da chave (um hash, que não permite recuperar a chave original), e é nela que
+  ficam as pausas e a contagem. No máximo 256 impressões em memória; a mais antiga sai.
+
+Teste ao vivo, usando a chave local no papel de chave de jogador e com o servidor sem chave
+nenhuma: um turno com três ferramentas, um resumo e uma resposta em streaming, todos pelo
+Flash Lite, com a contagem subindo de 1 a 5 entre as chamadas.
+
 ## Depois
 
 Teste ao vivo, só com Gemini, como em produção: um prólogo saiu pelo `gemini-3.5-flash`
@@ -134,7 +156,6 @@ Capacidade estimada: cerca de 185 turnos por dia e 5 por minuto.
 - **A contagem de cota não sobrevive a um reinício do servidor.** Guardá-la no banco
   resolveria, ao custo de uma gravação a cada chamada. Ficou para se a estimativa se
   mostrar ruim na prática.
-- **Quem traz a própria chave** continua preso ao modelo de 20 por dia.
 - **O teto de turnos por jogador** (20 por dia) não foi recalibrado com os números novos.
 - A sondagem dos Flash é de um dia só. Qual modelo está disputado muda com o dia e a hora.
 - Os Flash, quando assumem um turno com ferramentas, levam 10 a 20 s por chamada. Como
@@ -144,11 +165,13 @@ Capacidade estimada: cerca de 185 turnos por dia e 5 por minuto.
 
 ## Como testar
 
-`pytest` no backend: 694 testes. Os novos cobrem: cada papel usa a sua lista; a ordem padrão
+`pytest` no backend: 697 testes. Os novos cobrem: cada papel usa a sua lista; a ordem padrão
 das listas; a segunda chance do prólogo; o resumo usa o papel de fundo; erro de sobrecarga e
 prazo estourado põem o modelo de lado sem repetir; cota do dia afasta por mais tempo que a
 do minuto; fila inteira de lado; prazo por papel e prazo da fila; e o contador (limite por
-minuto, limite por dia, virada do dia, tentativa que falhou também conta). Para ver ao vivo,
+minuto, limite por dia, virada do dia, tentativa que falhou também conta); e a chave do
+jogador (usa a fila do papel, nunca toca a chave do servidor, para na chave recusada, a
+pausa vale para a chamada seguinte, só o hash fica em memória). Para ver ao vivo,
 basta jogar com o servidor local e procurar no log as linhas `ia papel=`.
 
 A decisão, as alternativas e os sinais de que ela estaria errada estão no

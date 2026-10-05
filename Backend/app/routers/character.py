@@ -96,7 +96,7 @@ def create_character(
     defesa = 10 + calcular_modificador(attr_final["destreza"])  # provisória; auto_equipar recalcula abaixo
 
     session_id = f"{char.nome.lower()}_{random.randint(1000, 9999)}"
-    roteiro = gerar_prologo_missao(char, chamar_fn=chave.chamar_fn)
+    roteiro = gerar_prologo_missao(char, chamar_fn=chave.chamar_fn_destaque)
 
     world_state = WorldState(
         local=roteiro["local_inicial"], clima=roteiro["clima_inicial"], turno=1,
