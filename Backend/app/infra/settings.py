@@ -191,6 +191,11 @@ class Settings(BaseSettings):
     # (`EventoTelemetria`) — quem quiser mais sem esperar essa calibração já
     # pode trazer a própria chave (`teto_turnos_conta`/`convidado` não se
     # aplicam a quem manda `X-Gemini-Key`, ver `routers/game.py`).
+    #
+    # 05/10/2026 (ADR-0038) — revisto com números medidos e mantido em 20/8:
+    # o servidor sustenta cerca de 185 turnos por dia (500 chamadas do 3.5
+    # Flash Lite ÷ 2,7 chamadas por turno), então 20 por conta dá uns 9
+    # jogadores ativos no mesmo dia. Subir o teto diminuiria esse número.
     teto_turnos_conta: int = 20
     teto_turnos_convidado: int = 8
     # Etapa 15 (BYOK) — quando a chave própria do jogador falha no meio do

@@ -116,7 +116,9 @@ Junto com os papéis, a cadeia mudou de comportamento diante de erro:
 - Com a chave própria, um 400 (pedido recusado) ainda percorre a fila inteira antes de virar
   erro: até 7 chamadas para um problema que provavelmente é igual em todos os modelos. Não
   parei no primeiro porque um 400 também pode ser específico de um modelo.
-- `teto_turnos_conta` (20) e `teto_turnos_convidado` (8) não foram recalibrados.
+- `teto_turnos_conta` (20) e `teto_turnos_convidado` (8) foram revistos com os números
+  medidos e mantidos: ~185 turnos por dia no servidor dão uns 9 jogadores ativos a 20 turnos
+  cada. Se o grupo de jogadores crescer além disso, a conta precisa ser refeita.
 - Sondagem de 05/10/2026, 3 chamadas mínimas em cada: 3.6 e 2.5 Flash responderam as 3 (até
   4 s e menos de 1 s); 3.7 falhou 1 e levou 13 s nas outras; 3.8 devolveu 503 nas 3; o 3 Flash
   (preview) levou 293 s numa delas e ficou fora das listas. Num turno com ferramentas, 3.6 e

@@ -156,7 +156,8 @@ Capacidade estimada: cerca de 185 turnos por dia e 5 por minuto.
 - **A contagem de cota não sobrevive a um reinício do servidor.** Guardá-la no banco
   resolveria, ao custo de uma gravação a cada chamada. Ficou para se a estimativa se
   mostrar ruim na prática.
-- **O teto de turnos por jogador** (20 por dia) não foi recalibrado com os números novos.
+- **O teto de turnos por jogador** ficou em 20 por dia, por decisão: com uns 185 turnos por
+  dia no servidor, isso dá cerca de 9 jogadores ativos no mesmo dia.
 - A sondagem dos Flash é de um dia só. Qual modelo está disputado muda com o dia e a hora.
 - Os Flash, quando assumem um turno com ferramentas, levam 10 a 20 s por chamada. Como
   reserva servem; como modelo principal do turno seriam lentos demais.
