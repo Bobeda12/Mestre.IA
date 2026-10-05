@@ -537,14 +537,49 @@ def _sanitizar_ids_mundo_inicial(mundo: dict) -> dict:
     return mundo
 
 
-# Pontos de partida que não são taverna nem porto — ver `lugares_sugeridos`
-# em `gerar_prologo_missao`.
-_LUGARES_DE_PARTIDA = (
+# Cenário do prólogo: o servidor sorteia, a IA amarra à ficha.
+#
+# Primeira versão (mesmo dia): o servidor sorteava três tipos de lugar e a
+# IA escolhia um. Não bastou — o modelo tem preferências e, entre três,
+# pegava sempre o mesmo ("mina" em 2 de 3 prólogos, com heróis e sorteios
+# diferentes; "Oakhaven" como nome em 3 lugares distintos). Dar mais opções
+# não corrige preferência; tirar a escolha, sim. O que torna a abertura
+# "feita sob medida" é o gancho (a pessoa e o objeto ligados à ficha), não
+# o tipo de lugar — então tipo, nome, clima e hora vêm do servidor.
+_TIPOS_DE_LUGAR = (
     "feira de estrada", "mosteiro na encosta", "acampamento de caravana", "ponte com pedágio",
-    "mina desativada", "moinho à beira de um rio", "ruína ocupada por colonos", "posto de fronteira",
+    "mina", "moinho à beira de um rio", "ruína ocupada por colonos", "posto de fronteira",
     "vila de lenhadores", "santuário de peregrinos", "pedreira", "balsa de travessia",
-    "mercado de gado", "torre de vigia abandonada", "aldeia de pescadores de rio", "oficina de carroças",
+    "mercado de gado", "torre de vigia", "aldeia de pescadores de rio", "oficina de carroças",
+    "vinhedo em época de colheita", "salina", "hospedaria de beira de estrada", "cais de um porto pequeno",
+    "olaria", "estábulo de muda de cavalos", "cemitério com capela", "curtume",
+    "aldeia de montanha", "casa de banhos termais", "farol", "celeiro comunitário em dia de partilha",
 )
+_TOPONIMOS = (
+    "Três Poços", "Vau do Corvo", "Barra Seca", "Lajedo", "Rio Torto", "Sete Cruzes", "Ribeira Alta",
+    "Curral Velho", "Pedra Sã", "Brejal", "Monte Cárdia", "Vargem Funda", "Tordas", "Alvarenga",
+    "Cantareira", "Serra do Meio", "Água Parada", "Espinhaço", "Dois Irmãos", "Cinzal",
+    "Mata Rala", "Boqueirão", "Santa Estela", "Fundão",
+)
+# Nenhum clima cita sol, lua ou hora: a hora é sorteada à parte, e "sol
+# forte" com "à noite" saiu junto na primeira medição.
+_CLIMAS = (
+    "céu limpo e frio", "calor abafado", "vento forte e seco", "névoa baixa", "garoa fina",
+    "chuva pesada", "nublado e parado", "chão encharcado de uma chuva recente", "geada", "poeira no ar",
+)
+_MOMENTOS = {7: "de manhã cedo", 11: "perto do meio-dia", 16: "no fim da tarde", 20: "à noite"}
+
+
+def _cenario_sorteado(abertura: dict) -> dict[str, str]:
+    """Tipo de lugar, topônimo e clima saem da semente da campanha (mesma
+    semente, mesmo cenário); a hora é a que `criar_origem` já sorteou."""
+    rng = random.Random(abertura["semente_aventura"])
+    return {
+        "tipo": rng.choice(_TIPOS_DE_LUGAR),
+        "toponimo": rng.choice(_TOPONIMOS),
+        "clima": rng.choice(_CLIMAS),
+        "momento": _MOMENTOS.get(abertura["hora_do_dia"], "durante o dia"),
+    }
 
 
 # Formato do roteiro do prólogo, sem conteúdo: só as chaves e, entre < >, o
@@ -634,10 +669,7 @@ def gerar_prologo_missao(
     # exemplo é um esqueleto sem conteúdo (`_ESQUELETO_ROTEIRO`), a ficha é
     # a matéria-prima declarada e a ordem é herói → chegada → gancho.
     historia = char.historia_texto.strip() or "(o jogador não escreveu)"
-    # Medido em 10 prólogos no Flash Lite: 7 em porto ou estalagem, quase
-    # todos com chuva, dois nomes repetidos três vezes. A semente da
-    # campanha sorteia três pontos de partida para tirar o modelo do molde.
-    lugares_sugeridos = ", ".join(random.Random(abertura["semente_aventura"]).sample(_LUGARES_DE_PARTIDA, 3))
+    cenario = _cenario_sorteado(abertura)
     racas = ", ".join(regras.get_races_list() or ["Humano"])
     prompt = f"""
     {regras.get_biblia()}
@@ -654,13 +686,17 @@ def gerar_prologo_missao(
     Esta cena existe por causa DESTE herói. É a exceção deliberada a "o mundo não gira em torno do
     jogador": o mundo segue indiferente, mas o ponto onde a história começa é escolhido a dedo.
     Teste: se a abertura servisse para outro personagem trocando só o nome, ela está errada.
-    1. O lugar e o momento saem do objetivo: é onde alguém atrás desse objetivo estaria agora,
-       seguindo um rastro, um boato ou um nome. Taverna, estalagem e porto debaixo de chuva são o
-       lugar-comum: só use se a ficha apontar para eles. Se a ficha não sugerir um lugar, parta
-       de um destes: {lugares_sugeridos}. Dê ao lugar um nome próprio que não seja genérico.
-    2. Uma pessoa E um objeto investigável da cena tocam diretamente o objetivo ou o passado. Um
-       detalhe concreto da ficha (um nome, um símbolo, um ofício, um lugar) reaparece aqui. Registre
-       essa ligação na "pista" do objeto e no "objetivo" ou "segredo" da pessoa.
+    1. O cenário já está decidido, e você não o troca: um(a) {cenario["tipo"]}, {cenario["momento"]},
+       com {cenario["clima"]}. O nome do lugar junta o tipo com "{cenario["toponimo"]}" (por
+       exemplo "Moinho de {cenario["toponimo"]}"). Seu trabalho é explicar, pelo objetivo do herói,
+       por que o rastro o trouxe justamente até aqui. Única exceção: se a ficha citar um tipo de
+       lugar onde a busca obrigatoriamente passa, use esse tipo e mantenha o resto.
+    2. Uma pessoa E um objeto investigável da cena tocam diretamente o objetivo ou o passado. Se a
+       ficha traz um detalhe concreto (um nome, um símbolo, um ofício, um lugar), ele reaparece
+       aqui. Se a ficha é curta, ligue pelo objetivo — alguém que sabe, vende, deve ou procura a
+       mesma coisa — e NÃO invente um detalhe do passado para o herói reconhecer ("idêntico ao
+       que você viu naquele dia"): o que não está na ficha o herói não lembra. Registre a ligação
+       na "pista" do objeto e no "objetivo" ou "segredo" da pessoa.
     3. O herói é FORASTEIRO: nunca esteve neste lugar, não conhece ninguém e ninguém o conhece.
     Não existe missão obrigatória nem final predeterminado. NPCs têm interesses, medos e informações
     incompletas, e podem cooperar ou discordar. O jogador pode ignorar tudo: a cena sempre tem uma
@@ -676,8 +712,9 @@ def gerar_prologo_missao(
     Parágrafo 3 — O gancho. O que acontece na sua frente agora e por que isso interessa a quem
     procura o que você procura. Termine com algo em movimento.
     Clareza acima de estilo:
-    - Ninguém aparece pelo nome sem apresentação. Primeiro a aparência ou o ofício ("uma mulher de
-      avental atrás do balcão"); o nome só entra se alguém o disser em voz alta na cena.
+    - Ninguém aparece pelo nome sem apresentação. Primeiro a aparência ou o ofício, do jeito que
+      um estranho descreveria quem vê pela primeira vez, com um traço que seja só daquela pessoa;
+      o nome só entra se alguém o disser em voz alta na cena.
     - Frases curtas e palavras comuns. Numa leitura só, dá para saber quem está onde fazendo o quê.
     - No máximo duas pessoas em destaque, e toda pessoa que aparece no texto existe em "pessoas".
       Todo objeto que o texto destaca existe em "entidades", no mesmo estado em que foi descrito.
@@ -773,8 +810,10 @@ def _montar_roteiro(roteiro: Any, char: CharacterCreationRequest, abertura: dict
         if _MOLDE_NAO_PREENCHIDO.search(roteiro[campo]):
             raise _RoteiroInvalido(f'o campo "{campo}" ainda tem um trecho do molde entre < >')
     roteiro["local_inicial"] = roteiro["local_inicial"].strip()[:100]
-    if not _texto(roteiro.get("clima_inicial")):
-        roteiro["clima_inicial"] = abertura["clima_inicial"]
+    # O clima é sorteado pelo servidor e está no prompt; o campo que o HUD
+    # mostra é esse mesmo, não a paráfrase do modelo (que na medição saiu
+    # "Nublado" para um "calor abafado").
+    roteiro["clima_inicial"] = _cenario_sorteado(abertura)["clima"].capitalize()
     if not _texto(roteiro.get("objetivo_missao")):
         roteiro["objetivo_missao"] = char.objetivo
 

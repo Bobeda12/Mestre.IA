@@ -100,18 +100,58 @@ nenhum, nem no Lite. Nesse intervalo o prólogo levou os 80 segundos e caiu no t
 reserva, que é o comportamento esperado: nenhuma mudança aqui faz a IA responder quando o
 provedor está fora.
 
+## 3. Quem escolhe o cenário
+
+O sorteio de três pontos de partida ajudou, mas não bastou: em três prólogos saíram duas
+minas de sal, com heróis e sorteios diferentes, e o nome "Oakhaven" apareceu em três lugares
+distintos ao longo do dia. A IA tem preferências. Entre três opções ela tende a pegar sempre
+a mesma, e oferecer mais opções não muda isso.
+
+A saída foi tirar a escolha dela. O servidor agora sorteia o cenário inteiro a partir da
+semente da campanha: um entre 28 tipos de lugar, um entre 24 nomes, um entre 10 climas, e a
+hora do dia (que já era sorteada). A IA recebe isso como dado e fica com o que só ela sabe
+fazer: explicar por que o rastro do herói deu justamente ali, e criar a pessoa e o objeto
+que se ligam à ficha. É o gancho que faz a abertura parecer feita sob medida, não o tipo de
+lugar. Há uma exceção: se a ficha citar um tipo de lugar por onde a busca tem de passar, a
+IA pode usá-lo.
+
+### Medição
+
+Dez prólogos, cinco fichas, sementes diferentes: 10 de 10 aproveitados, todos no lugar
+sorteado, 9 tipos de lugar diferentes (torre de vigia, cemitério com capela, curtume,
+olaria, celeiro em dia de partilha…). Nenhum ficou forçado: o patrulheiro que investiga um
+incêndio encontrou, num cemitério, um homem desenterrando um barril igual ao do óleo.
+
+Ler os dez de uma vez mostrou três defeitos que um prólogo sozinho não mostra:
+
+- **"Uma mulher de avental" em 7 de 10.** Era o exemplo que eu mesmo tinha posto no pedido
+  para explicar "apresente pela aparência". A IA copiava o exemplo. É o mesmo erro do diário
+  0041 (exemplo vira molde), cometido de novo por mim. O exemplo saiu.
+- **Lembranças inventadas.** Com ficha curta, a IA forçava a ligação criando passado: "um
+  pingente com o mesmo brasão que sua mãe usava". O pedido agora diz para ligar pelo
+  objetivo (alguém que sabe, vende ou procura a mesma coisa) sem inventar o que o herói
+  reconhece.
+- **Sol forte à noite.** Um dos climas da lista citava o sol, e a hora é sorteada à parte.
+  Os climas não citam mais sol, lua nem hora. E o clima que a tela mostra passou a ser o
+  sorteado, não a paráfrase da IA.
+
+Mais cinco prólogos depois desses ajustes: 5 de 5, cerca de 5 segundos cada, todos no
+cenário sorteado. O avental caiu para 2 de 5. A lembrança inventada **não sumiu**: apareceu
+em 1 dos 5 ("o mesmo desenho que você recorda da infância"). A instrução reduz, não elimina.
+
 ## O que ficou de fora
 
 - **O conserto da "cena com outro nome" não foi visto ao vivo.** Era o defeito do 2.5 Flash;
   quando fui conferir, ele não respondeu nenhuma vez. Está coberto por teste automático.
-- **Variedade com amostra pequena.** Duas minas de sal em três prólogos sugere que o sorteio
-  de lugares ajuda mas não resolve sozinho.
+- **A IA ainda inventa lembranças de vez em quando** para ligar a cena a uma ficha curta. Um
+  campo a mais na criação do personagem ("um objeto ou marca que você carrega") daria
+  matéria-prima de verdade para o gancho.
 - **Quando cai no texto de reserva, o jogador não tem como pedir outro prólogo.** Um botão
   "tentar de novo" na tela de abertura resolveria os dias ruins do provedor.
 
 ## Como testar
 
-`pytest` no backend: 710 testes. Os novos cobrem: negrito sobrevive, o teto de 3, itálico
+`pytest` no backend: 711 testes. Os novos cobrem: negrito sobrevive, o teto de 3, itálico
 some sem tocar o negrito, opções e guardrail sem asteriscos; e, no prólogo, JSON com chave
 sem aspas, campo nulo e texto longo, mundo acima do teto, cena com outro nome, opções
 montadas da cena, nova tentativa com o motivo e parada pelo prazo. No front, `vitest` (80

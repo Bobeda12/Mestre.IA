@@ -601,6 +601,32 @@ class TestGerarPrologoMissaoLocalInicial:
         assert reserva["local_inicial"] not in prompt
         assert all(p["nome"] not in prompt for p in reserva["mundo_inicial"]["pessoas"].values())
 
+    def test_cenario_do_prompt_e_sorteado_pelo_servidor_a_partir_da_semente(self, monkeypatch):
+        # A IA escolhendo entre opções repetia sempre a mesma. Quem decide o
+        # tipo de lugar, o nome, o clima e a hora é o servidor; mesma semente,
+        # mesmo cenário.
+        from app.services import narrator
+        from app.services.emergent_start import criar_origem
+        heroi = _personagem_criacao()
+        pedidos: list[str] = []
+
+        def _falso(msgs, **kwargs):
+            pedidos.append(msgs[0]["content"])
+            return _RespostaFalsa(json.dumps(criar_origem(heroi, 9)))
+
+        monkeypatch.setattr(llm_client, "clients", {"gemini": object()})
+        monkeypatch.setattr(llm_client, "chamar_com_fallback", _falso)
+
+        for semente in (5, 5, 6, 7, 8, 9, 10, 11):
+            gerar_prologo_missao(heroi, semente=semente)
+
+        cenario = narrator._cenario_sorteado(criar_origem(heroi, 5))
+        for trecho in cenario.values():
+            assert trecho in pedidos[0]
+        assert pedidos[0] == pedidos[1]
+        tipos = {narrator._cenario_sorteado(criar_origem(heroi, s))["tipo"] for s in range(5, 12)}
+        assert len(tipos) >= 4  # sementes diferentes espalham os cenários
+
     def test_chefe_do_arco_e_objetivo_sao_do_servidor(self, monkeypatch):
         # O modelo não vê mais a origem determinística, então não tem de
         # onde copiar um chefe válido do catálogo — o servidor preenche.
