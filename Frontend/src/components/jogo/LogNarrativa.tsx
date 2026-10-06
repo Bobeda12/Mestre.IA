@@ -16,7 +16,7 @@ export type Message =
   // assistente em streaming: o texto CRU acumulado, nunca limpo/truncado.
   // `id` é a chave estável do React (o modo de emergência pode cortar
   // mensagens do fim da lista; índice como key reiniciaria animações).
-  | { kind: 'texto'; id: number; role: 'user' | 'assistant' | 'system'; content: string; raw?: string; isError?: boolean; turnoIndex?: number; feedback?: 1 | -1 }
+  | { kind: 'texto'; id: number; role: 'user' | 'assistant' | 'system'; content: string; raw?: string; isError?: boolean; semIcone?: boolean; turnoIndex?: number; feedback?: 1 | -1 }
   // Etapa 10 (A-7): cura e morte de inimigo chegam pelo mesmo frame
   // `tool_event` que ataque/teste, só com um `dados.tipo` diferente.
   | { kind: 'rolagem'; id: number; dados: DadosRolagem | EventoStatus };
@@ -55,7 +55,7 @@ export default function LogNarrativa(p: Props) {
           return (
             <div key={msg.id} className="flex justify-center my-2 animate-fade-in">
               <div className="bg-yellow-900/20 border border-yellow-700/30 text-yellow-500 px-4 py-2 text-xs font-mono flex items-center gap-2">
-                <PixelIcon name="dado" size={12} /> {msg.content}
+                {!msg.semIcone && <PixelIcon name="dado" size={12} />} {msg.content}
               </div>
             </div>
           );

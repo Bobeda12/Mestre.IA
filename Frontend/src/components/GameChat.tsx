@@ -179,7 +179,7 @@ interface CargaJogo extends EstadoJogo {
   background?: string | null;
   objetivo?: string | null;
   historia_texto?: string | null;
-  historico_chat?: { role: string; content: string }[];
+  historico_chat?: { role: string; content: string; aviso?: boolean }[];
   // Rodada de conserto (Parte 2, item G) — "Anteriormente…": recap curto
   // do resumo rolante, `null` quando não há nada resumido ainda.
   anteriormente?: string | null;
@@ -697,6 +697,10 @@ export default function GameChat() {
       // o que o 👍/👎 (POST /personagens/:id/feedback) espera em `turnoIndex`.
       const offsetNoHistorico = 1 + (turnosJogados.length - recentes.length);
       recentes.forEach((m, i) => {
+        if (m.aviso) {
+          bolhas.push({ kind: 'texto', id: proximoIdMsg(), role: 'system', semIcone: true, content: m.content });
+          return;
+        }
         const role = m.role === 'user' ? 'user' : 'assistant';
         bolhas.push({
           kind: 'texto', id: proximoIdMsg(), role, content: m.content,
@@ -945,10 +949,12 @@ export default function GameChat() {
       }
       if (d.narrativa) {
         setResultadoAcao(d.narrativa);
-        setMessages(prev => [...prev, {
-          kind: 'texto', id: proximoIdMsg(), role: 'assistant',
-          content: limparMarkdownLeve(esconderTagOpcoes(d.narrativa)),
-        }]);
+        // Equipar/guardar é só um aviso do juiz — chip discreto, não fala do Mestre.
+        const soAviso = acao.acao === 'equipar' || acao.acao === 'desequipar';
+        setMessages(prev => [...prev, soAviso
+          ? { kind: 'texto', id: proximoIdMsg(), role: 'system', semIcone: true, content: d.narrativa }
+          : { kind: 'texto', id: proximoIdMsg(), role: 'assistant', content: limparMarkdownLeve(esconderTagOpcoes(d.narrativa)) },
+        ]);
       }
     } catch (err) {
       const ehErroAxios = isAxiosError<{ detail?: string }>(err);

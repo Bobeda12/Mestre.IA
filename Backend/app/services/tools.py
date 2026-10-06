@@ -288,7 +288,7 @@ class ToolExecutor:
         if not self.c_state.ativo:
             return {"erro": "não há combate ativo — chame iniciar_combate antes de esquivar"}
         self.c_state.heroi_vantagem_inimiga = False
-        self.eventos.append("🛡️ Você se esquiva, atento a qualquer ataque.")
+        self.eventos.append("Você se esquiva, atento a qualquer ataque.")
         return {"acao": "esquivar", **self._resolver_reacao_inimiga()}
 
     def defender(self) -> dict:
@@ -296,7 +296,7 @@ class ToolExecutor:
             return {"erro": "não há combate ativo — chame iniciar_combate antes de defender"}
         self.c_state.heroi_bonus_ca = 2
         self._recuperar_foco(2)
-        self.eventos.append("🛡️ Você assume postura defensiva (+2 na CA).")
+        self.eventos.append("Você assume postura defensiva (+2 na CA).")
         return {"acao": "defender", **self._resolver_reacao_inimiga()}
 
     def investir(self, alvo: str, arma: str | None = None) -> dict:
@@ -765,7 +765,7 @@ class ToolExecutor:
     def equipar(self, item: str) -> dict:
         resultado = itens.equipar(self.heroi, item, self.mods.ca)
         if "erro" not in resultado:
-            self.eventos.append(f"🛡️ Equipa {resultado['equipado']}. Defesa: {self.heroi.defesa}.")
+            self.eventos.append(f"{resultado['equipado']} equipado. Defesa: {self.heroi.defesa}.")
             if self.c_state.ativo:
                 resultado.update(self._resolver_reacao_inimiga())
         return resultado
@@ -773,7 +773,7 @@ class ToolExecutor:
     def desequipar(self, slot: str) -> dict:
         resultado = itens.desequipar(self.heroi, slot, self.mods.ca)
         if "erro" not in resultado:
-            self.eventos.append(f"🛡️ Guarda {resultado['desequipado']}. Defesa: {self.heroi.defesa}.")
+            self.eventos.append(f"{resultado['desequipado']} guardado. Defesa: {self.heroi.defesa}.")
         return resultado
 
     def comerciar(self, npc: str, operacao: str, item: str | None = None) -> dict:

@@ -186,7 +186,7 @@ def interagir_cenario(executor: "ToolExecutor", interacao: str) -> dict:
         return {"erro": "Essa interação não está disponível neste cenário."}
     if interacao == "cobertura":
         c_state.heroi_bonus_ca = 3
-        executor.eventos.append("🛡️ O terreno protege você: +3 de defesa nesta rodada.")
+        executor.eventos.append("O terreno protege você: +3 de defesa nesta rodada.")
     elif interacao in {"distrair", "poeira"}:
         if interacao == "poeira" or _teste(executor, ("carisma",), "Desviar a atenção"):
             c_state.heroi_vantagem_inimiga = False

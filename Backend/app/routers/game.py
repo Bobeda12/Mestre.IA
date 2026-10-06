@@ -451,9 +451,16 @@ def game_action(
     else:
         rotulo = action.habilidade or action.interacao or action.item or action.acao.replace("_", " ")
         texto_acao = f"{rotulo}{f' → {action.alvo}' if action.alvo else ''}"
+    # Equipar/guardar é só um aviso do juiz: fora de combate a cena não mudou,
+    # então as sugestões da última narração continuam valendo (e ficam gravadas
+    # na mensagem, para sobreviver a um recarregamento).
+    aviso = action.acao in ("equipar", "desequipar")
+    opcoes = _opcoes_ao_carregar(heroi, c_state) if aviso and not c_state.ativo else opcoes_padrao(heroi, c_state)
     heroi.historico_chat = [*(heroi.historico_chat or []),
                            {"role": "user", "content": texto_acao},
-                           {"role": "assistant", "content": narrativa}]
+                           {"role": "assistant", "content": narrativa,
+                            **({"aviso": True, "opcoes": opcoes} if aviso and not c_state.ativo else
+                               {"aviso": True} if aviso else {})}]
     _persistir_desfecho_arco(db, heroi, w_state, chave)
     sincronizar_aliados(heroi, c_state)
     heroi.combat_state = c_state.model_dump()
@@ -482,7 +489,7 @@ def game_action(
         heroi, c_state, q_state, narrativa=narrativa,
         eventos_estruturados=[e.dados.to_dict() for e in executor.eventos
                              if isinstance(e, EventoRolagem) and e.dados is not None],
-        opcoes=opcoes_padrao(heroi, c_state), turno_index=len(heroi.historico_chat) - 1,
+        opcoes=opcoes, turno_index=len(heroi.historico_chat) - 1,
     )
 
 

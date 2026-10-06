@@ -15,6 +15,23 @@ from tests.test_smoke import _payload_base
 client = TestClient(app)
 
 
+def test_equipar_e_guardar_escudo_sem_emoji(monkeypatch):
+    sid = _partida(monkeypatch)
+    with SessionLocal() as db:
+        heroi = db.query(Personagem).filter_by(session_id=sid).one()
+        heroi.combat_state = CombatState().model_dump()
+        heroi.inventario = ["Escudo"]
+        heroi.equipamento = {}
+        db.commit()
+    eq = client.post("/game/action", json={"session_id": sid, "acao": "equipar", "item": "Escudo", "turno_esperado": 1})
+    assert eq.status_code == 200, eq.text
+    assert "Escudo equipado. Defesa:" in eq.json()["narrativa"]
+    gu = client.post("/game/action", json={"session_id": sid, "acao": "desequipar", "slot": "escudo", "turno_esperado": 2})
+    assert gu.status_code == 200, gu.text
+    assert "Escudo guardado. Defesa:" in gu.json()["narrativa"]
+    assert "🛡" not in eq.json()["narrativa"] + gu.json()["narrativa"]
+
+
 def test_escolha_aprendizado_persiste_e_rejeita_reenvio(monkeypatch):
     from app.domain.emergencia import Aprendizado
 
@@ -347,3 +364,33 @@ def test_clique_encerrar_arco_gera_desfecho_e_memoria(monkeypatch):
     with SessionLocal() as db:
         tipos = [e.tipo for e in db.query(EventoMemoria).filter_by(tipo="arco").all()]
     assert "arco" in tipos
+
+
+def test_equipar_marca_aviso_no_historico(monkeypatch):
+    sid = _partida(monkeypatch)
+    with SessionLocal() as db:
+        heroi = db.query(Personagem).filter_by(session_id=sid).one()
+        heroi.combat_state = CombatState().model_dump()
+        heroi.inventario = ["Escudo"]
+        heroi.equipamento = {}
+        db.commit()
+    assert client.post("/game/action", json={"session_id": sid, "acao": "equipar", "item": "Escudo", "turno_esperado": 1}).status_code == 200
+    with SessionLocal() as db:
+        heroi = db.query(Personagem).filter_by(session_id=sid).one()
+        assert heroi.historico_chat[-1].get("aviso") is True
+
+
+def test_equipar_fora_de_combate_preserva_opcoes_da_narracao(monkeypatch):
+    sid = _partida(monkeypatch)
+    with SessionLocal() as db:
+        heroi = db.query(Personagem).filter_by(session_id=sid).one()
+        heroi.combat_state = CombatState().model_dump()
+        heroi.inventario = ["Escudo"]
+        heroi.equipamento = {}
+        heroi.historico_chat = [*(heroi.historico_chat or []),
+                                {"role": "assistant", "content": "Cena.", "opcoes": ["Abrir a porta", "Falar com o guarda"]}]
+        db.commit()
+    eq = client.post("/game/action", json={"session_id": sid, "acao": "equipar", "item": "Escudo", "turno_esperado": 1})
+    assert eq.json()["opcoes"] == ["Abrir a porta", "Falar com o guarda"]
+    gu = client.post("/game/action", json={"session_id": sid, "acao": "desequipar", "slot": "escudo", "turno_esperado": 2})
+    assert gu.json()["opcoes"] == ["Abrir a porta", "Falar com o guarda"]
