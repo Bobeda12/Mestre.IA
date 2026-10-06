@@ -41,7 +41,7 @@ import AbaJornada from './jogo/AbaJornada';
 import AbaPoderes from './jogo/AbaPoderes';
 import AbaRelacoes from './jogo/AbaRelacoes';
 import BalcaoMercador from './jogo/BalcaoMercador';
-import type { AliadoVisual, ArcoAtual, ArcoEncerrado, AcaoDireta, Cena, InimigoVisual, Progressao, MundoPersistente, Equipamento, ItemInfo, Selecao } from '../lib/gameplay';
+import type { AliadoVisual, ArcoEncerrado, AcaoDireta, Capitulo, Cena, InimigoVisual, Progressao, MundoPersistente, Equipamento, ItemInfo, Selecao } from '../lib/gameplay';
 import { alvoValido, periodoDoDia } from '../lib/gameplay';
 
 // Etapa 14 (revisão) — a ficha virou menu de abas estilo JRPG. Antes tudo
@@ -131,7 +131,7 @@ interface EstadoJogo {
   combat_active: boolean;
   inimigos?: InimigoVisual[];
   aliados?: AliadoVisual[];
-  arco?: ArcoAtual;
+  capitulo?: Capitulo;
   arco_encerrado?: ArcoEncerrado | null;
   missao?: unknown;
   // Sistema de progressão/encontros táticos (AdventureStage.tsx) — o
@@ -234,14 +234,9 @@ export default function GameChat() {
   // sidebar. `local`/`clima` só chegam no carregamento (CargaJogo), não em
   // todo frame `state` — o backend hoje não manda local/clima por turno,
   // só `turno_mundo`. Fica como retrato do início da sessão: se o herói
-  // viajar no meio dela, o card só atualiza no próximo load da página. O
-  // resumo rolante ("Jornada até aqui") é o mesmo `anteriormente` que já
-  // existe pro recap do log — antes só virava uma bolha de sistema, agora
-  // também fica disponível pro accordion da ficha.
+  // viajar no meio dela, o card só atualiza no próximo load da página.
   const [localAtual, setLocalAtual] = useState('');
   const [climaAtual, setClimaAtual] = useState('');
-  const [resumoJornada, setResumoJornada] = useState<string | null>(null);
-  const [jornadaAberta, setJornadaAberta] = useState(false);
   // Fase 3 do remaster UX — FichaModal.tsx precisa de origem/objetivo/
   // história, os mesmos três campos que a tela de Prólogo já usa direto de
   // `cargaJogo`; copiados pro estado local pelo mesmo motivo dos outros
@@ -275,7 +270,6 @@ export default function GameChat() {
   // de habilidades/foco e da cena atual, sem consumidor até esta integração.
   const [progressao, setProgressao] = useState<Progressao | null>(null);
   const [cena, setCena] = useState<Cena | null>(null);
-  const [marcos, setMarcos] = useState<string[]>([]);
   const [mundoPersistente, setMundoPersistente] = useState<MundoPersistente | null>(null);
 
   // COMBATE
@@ -306,7 +300,7 @@ export default function GameChat() {
   const [levelUpAdiado, setLevelUpAdiado] = useState<number | null>(null);
   // Fase 4 (ADR-0035) — arco atual e o desfecho a mostrar uma vez (o id visto
   // na carga inicial não reabre o overlay).
-  const [arcoAtual, setArcoAtual] = useState<ArcoAtual | null>(null);
+  const [capitulo, setCapitulo] = useState<Capitulo | null>(null);
   const [arcoEncerrado, setArcoEncerrado] = useState<ArcoEncerrado | null>(null);
   const [arcoVisto, setArcoVisto] = useState<string | null>(null);
   // Fase 6 (ADR-0036) — id do NPC cujo balcão está aberto; fecha se ele some.
@@ -560,7 +554,7 @@ export default function GameChat() {
     setInventory(d.inventory || []);
     if (d.equipamento !== undefined) setEquipamento(d.equipamento);
     if (d.aliados !== undefined) setAliados(d.aliados);
-    if (d.arco !== undefined) setArcoAtual(d.arco);
+    if (d.capitulo !== undefined) setCapitulo(d.capitulo);
     if (d.arco_encerrado !== undefined) {
       if (inicial) setArcoVisto(d.arco_encerrado?.id ?? null);
       setArcoEncerrado(d.arco_encerrado ?? null);
@@ -600,7 +594,6 @@ export default function GameChat() {
     if (d.pontuacao_final !== undefined) setPontuacaoFinal(d.pontuacao_final);
     if (d.progressao !== undefined) setProgressao(d.progressao);
     if (d.cena !== undefined) setCena(d.cena);
-    if (d.marcos !== undefined) setMarcos(d.marcos);
     if (d.mundo !== undefined) setMundoPersistente(d.mundo);
     if (d.resultado_combate === 'morte') setGameOver(true);
 
@@ -653,7 +646,6 @@ export default function GameChat() {
     // acoplar o efeito de level up à lógica de carregamento.
     nivelAnteriorRef.current = cargaJogo.nivel ?? 1;
     setAttributes(cargaJogo.atributos || {});
-    setResumoJornada(cargaJogo.anteriormente ?? null);
     setOrigemAtual(cargaJogo.background ?? null);
     setObjetivoAtual(cargaJogo.objetivo ?? null);
     setHistoriaAtual(cargaJogo.historia_texto ?? null);
@@ -1338,13 +1330,7 @@ export default function GameChat() {
 
               {abaAtiva === 'missao' && (
                 <AbaJornada
-                  quest={quest}
-                  resumoJornada={resumoJornada}
-                  jornadaAberta={jornadaAberta}
-                  setJornadaAberta={setJornadaAberta}
-                  arco={arcoAtual}
-                  mundo={mundoPersistente}
-                  marcos={marcos}
+                  capitulo={capitulo}
                   ocupado={loading || acaoTaticaEmCurso || gameOver}
                   combate={combatActive}
                   erro={erroAcao}

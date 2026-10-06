@@ -99,6 +99,14 @@ export interface ArcoAtual {
   ativo: boolean; id?: string; titulo?: string; premissa?: string; conflito?: string; estado_conflito?: string;
   turnos?: number; marcos?: number; resultado_esperado?: string; pode_encerrar?: boolean; motivo_bloqueio?: string;
 }
+/** Trilha do capítulo (ADR-0039) — o que a aba Jornada desenha. O servidor
+ *  manda só texto, estado e evidência de cada passo; a condição fica com ele. */
+export interface PassoTrilha { texto: string; estado: 'atual' | 'feito' | 'pulado'; evidencia: string }
+export interface Capitulo {
+  ativo: boolean; objetivo: string; passos: PassoTrilha[];
+  anteriores: { numero: number; titulo: string; resultado: string }[]; marcos: string[];
+  id?: string; numero?: number; titulo?: string; premissa?: string; pode_encerrar?: boolean; motivo_bloqueio?: string;
+}
 export interface ArcoEncerrado { id: string; titulo: string; texto: string; resultado: string; recompensa: { xp: number; ouro: number; itens: string[] } }
 
 export interface MundoPersistente {
