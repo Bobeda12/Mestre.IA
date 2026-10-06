@@ -634,7 +634,7 @@ class TestIniciarCombate:
 
     def test_monstro_real_do_bestiario(self):
         c_state = CombatState()
-        executor = _executor(c_state=c_state, rng=RngFixo([10, 1]))
+        executor = _executor(c_state=c_state, rng=RngFixo([1, 20]))
         resultado = executor.iniciar_combate(["Goblin"])
         assert resultado["inimigos"] == ["Goblin"]
         assert c_state.ativo is True
@@ -645,23 +645,26 @@ class TestIniciarCombate:
         # modelo pode propor um nome narrativo; o servidor decide a ficha,
         # sorteada da banda de nível do herói (nível 1 por padrão aqui).
         c_state = CombatState()
-        executor = _executor(c_state=c_state, rng=RngFixo([10, 1]))
+        executor = _executor(c_state=c_state, rng=RngFixo([1, 20]))
         resultado = executor.iniciar_combate(["Batedor Rasgacouro"])
         assert resultado["inimigos"] == ["Batedor Rasgacouro"]
         assert c_state.inimigos[0].nome == "Batedor Rasgacouro"
         assert c_state.inimigos[0].hp == 7  # ficha de Goblin (primeiro da banda Nível 1)
 
-    def test_ordem_de_iniciativa_e_copiada_pro_c_state_do_executor(self):
-        # Bug real (Etapa 7): `iniciar_combate` copiava só alguns campos de
-        # `novo` pra `self.c_state` campo a campo, e `ordem_iniciativa`/
-        # `turno_atual` (adicionados nesta etapa) ficaram de fora — o HUD
-        # do frontend nunca via a ordem calculada. Achado ao vivo no
-        # browser, não pelos testes (nenhum conferia esse campo até aqui).
+    def test_fila_de_turnos_e_montada_no_c_state_do_executor(self):
+        # Combate v2: a ordem rolada vale. Esqueleto com d20 = 20 age antes
+        # do herói (d20 = 1), avança e ataca; depois a vez é do herói.
         c_state = CombatState()
-        executor = _executor(c_state=c_state, rng=RngFixo([10, 1]))
-        executor.iniciar_combate(["Goblin"])
-        assert c_state.ordem_iniciativa != []
-        assert -1 in c_state.ordem_iniciativa  # o herói sempre entra na ordem
+        executor = _executor(c_state=c_state, rng=RngFixo([20, 1, 2]))  # iniciativas; o ataque dele erra
+        resultado = executor.iniciar_combate(["Esqueleto"])
+        assert c_state.versao == 2 and c_state.fila == ["i1", "heroi"]
+        assert c_state.fila[c_state.vez] == "heroi" and c_state.rodada == 1
+        assert c_state.inimigos[0].distancia == "perto" and resultado["dano_surpresa"] == 0
+
+    def test_heroi_mais_rapido_comeca_com_o_inimigo_longe(self):
+        c_state = CombatState()
+        _executor(c_state=c_state, rng=RngFixo([1, 20])).iniciar_combate(["Goblin"])
+        assert c_state.fila == ["heroi", "i1"] and c_state.inimigos[0].distancia == "longe"
 
     def test_aliados_vivos_do_roster_entram_no_combate(self):
         # Fase 3 (revisão de gameplay) — companheiro recrutado antes desta
@@ -671,7 +674,7 @@ class TestIniciarCombate:
             {"nome": "Morto", "classe": "Guerreiro", "hp": 0, "hp_max": 10, "lealdade": 50, "inventario": []},
         ])
         c_state = CombatState()
-        executor = _executor(heroi=heroi, c_state=c_state, rng=RngFixo([10, 1]))
+        executor = _executor(heroi=heroi, c_state=c_state, rng=RngFixo([1, 1, 20]))
         executor.iniciar_combate(["Goblin"])
         assert [a.nome for a in c_state.aliados] == ["Bob"]  # o aliado morto não volta
         assert c_state.aliados[0].hp == 6

@@ -95,6 +95,16 @@ def preparar(c_state: CombatState, atributos_heroi: dict, rng: random.Random | N
     _zerar_turno(c_state)
 
 
+def abrir(c_state: CombatState, alvo: "Alvo", rng: random.Random | None = None, perto: bool = False) -> list[str]:
+    """Começo da luta: prepara todo mundo, deixa agir quem é mais rápido
+    que o herói e entrega o primeiro turno a ele."""
+    preparar(c_state, alvo.atributos, rng, perto=perto)
+    eventos = avancar_fila(c_state, alvo, rng)
+    if vivos(c_state):
+        eventos += iniciar_vez_heroi(c_state, alvo)
+    return eventos
+
+
 def migrar_combate(c_state: CombatState) -> bool:
     """Luta em curso de um save do motor antigo: todos já estão engajados
     ("perto"), a fila segue a iniciativa que já existia e a vez é do herói."""

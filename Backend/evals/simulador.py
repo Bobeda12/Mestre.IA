@@ -16,9 +16,9 @@ from dataclasses import dataclass, field
 from app.domain.state import CombatState, Inimigo, QuestLog, WorldState
 from app.infra.data_manager import regras
 from app.infra.db import Personagem
-from app.services import combat
+from app.services import combat, turnos
 from app.services import rules_engine as motor
-from app.services.class_abilities import perfil_classe
+from app.services.class_abilities import CONJURADORES, perfil_classe
 from app.services.encounters import preparar_encontro
 from app.services.items import auto_equipar
 from app.services.tools import ToolExecutor
@@ -26,6 +26,7 @@ from app.services.tools import ToolExecutor
 POCAO = "Poção de Cura"
 LIMIAR_POCAO = 0.35
 MAX_TURNOS = 60
+MAX_JOGADAS = 400
 
 @dataclass
 class Duelo:
@@ -82,12 +83,14 @@ def _abrir_luta(heroi: Personagem, monstros: list[str], rng: random.Random) -> t
     """Abre o combate direto no motor: `chefe_reservado` é o que deixa um
     chefe entrar com a própria ficha, fora do orçamento da banda."""
     reservado = monstros[0] if monstros[0] in regras.get_monstros_chefe() else None
-    c_state, _, dano_surpresa = combat.iniciar_combate(
+    c_state, _, _ = combat.iniciar_combate(
         monstros, heroi.atributos, heroi.defesa, rng, nivel_heroi=heroi.nivel, chefe_reservado=reservado,
     )
-    w_state = WorldState(local="Arena", versao_progressao=1, versao_mundo=1)
+    w_state = WorldState(local="Arena", versao_progressao=1, versao_mundo=2)
     preparar_encontro(c_state, w_state, "duelo")
-    heroi.hp_atual = max(0, heroi.hp_atual - dano_surpresa)
+    alvo = turnos.Alvo(hp=heroi.hp_atual, ca=heroi.defesa, atributos=heroi.atributos, nivel=heroi.nivel)
+    turnos.abrir(c_state, alvo, rng)
+    heroi.hp_atual = alvo.hp
     return c_state, w_state
 
 
@@ -95,20 +98,37 @@ def _vivos(c_state: CombatState) -> list[Inimigo]:
     return [i for i in c_state.inimigos if i.hp > 0 and not i.afastado]
 
 
+ENCERRAR: tuple[str, dict] = ("encerrar_turno", {})
+
+
 def _jogada_basica(heroi: Personagem, c_state: CombatState) -> tuple[str, dict]:
-    if heroi.hp_atual < LIMIAR_POCAO * heroi.hp_max and POCAO in heroi.inventario:
+    """Só ataca; bebe poção (ação bônus) com pouca vida. Sem nada mais a
+    fazer no turno, encerra."""
+    if not c_state.bonus_usada and heroi.hp_atual < LIMIAR_POCAO * heroi.hp_max and POCAO in heroi.inventario:
         return "usar_item", {"item": POCAO}
+    if c_state.acao_usada:
+        return ENCERRAR
     alvo = min(_vivos(c_state), key=lambda i: i.hp)
     return "atacar", {"alvo": alvo.nome}
 
 
 def _jogada_tatica(heroi: Personagem, c_state: CombatState) -> tuple[str, dict]:
     """Um jogador que aprendeu o sistema: usa a técnica mais forte que o Foco
-    paga, área só contra grupo, e reforço próprio uma vez por luta."""
+    paga, área só contra grupo, reforço próprio uma vez por luta, e quem
+    luta de longe abre distância depois de agir."""
     nome, args = _jogada_basica(heroi, c_state)
     if nome == "usar_item":
         return nome, args
     vivos = _vivos(c_state)
+    if nome == "encerrar_turno":
+        de_longe = turnos.alcance_da_arma(
+            combat.escolher_arma(heroi.inventario, None, (heroi.equipamento or {}).get("arma"))[1]
+            .get("propriedades", [])
+        ) != "corpo" or heroi.classe in CONJURADORES
+        livre = not c_state.movimento_usado and not any(c_state.efeitos_heroi.get(e, 0) for e in ("caido", "contido"))
+        if de_longe and livre and any(i.distancia == "perto" for i in vivos):
+            return "recuar", {}
+        return ENCERRAR
     disponiveis = [
         h for h in perfil_classe(heroi.classe)["habilidades"]
         if h["nivel"] <= heroi.nivel and h["custo"] <= c_state.foco
@@ -131,25 +151,27 @@ def simular_duelo(classe: str, nivel: int, monstros: list[str], bot: str, sement
     heroi = heroi_de_referencia(classe, nivel)
     c_state, w_state = _abrir_luta(heroi, monstros, rng)
     q_state = QuestLog()
-    foco_gasto, turnos = 0, 0
+    foco_gasto, jogadas = 0, 0
     caiu_no_turno_1 = heroi.hp_atual <= 0
-    while c_state.ativo and heroi.hp_atual > 0 and turnos < MAX_TURNOS:
-        turnos += 1
+    rodadas = c_state.rodada
+    while c_state.ativo and heroi.hp_atual > 0 and jogadas < MAX_JOGADAS and c_state.rodada <= MAX_TURNOS:
+        jogadas += 1
+        rodadas = c_state.rodada
         foco_antes = c_state.foco
         nome, args = BOTS[bot](heroi, c_state)
-        # Um executor por jogada, como um clique: `_acao_gasta` nasce zerado.
+        # Um executor por jogada, como um clique.
         resultado, ok = ToolExecutor(heroi, c_state, w_state, q_state, rng).executar(
             nome, json.dumps(args, ensure_ascii=False)
         )
         if not ok:
             raise RuntimeError(f"jogada recusada pelo juiz: {nome} {args} → {resultado}")
         foco_gasto += max(0, foco_antes - c_state.foco)
-        if turnos == 1 and heroi.hp_atual <= 0:
+        if rodadas <= 1 and heroi.hp_atual <= 0:
             caiu_no_turno_1 = True
     vitoria = c_state.resultado == "vitoria" and heroi.hp_atual > 0
     return Duelo(
         vitoria=vitoria, pv_restante=heroi.hp_atual / heroi.hp_max if vitoria else 0.0,
-        turnos=turnos, foco_gasto=foco_gasto, caiu_no_turno_1=caiu_no_turno_1,
+        turnos=rodadas, foco_gasto=foco_gasto, caiu_no_turno_1=caiu_no_turno_1,
     )
 
 

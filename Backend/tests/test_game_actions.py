@@ -287,8 +287,9 @@ def test_rotulo_do_botao_vira_a_fala_do_jogador_no_historico(monkeypatch):
     assert falas[-1] == "Atacar Sentinela"
 
 
-def test_clique_atacar_com_aliado_uma_vez_por_rodada(monkeypatch):
-    # Fase 2 do plano "jogo completo".
+def test_clique_comandar_aliado_e_acao_bonus_uma_vez_por_turno(monkeypatch):
+    # Combate v2: o aliado age sozinho na vez dele; o clique só aponta o alvo
+    # (ação bônus) e não encerra o turno do herói.
     from app.domain.state import Aliado
 
     sid = _partida(monkeypatch)
@@ -301,14 +302,17 @@ def test_clique_atacar_com_aliado_uma_vez_por_rodada(monkeypatch):
         heroi.combat_state = cs.model_dump()
         db.commit()
     carga = client.post("/load_game", json={"session_id": sid}).json()
-    assert carga["aliados"][0]["raca"] == "Elfo" and carga["aliados"][0]["ja_agiu"] is False
+    assert carga["aliados"][0]["raca"] == "Elfo"
+    assert carga["turno_combate"]["fila"] == ["heroi", "a1", "i1"] and carga["turno_combate"]["vez"] == "heroi"
     payload = {"session_id": sid, "acao": "atacar_com_aliado", "aliado": "Bob", "alvo": "Sentinela",
                "turno_esperado": 1}
     r = client.post("/game/action", json=payload)
     assert r.status_code == 200, r.text
-    assert r.json()["aliados"][0]["ja_agiu"] is True
+    turno = r.json()["turno_combate"]
+    assert turno["bonus_usada"] is True and turno["acao_usada"] is False and turno["alvo_marcado"] == "i1"
+    assert "aponta Sentinela para Bob" in r.json()["narrativa"]
     r2 = client.post("/game/action", json={**payload, "turno_esperado": r.json()["turno_mundo"]})
-    assert r2.status_code == 400 and "já agiu" in r2.json()["detail"]
+    assert r2.status_code == 400 and "ação bônus" in r2.json()["detail"]
     r3 = client.post("/game/action", json={"session_id": sid, "acao": "atacar_com_aliado", "aliado": "Ninguém",
                                              "alvo": "Sentinela", "turno_esperado": r.json()["turno_mundo"]})
     assert r3.status_code == 400

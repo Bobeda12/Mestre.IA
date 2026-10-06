@@ -18,7 +18,7 @@ from app.domain.eventos import DadosRolagem, EventoRolagem, EventoStatus
 from app.domain.state import Aliado, CombatState, Inimigo, LocalDescoberto, QuestLog, WorldState
 from app.infra.data_manager import regras
 from app.infra.db import Personagem
-from app.services import combat, talents
+from app.services import combat, talents, turnos
 from app.services import items as itens
 from app.services import rules_engine as motor
 from app.services.class_abilities import limite_foco, perfil_classe
@@ -48,6 +48,7 @@ class ToolExecutor:
         self.rng = rng
         self.eventos: list[str] = []
         self._acao_gasta = False
+        self.turno_passou = False  # combate v2: a fila andou neste request
         # Fase 3 (ADR-0034) — talentos são números em canais que o motor já
         # tem: `bonus_especializacao` é o canal de dano; a defesa é
         # recalculada onde muda (equipar/nível); vantagem entra em rolar_teste.
@@ -119,8 +120,12 @@ class ToolExecutor:
     def atacar(self, alvo: str, arma: str | None = None) -> dict:
         if not self.c_state.ativo:
             return {"erro": "não há combate ativo — chame iniciar_combate antes de atacar"}
+        alvo, vantagem, erro = self._mirar(alvo, arma)
+        if erro:
+            return {"erro": erro}
         eventos = combat.turno_jogador(
             self.c_state, self.heroi.atributos, self.heroi.inventario, arma, alvo, self.rng, self._nivel(),
+            vantagem=vantagem,
             classe=self.heroi.classe,
             arma_equipada=(self.heroi.equipamento or {}).get("arma"),
         )
@@ -264,6 +269,10 @@ class ToolExecutor:
         mesma chamada em que arma o efeito."""
         if not self.c_state.ativo or all(i.hp <= 0 or i.afastado for i in self.c_state.inimigos):
             return {}
+        if self.c_state.versao >= 2:
+            # Combate v2: os inimigos agem na vez deles, pela fila
+            # (`_passar_a_vez`), não colados à ação do herói.
+            return {}
         ca_efetiva = self.heroi.defesa + self.c_state.heroi_bonus_ca
         if self.c_state.efeitos_heroi.get("guarda", 0):
             ca_efetiva += 2
@@ -305,8 +314,12 @@ class ToolExecutor:
     def investir(self, alvo: str, arma: str | None = None) -> dict:
         if not self.c_state.ativo:
             return {"erro": "não há combate ativo — chame iniciar_combate antes de investir"}
+        alvo, vantagem, erro = self._mirar(alvo, arma)
+        if erro:
+            return {"erro": erro}
         eventos = combat.turno_jogador(
             self.c_state, self.heroi.atributos, self.heroi.inventario, arma, alvo, self.rng, self._nivel(),
+            vantagem=vantagem,
             investida=True,
             classe=self.heroi.classe,
             arma_equipada=(self.heroi.equipamento or {}).get("arma"),
@@ -891,9 +904,18 @@ class ToolExecutor:
             if a["hp"] > 0
         ]
         self.eventos.extend(eventos)
-        if dano_surpresa:
-            self.heroi.hp_atual = max(0, self.heroi.hp_atual - dano_surpresa)
-        return {"inimigos": [i.nome for i in self.c_state.inimigos], "dano_surpresa": dano_surpresa}
+        if not self.c_state.ativo:
+            return {"inimigos": [], "dano_surpresa": 0}
+        # Combate v2: todos rolam iniciativa e quem é mais rápido que o
+        # herói age antes do primeiro turno dele. Em emboscada já começam colados.
+        alvo = self._alvo()
+        self.eventos.extend(
+            turnos.abrir(self.c_state, alvo, self.rng, perto=self.c_state.cenario_id == "emboscada")
+        )
+        dano_surpresa = self.heroi.hp_atual - alvo.hp
+        self.heroi.hp_atual = alvo.hp
+        return {"inimigos": [i.nome for i in self.c_state.inimigos], "dano_surpresa": dano_surpresa,
+                **self._verificar_vitoria()}
 
     # Fase 3 da revisão de gameplay (Etapa 12/13, ADR-0027) — estatísticas
     # de combate de um aliado recrutado são fixas, não propostas pelo
@@ -935,6 +957,8 @@ class ToolExecutor:
         aliado_obj = next((a for a in self.c_state.aliados if a.nome == aliado and a.hp > 0), None)
         if aliado_obj is None:
             return {"erro": f"'{aliado}' não é um aliado vivo neste combate"}
+        if self.c_state.versao >= 2:
+            return self._comandar(aliado_obj, alvo)
         eventos = combat.turno_aliado(self.c_state, aliado_obj, alvo, self.rng)
         self.eventos.extend(eventos)
         if all(i.hp <= 0 or i.afastado for i in self.c_state.inimigos):
@@ -946,6 +970,203 @@ class ToolExecutor:
         # herói deixa os inimigos sem reagir nesta rodada; documentado
         # como lacuna conhecida, não descuido.
         return {"aliado": aliado, "alvo": alvo}
+
+    # -- combate v2: economia do turno, distância e fila ------------------
+
+    def _alvo(self) -> "turnos.Alvo":
+        return turnos.Alvo(hp=self.heroi.hp_atual, ca=self.heroi.defesa, atributos=self.heroi.atributos or {},
+                           nivel=self._nivel())
+
+    def _inimigo_vivo(self, alvo: str | None) -> Inimigo | None:
+        """Por id ("i2") ou pelo nome exibido."""
+        return next((i for i in turnos.vivos(self.c_state) if alvo and alvo in (i.id, i.nome)), None)
+
+    def _preso(self) -> str | None:
+        """Condição que impede o herói de se deslocar agora."""
+        efeitos = self.c_state.efeitos_heroi
+        if efeitos.get("caido", 0):
+            return "Você está caído: levante-se primeiro."
+        if efeitos.get("contido", 0):
+            return "Você está contido e não consegue se deslocar."
+        return None
+
+    def _alcance_do_ataque(self, arma: str | None) -> str:
+        if arma is None and self.heroi.classe in combat.CONJURADORES:
+            return "distancia"  # o pulso mágico/sagrado atravessa a cena
+        if arma is None and self.heroi.classe == "Monge":
+            return "corpo"
+        _, dados = combat.escolher_arma(self.heroi.inventario, arma, (self.heroi.equipamento or {}).get("arma"))
+        return turnos.alcance_da_arma(dados.get("propriedades", []))
+
+    def _mirar(self, alvo: str, arma: str | None) -> tuple[str, bool | None, str | None]:
+        """Combate v2: confere o alcance (avançando sozinho se o movimento
+        ainda está livre) e soma as desvantagens do herói. Devolve
+        (nome do alvo, vantagem, erro). No motor antigo não muda nada."""
+        if self.c_state.versao < 2:
+            return alvo, None, None
+        c = self.c_state
+        inimigo = self._inimigo_vivo(alvo)
+        if inimigo is None:
+            return alvo, None, "escolha um inimigo vivo como alvo"
+        alcance = self._alcance_do_ataque(arma)
+        if alcance == "corpo" and inimigo.distancia == "longe":
+            preso = self._preso()
+            if c.movimento_usado or preso or c.efeitos_heroi.get("amedrontado", 0):
+                return alvo, None, preso or (
+                    f"{inimigo.nome} está longe: aproxime-se antes, ou use um ataque à distância."
+                )
+            c.movimento_usado = True
+            self.eventos.extend(turnos.aproximar(c, inimigo))
+        vantagem: bool | None = None
+        colado = any(i.distancia == "perto" for i in turnos.vivos(c))
+        if alcance == "distancia" and colado:
+            vantagem = False  # atirar com um inimigo colado atrapalha a mira
+        if any(c.efeitos_heroi.get(e, 0) for e in ("envenenado", "caido", "amedrontado")):
+            vantagem = False
+        return inimigo.nome, vantagem, None
+
+    def aproximar(self, alvo: str) -> dict:
+        if not self.c_state.ativo:
+            return {"erro": "não há combate ativo"}
+        inimigo = self._inimigo_vivo(alvo)
+        if inimigo is None:
+            return {"erro": "escolha um inimigo vivo para se aproximar"}
+        if inimigo.distancia == "perto":
+            return {"erro": f"{inimigo.nome} já está perto."}
+        preso = self._preso()
+        if preso:
+            return {"erro": preso}
+        if self.c_state.efeitos_heroi.get("amedrontado", 0):
+            return {"erro": "Você está amedrontado e não consegue avançar."}
+        self.eventos.extend(turnos.aproximar(self.c_state, inimigo))
+        return {"acao": "aproximar", "alvo": inimigo.nome}
+
+    def recuar(self) -> dict:
+        if not self.c_state.ativo:
+            return {"erro": "não há combate ativo"}
+        if not any(i.distancia == "perto" for i in turnos.vivos(self.c_state)):
+            return {"erro": "Nenhum inimigo está perto de você."}
+        preso = self._preso()
+        if preso:
+            return {"erro": preso}
+        alvo = self._alvo()
+        self.eventos.extend(turnos.recuar(self.c_state, alvo, self.rng))
+        dano = self.heroi.hp_atual - alvo.hp
+        self.heroi.hp_atual = alvo.hp
+        return {"acao": "recuar", "dano_recebido": dano, "hp_atual": self.heroi.hp_atual}
+
+    def levantar(self) -> dict:
+        if not self.c_state.efeitos_heroi.get("caido", 0):
+            return {"erro": "Você não está caído."}
+        self.c_state.efeitos_heroi = {k: v for k, v in self.c_state.efeitos_heroi.items() if k != "caido"}
+        self.eventos.append("Você se levanta.")
+        return {"acao": "levantar"}
+
+    def encerrar_turno(self) -> dict:
+        if not self.c_state.ativo:
+            return {"erro": "não há combate ativo"}
+        return {"acao": "encerrar_turno"}
+
+    def _comandar(self, aliado: Aliado, alvo: str | None) -> dict:
+        """Ação bônus: aponta um alvo para o aliado. Ele bate na vez dele,
+        com vantagem no primeiro golpe."""
+        de_pe = turnos.vivos(self.c_state)
+        inimigo = self._inimigo_vivo(alvo) or min(de_pe, key=lambda i: (i.hp, i.id), default=None)
+        if inimigo is None:
+            return {"erro": "não há inimigo de pé para marcar"}
+        self.c_state.alvo_marcado, self.c_state.comando = inimigo.id, True
+        self.eventos.append(f"📣 Você aponta {inimigo.nome} para {aliado.nome}.")
+        return {"aliado": aliado.nome, "alvo": inimigo.nome}
+
+    def _custo_de(self, nome: str, args: dict) -> str | None:
+        """O que a ferramenta gasta do turno do herói: "acao", "bonus",
+        "movimento", "livre" (encerrar) ou None (não mexe no turno)."""
+        if nome in {"aproximar", "recuar", "levantar"}:
+            return "movimento"
+        if nome == "encerrar_turno":
+            return "livre"
+        if nome == "atacar_com_aliado":
+            return "bonus"
+        if nome == "usar_item":
+            real = itens.resolver_nome(str(args.get("item", "")), self.heroi.inventario)
+            ficha = regras.get_item(real) if real else None
+            return "bonus" if ficha and ficha.get("tipo") == "consumivel" else "acao"
+        if nome == "usar_habilidade":
+            pedido = args.get("habilidade")
+            tecnica = next((h for h in perfil_classe(self.heroi.classe)["habilidades"]
+                            if pedido in (h["id"], h["nome"])), None)
+            return (tecnica or {}).get("acao", "acao")
+        if nome == "aplicar_dano":
+            nomes_heroi = {"heroi", "herói", "você", "voce", (self.heroi.nome or "").lower()}
+            return None if str(args.get("alvo", "")).lower() in nomes_heroi else "acao"
+        if nome == "agir_no_mundo":
+            return None if args.get("acao") == "examinar" else "acao"
+        if nome in {"atacar", "investir", "esquivar", "defender", "esconder_se", "fugir", "interagir", "equipar",
+                    "resolver_intencao", "intervir_conflito"}:
+            return "acao"
+        return None
+
+    def _ha_bonus_util(self) -> bool:
+        """Sobrou algo que valha manter o turno aberto pela ação bônus?"""
+        c = self.c_state
+        ferido = self.heroi.hp_atual < self.heroi.hp_max
+        for item in self.heroi.inventario or []:
+            ficha = regras.get_item(item) or {}
+            if ficha.get("tipo") != "consumivel":
+                continue
+            efeito = ficha.get("efeito") or {}
+            so_cura = set(efeito) <= {"cura"}
+            if not so_cura or ferido:
+                return True
+        marcado = next((i for i in turnos.vivos(c) if i.id == c.alvo_marcado), None)
+        if marcado is None and any(a.hp > 0 for a in c.aliados):
+            return True
+        return any(
+            h.get("acao") == "bonus" and h["nivel"] <= self._nivel() and h["custo"] <= c.foco
+            for h in perfil_classe(self.heroi.classe)["habilidades"]
+        )
+
+    def _ha_movimento_util(self) -> bool:
+        """Depois de agir, mover só vale para quem luta de longe (abrir
+        distância) ou para quem está no chão (levantar)."""
+        c = self.c_state
+        if c.efeitos_heroi.get("caido", 0):
+            return True
+        if self._preso():
+            return False
+        colado = any(i.distancia == "perto" for i in turnos.vivos(c))
+        return colado and self._alcance_do_ataque(None) != "corpo"
+
+    def _turno_acabou(self) -> bool:
+        """O turno fecha sozinho quando não sobra nada útil. Antes da ação,
+        nunca: o jogador pode querer se mover ou usar o bônus primeiro."""
+        c = self.c_state
+        if not c.acao_usada:
+            return False
+        if not c.bonus_usada and self._ha_bonus_util():
+            return False
+        return c.movimento_usado or not self._ha_movimento_util()
+
+    def _passar_a_vez(self) -> dict:
+        """Fecha o turno do herói e anda a fila até ele agir de novo. Se
+        ele volta atordoado, a vez passa outra vez."""
+        c = self.c_state
+        vitoria: dict = {}
+        for _ in range(3):
+            turnos.encerrar_vez_heroi(c)
+            alvo = self._alvo()
+            self.eventos.extend(turnos.avancar_fila(c, alvo, self.rng))
+            vitoria = self._verificar_vitoria()
+            if vitoria or not c.ativo:
+                self.heroi.hp_atual = alvo.hp
+                break
+            self.eventos.extend(turnos.iniciar_vez_heroi(c, alvo))
+            self.heroi.hp_atual = alvo.hp
+            perdeu_a_vez = c.acao_usada and c.bonus_usada and c.movimento_usado
+            if self.heroi.hp_atual <= 0 or not perdeu_a_vez:
+                break
+        self.turno_passou = True
+        return {"fim_de_turno": True, "hp_atual": self.heroi.hp_atual, **vitoria}
 
     # -- despacho --------------------------------------------------------
 
@@ -970,6 +1191,16 @@ class ToolExecutor:
                  "mover", "descansar", "resolver_intencao"}
         em_combate = self.c_state.ativo
         consome = nome in acoes and not (nome == "agir_no_mundo" and args.get("acao") == "examinar")
+        # Combate v2: o que limita o turno é ação / bônus / movimento, não
+        # "uma ferramenta por request".
+        v2 = em_combate and self.c_state.versao >= 2
+        custo = self._custo_de(nome, args) if v2 else None
+        if custo is not None:
+            if self.heroi.hp_atual <= 0:
+                return {"erro": "herói inconsciente: aguarde o teste de morte"}, False
+            gasto = _CAMPO_DO_CUSTO.get(custo)
+            if gasto and getattr(self.c_state, gasto):
+                return {"erro": f"Você já usou {_NOME_DO_CUSTO[custo]} neste turno."}, False
         if nome == "usar_instalacao":
             consome = args.get("operacao") == "preparar"
         if nome == "equipar":
@@ -978,7 +1209,7 @@ class ToolExecutor:
             # dano ambiental num inimigo é uma ação de combate como outra qualquer
             nomes_heroi = {"heroi", "herói", "você", "voce", self.heroi.nome.lower()}
             consome = str(args.get("alvo", "")).lower() not in nomes_heroi
-        if consome:
+        if consome and not v2:
             if self._acao_gasta:
                 return {"erro": "a ação deste turno já foi resolvida; narre o resultado e aguarde o jogador"}, False
             if self.heroi.hp_atual <= 0:
@@ -988,7 +1219,7 @@ class ToolExecutor:
             if getattr(self, "_arco_tentado", False):
                 return {"erro": "já tentou encerrar o arco neste turno; narre e aguarde"}, False
             self._arco_tentado = True
-        if nome == "atacar_com_aliado" and args.get("aliado") in self.c_state.aliados_agiram:
+        if not v2 and nome == "atacar_com_aliado" and args.get("aliado") in self.c_state.aliados_agiram:
             return {"erro": "esse aliado já agiu nesta rodada"}, False
         try:
             resultado = metodo(self, **args)
@@ -1021,13 +1252,22 @@ class ToolExecutor:
                 elif nome == "usar_instalacao":
                     minutos = 60
                 avancar_tempo(self, minutos, atualizar_hora=nome not in {"mover", "descansar"})
-            if nome == "atacar_com_aliado":
+            if nome == "atacar_com_aliado" and not v2:
                 self.c_state.aliados_agiram = [*self.c_state.aliados_agiram, args.get("aliado", "")]
+            if custo is not None:
+                gasto = _CAMPO_DO_CUSTO.get(custo)
+                if gasto:
+                    setattr(self.c_state, gasto, True)
+                if self.c_state.ativo and (nome == "encerrar_turno" or self._turno_acabou()):
+                    resultado.update(self._passar_a_vez())
             from app.services.capitulo import conferir_passo
 
             conferir_passo(self)
         return resultado, "erro" not in resultado
 
+
+_CAMPO_DO_CUSTO = {"acao": "acao_usada", "bonus": "bonus_usada", "movimento": "movimento_usado"}
+_NOME_DO_CUSTO = {"acao": "sua ação", "bonus": "sua ação bônus", "movimento": "seu movimento"}
 
 ToolExecutor._DESPACHO = {
     "rolar_teste": ToolExecutor.rolar_teste,
@@ -1047,6 +1287,10 @@ ToolExecutor._DESPACHO = {
     "ajustar_reputacao_npc": ToolExecutor.ajustar_reputacao_npc,
     "iniciar_combate": ToolExecutor.iniciar_combate,
     "concluir_objetivo": ToolExecutor.concluir_objetivo,
+    "aproximar": ToolExecutor.aproximar,
+    "recuar": ToolExecutor.recuar,
+    "levantar": ToolExecutor.levantar,
+    "encerrar_turno": ToolExecutor.encerrar_turno,
     "esquivar": ToolExecutor.esquivar,
     "defender": ToolExecutor.defender,
     "investir": ToolExecutor.investir,

@@ -171,45 +171,10 @@ def iniciar_combate(
 
     eventos: list[str] = [f"⚔️ Surge{'m' if len(inimigos) > 1 else ''}: {', '.join(i.nome for i in inimigos)}!"]
 
-    mod_destreza_heroi = motor.calcular_modificador(atributos_heroi.get("destreza", 10))
-    iniciativa_heroi = motor.rolar_iniciativa(mod_destreza_heroi, rng)
-
-    # -1 representa o herói na ordem — ver domain/state.py:CombatState.
-    ordem: list[tuple[int, int]] = [(-1, iniciativa_heroi)]  # (índice, iniciativa)
-    dano_surpresa = 0
-    for idx, (inimigo, arquetipo_nome) in enumerate(pares):
-        dados_monstro = regras.get_monster(arquetipo_nome) or {}
-        mod_destreza_inimigo = motor.calcular_modificador(dados_monstro.get("destreza", 10))
-        iniciativa_inimigo = motor.rolar_iniciativa(mod_destreza_inimigo, rng)
-        ordem.append((idx, iniciativa_inimigo))
-        if iniciativa_inimigo <= iniciativa_heroi:
-            continue
-        resultado = motor.resolver_ataque(inimigo.bonus_ataque, ca_heroi, rng)
-        linha = (
-            f"🎲 {inimigo.nome} é mais rápido e ataca de surpresa: "
-            f"d20({resultado.rolagem})+{resultado.bonus}={resultado.total} vs CA {ca_heroi} → "
-        )
-        dados = DadosRolagem(
-            tipo="ataque", quem=inimigo.nome, alvo="heroi", d20=resultado.rolagem, bonus=resultado.bonus,
-            total=resultado.total, ca=ca_heroi, sucesso=resultado.acerto, critico=resultado.critico,
-            falha_critica=resultado.falha_critica,
-        )
-        if resultado.acerto:
-            dano = motor.calcular_dano(inimigo.dano_dado, resultado.critico, rng)
-            dano_surpresa += dano
-            dados.dano = dano
-            texto = linha + f"ACERTO{' CRÍTICO' if resultado.critico else ''}! {dano} de dano."
-            eventos.append(EventoRolagem(texto, dados))
-        else:
-            eventos.append(EventoRolagem(linha + "ERROU.", dados))
-
-    # Ordem final: maior iniciativa primeiro; empate favorece o herói (-1
-    # antes de qualquer índice ≥0), critério arbitrário mas determinístico.
-    ordem.sort(key=lambda par: (-par[1], par[0]))
-    c_state.ordem_iniciativa = [idx for idx, _ in ordem]
-    c_state.turno_atual = 0
-
-    return c_state, eventos, dano_surpresa
+    # A iniciativa, a fila e quem age antes do herói são do motor de turnos
+    # (`turnos.abrir`); aqui só nasce a lista de inimigos. O terceiro valor
+    # (dano de surpresa) ficou em 0 por compatibilidade de assinatura.
+    return c_state, eventos, 0
 
 
 def turno_jogador(
@@ -290,6 +255,8 @@ def turno_jogador(
     dano += 2 if c_state.efeitos_heroi.get("furia", 0) else 0
     dano += 2 if c_state.efeitos_heroi.get("lamina", 0) else 0  # Óleo de Lâmina (Fase 1)
     dano = max(1, dano + c_state.bonus_especializacao)
+    if c_state.efeitos_heroi.get("enfraquecido", 0):
+        dano = max(1, dano - 3)
     if investida:
         dano = dano * 3 // 2
     alvo.hp = max(0, alvo.hp - dano)

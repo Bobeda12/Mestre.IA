@@ -40,8 +40,14 @@ def test_chefe_derrotado_por_qualquer_golpe_marca_o_arco(executor, golpe):
     elif golpe == "investir":
         r = executor.investir(alvo)
     elif golpe == "aliado":
-        executor.c_state.aliados = [Aliado(nome="Dara", hp=10, max_hp=10, ca=12, bonus_ataque=2, dano_dado="1d6")]
-        r = executor.atacar_com_aliado("Dara", alvo)
+        # Combate v2: o herói aponta o alvo e encerra o turno; Dara bate na vez dela.
+        c = executor.c_state
+        c.aliados = [Aliado(id="a1", nome="Dara", hp=10, max_hp=10, ca=12, bonus_ataque=2, dano_dado="1d6")]
+        c.fila = ["heroi", "a1", "i1"]
+        c.vez = 0
+        assert executor.atacar_com_aliado("Dara", alvo)["alvo"] == alvo
+        r, ok = executor.executar("encerrar_turno", "{}")
+        assert ok, r
     else:
         r = executor.interagir("derrubar")
     assert r["resultado"] == "vitoria"

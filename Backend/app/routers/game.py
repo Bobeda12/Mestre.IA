@@ -22,7 +22,7 @@ from app.infra.llm_client import ErroMestre, chamar_com_fallback
 from app.infra.rate_limit import limiter
 from app.infra.settings import settings
 from app.infra.tracing import medir, turno_span
-from app.services import combat, memory, rag_regras, rules_engine, telemetria
+from app.services import combat, memory, rag_regras, rules_engine, telemetria, turnos
 from app.services.agent_loop import executar_turno, executar_turno_stream
 from app.services.auth import get_current_user, get_current_verified_user
 from app.services.capitulo import migrar_capitulo, painel_capitulo, proximo_passo
@@ -197,6 +197,13 @@ def _resposta(heroi: Personagem, c_state: CombatState, q_state: QuestLog, **extr
         # pouca coisa, e o front decide sozinho o que faz sentido mostrar.
         "reputacao_npcs": heroi.reputacao_npcs,
         "combat_active": c_state.ativo,
+        # Combate v2 — a fila de turnos e o que o herói ainda pode gastar.
+        "turno_combate": {
+            "fila": c_state.fila, "vez": turnos.da_vez(c_state), "rodada": c_state.rodada,
+            "acao_usada": c_state.acao_usada, "bonus_usada": c_state.bonus_usada,
+            "movimento_usado": c_state.movimento_usado, "efeitos_heroi": c_state.efeitos_heroi,
+            "alvo_marcado": c_state.alvo_marcado,
+        } if c_state.ativo else None,
         "ordem_iniciativa": c_state.ordem_iniciativa,
         "turno_atual": c_state.turno_atual,
         # Fase 1 da revisão de gameplay — o momento mais tenso do jogo
@@ -321,6 +328,9 @@ def load_game(
     if migrar_mundo(w_state, heroi) | migrar_capitulo(w_state, heroi):
         heroi.world_state = w_state.model_dump()
         db.commit()
+    if turnos.migrar_combate(c_state):
+        heroi.combat_state = c_state.model_dump()
+        db.commit()
     if migrar_equipamento(heroi):
         db.commit()
 
@@ -381,8 +391,10 @@ def game_action(
         raise HTTPException(status_code=409, detail="Esta jornada terminou.")
     if heroi.hp_atual <= 0 and action.acao != "resistir":
         raise HTTPException(status_code=400, detail="Você está caído. Use Resistir para lutar pela vida.")
-    if (action.acao in {"atacar", "investir", "usar_habilidade"} and action.alvo
-            and action.alvo not in {i.nome for i in c_state.inimigos if i.hp > 0 and not i.afastado}):
+    turnos.migrar_combate(c_state)
+    if (action.acao in {"atacar", "investir", "usar_habilidade", "aproximar"} and action.alvo
+            and action.alvo not in {x for i in c_state.inimigos if i.hp > 0 and not i.afastado
+                                    for x in (i.nome, i.id)}):
         raise HTTPException(status_code=400, detail="Escolha um inimigo vivo como alvo.")
     if action.acao == "atacar_com_aliado" and action.aliado not in {a.nome for a in c_state.aliados if a.hp > 0}:
         raise HTTPException(status_code=400, detail="Esse aliado não está de pé neste combate.")
@@ -397,6 +409,8 @@ def game_action(
             raise HTTPException(status_code=400, detail="Você está consciente e pode agir normalmente.")
         eventos, heroi.hp_atual = combat.turno_morte(c_state)
         executor.eventos.extend(eventos)
+        if c_state.ativo and c_state.resultado is None:
+            executor._passar_a_vez()  # caído, o herói só resiste; a fila segue sem ele
         if c_state.resultado == "morte":
             # O comando direto não chama a IA para produzir um epitáfio.
             heroi.morto_em = datetime.now(UTC)
@@ -409,9 +423,9 @@ def game_action(
             }
     else:
         argumentos: dict = {}
-        if action.acao in {"atacar", "investir"}:
+        if action.acao in {"atacar", "investir", "aproximar"}:
             if not action.alvo:
-                raise HTTPException(status_code=400, detail="Selecione quem deseja atacar.")
+                raise HTTPException(status_code=400, detail="Selecione um inimigo.")
             argumentos = {"alvo": action.alvo}
         elif action.acao == "usar_habilidade":
             argumentos = {"habilidade": action.habilidade or "", "alvo": action.alvo}
@@ -528,6 +542,7 @@ async def chat_endpoint(
 
     w_state = WorldState.model_validate(heroi.world_state or {})
     c_state = CombatState.model_validate(heroi.combat_state or {})
+    turnos.migrar_combate(c_state)
     q_state = QuestLog.model_validate(heroi.quest_log or {})
 
     # Guardado antes de incrementar: `w_state` só é persistido perto do fim
@@ -724,6 +739,7 @@ def chat_stream_endpoint(
 
     w_state = WorldState.model_validate(heroi.world_state or {})
     c_state = CombatState.model_validate(heroi.combat_state or {})
+    turnos.migrar_combate(c_state)
     q_state = QuestLog.model_validate(heroi.quest_log or {})
 
     # Ver a mesma nota em `chat_endpoint` — o incremento só é persistido

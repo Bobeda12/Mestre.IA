@@ -99,36 +99,8 @@ class TestIniciarCombate:
         assert c_state.inimigos == []
         assert "não iniciado" in eventos[0]
 
-    def test_inimigo_mais_rapido_ataca_de_surpresa(self):
-        # Iniciativa do herói: 1+1(dex)=2. Iniciativa do goblin: 20+2(dex)=22.
-        # Ataque de surpresa do goblin: d20=15 -> 15+4=19 >= CA 10 -> acerta.
-        # Dano: 1d6+2 com d6=4 -> 6.
-        c_state, eventos, dano_surpresa = combat.iniciar_combate(
-            ["Goblin"], ATRIBUTOS_HEROI, ca_heroi=10, rng=RngFixo([1, 20, 15, 4])
-        )
-        assert dano_surpresa == 6
-        assert any("surpresa" in e for e in eventos)
-
-    def test_ordem_de_iniciativa_e_guardada_do_maior_pro_menor(self):
-        # Herói: d20=20+1(dex)=21. Goblin(idx 0): d20=3+2(dex)=5. Lobo(idx 1): d20=10+2(dex)=12.
-        # Ninguém supera o herói -> sem rolagem de ataque de surpresa, só 3 valores no rng.
-        c_state, _, dano_surpresa = combat.iniciar_combate(
-            ["Goblin", "Lobo"], ATRIBUTOS_HEROI, ca_heroi=15, rng=RngFixo([20, 3, 10]), nivel_heroi=3
-        )
-        assert dano_surpresa == 0
-        # -1 é o herói; 1 (Lobo, iniciativa 12) vem antes de 0 (Goblin, iniciativa 5).
-        assert c_state.ordem_iniciativa == [-1, 1, 0]
-        assert c_state.turno_atual == 0
-
-    def test_evento_de_surpresa_carrega_dados_estruturados(self):
-        c_state, eventos, _ = combat.iniciar_combate(
-            ["Goblin"], ATRIBUTOS_HEROI, ca_heroi=10, rng=RngFixo([1, 20, 15, 4])
-        )
-        evento_surpresa = next(e for e in eventos if "surpresa" in e)
-        assert evento_surpresa.dados.tipo == "ataque"
-        assert evento_surpresa.dados.quem == "Goblin"
-        assert evento_surpresa.dados.sucesso is True
-        assert evento_surpresa.dados.dano == 6
+    # Ataque de surpresa e ordem de iniciativa saíram daqui: quem age antes
+    # do herói é decidido pela fila de `services/turnos.py` (test_combate_v2).
 
 
 class TestTurnoInimigos:

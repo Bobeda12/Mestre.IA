@@ -14,6 +14,8 @@ class GameAction(BaseModel):
         "agir_no_mundo", "intervir_conflito", "definir_objetivo", "escolher_especializacao",
         "equipar", "desequipar", "comerciar", "atacar_com_aliado", "escolher_nivel", "encerrar_arco",
         "escolher_aprendizado", "gerir_projeto", "decidir_acordo_projeto", "usar_instalacao",
+        # Combate v2 — movimento e fim do turno.
+        "aproximar", "recuar", "levantar", "encerrar_turno",
     ]
     turno_esperado: int = Field(ge=1)
     alvo: str | None = Field(default=None, max_length=120)
