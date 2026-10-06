@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 from app.domain.eventos import DadosRolagem, EventoRolagem
 from app.domain.state import CombatState, WorldState
 from app.services import rules_engine as motor
+from app.services.living_world import acrescentar_marco
 
 if TYPE_CHECKING:
     from app.services.tools import ToolExecutor
@@ -214,7 +215,7 @@ def interagir_cenario(executor: "ToolExecutor", interacao: str) -> dict:
                 "resgate": "Libertou a pessoa aprisionada e escapou com ela viva.",
                 "cerco": "Fechou a passagem e impediu a entrada dos invasores.",
             }[c_state.cenario_id]
-            w_state.marcos = [*w_state.marcos, f"{w_state.local}: {marco}"][-40:]
+            acrescentar_marco(w_state, f"{w_state.local}: {marco}")
             executor.eventos.append(f"🏆 {marco}")
             # Não conta guardiões vivos como abates. A recompensa só ocorre na transição de estado.
             return {
@@ -239,8 +240,5 @@ def interagir_cenario(executor: "ToolExecutor", interacao: str) -> dict:
                     )
                 )
             if all(i.hp <= 0 or i.afastado for i in c_state.inimigos):
-                c_state.ativo = False
-                c_state.resultado = "vitoria"
-                executor.eventos.append("🏆 O terreno decidiu o combate!")
-                return {"resultado": "vitoria", **executor._conceder_xp(c_state.inimigos)}
+                return executor._fechar_vitoria("🏆 O terreno decidiu o combate!")
     return {"interacao": interacao, "progresso": c_state.progresso_objetivo, **executor._resolver_reacao_inimiga()}

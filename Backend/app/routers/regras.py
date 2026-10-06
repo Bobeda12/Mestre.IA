@@ -39,7 +39,7 @@ _ACOES_TATICAS = [
         "nome": "Investir",
         "efeito": "-2 no bônus de acerto, +50% no dano — troca precisão por força.",
     },
-    {"nome": "Esquivar", "efeito": "Remove a vantagem que um inimigo tinha em te acertar."},
+    {"nome": "Esquivar", "efeito": "Inimigos atacam você com desvantagem até o seu próximo turno."},
     {"nome": "Defender", "efeito": "+2 na Defesa até o seu próximo turno."},
     {
         "nome": "Esconder-se",

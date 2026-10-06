@@ -947,6 +947,20 @@ def gerar_epitafio(
 LIMITE_EVENTOS_CRONICA = 60
 
 
+def _linha_passo_atual(w_state) -> str:
+    """O passo de agora da trilha, para o narrador conduzir a cena na direção
+    dele sem empurrar o jogador nem declarar o passo cumprido."""
+    from app.services.capitulo import passo_atual
+    from app.services.living_world import arco_ativo
+
+    arco = arco_ativo(w_state.mundo)
+    passo = passo_atual(arco) if arco is not None else None
+    if passo is None:
+        return ""
+    return (f"passo atual da trilha: {passo.texto} (o servidor confere e avisa quando cumprido; "
+            "não diga que foi cumprido, nem obrigue o jogador a segui-lo) | ")
+
+
 def gerar_desfecho_arco(
     heroi: Personagem, arco: dict, eventos: list[str], chamar_fn: Callable[..., Any] | None = None
 ) -> dict:
@@ -1131,7 +1145,7 @@ def montar_contexto(
         # Ver [MOMENTOS DE ALTO IMPACTO] na bíblia.
         heroi_critico = heroi.hp_max > 0 and heroi.hp_atual / heroi.hp_max < 0.25
         inimigo_critico = any(i.max_hp > 0 and i.hp / i.max_hp < 0.25 for i in inimigos_vivos)
-        e_chefe = any(i.nome in regras.get_monstros_chefe() for i in inimigos_vivos)
+        e_chefe = any((i.arquetipo or i.nome) in regras.get_monstros_chefe() for i in inimigos_vivos)
         aviso_impacto = (
             "\n    [MOMENTO DE ALTO IMPACTO] Vida por um fio, o golpe que pode "
             "decidir o combate, ou um chefe — deixe a cena crescer aqui (ver "
@@ -1241,6 +1255,7 @@ def montar_contexto(
         secao_arco = (
             f"\n    [ARCO ATUAL] {cond['titulo']} — {cond['premissa'][:200]} | conflito central: "
             f"{cond['conflito']} ({cond['estado_conflito']}) | turnos no arco: {cond['turnos']} | "
+            + _linha_passo_atual(w_state)
             + (
                 f"chefe reservado: {cond['chefe']} (dê a ele nome e presença ligados ao conflito; ao enfrentá-lo, "
                 "iniciar_combate com chefe=true; aparece uma vez) | "

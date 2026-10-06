@@ -18,7 +18,7 @@ from typing import Literal
 
 @dataclass
 class DadosRolagem:
-    tipo: Literal["ataque", "teste", "dano", "morte"]
+    tipo: Literal["ataque", "teste", "dano", "morte", "resistencia"]
     quem: str
     alvo: str | None = None
     d20: int | None = None
@@ -52,6 +52,10 @@ class DadosRolagem:
     # (o alvo/arma já contam essa história) e em testes de eventos antigos
     # sem o campo.
     motivo: str | None = None
+    # Combate v2 — ids estáveis de quem agiu e de quem foi o alvo ("heroi",
+    # "i1", "a1"), para a tela destacar o participante certo da fila.
+    ator: str | None = None
+    alvo_id: str | None = None
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -69,9 +73,10 @@ class EventoStatus:
     # combate) some pelo mesmo card de "morte_inimigo", só com o `tipo`
     # correto guardado — o frontend hoje trata os dois iguais
     # (StatusCard.tsx), mas o dado fica honesto para quando isso mudar.
-    tipo: Literal["cura", "morte_inimigo", "morte_aliado"]
+    tipo: Literal["cura", "morte_inimigo", "morte_aliado", "condicao"]
     quem: str
-    valor: int | None = None  # cura: quanto de PV recuperou. morte_*: sem valor.
+    valor: int | None = None  # cura: PV recuperados. condicao: duração em turnos. morte_*: sem valor.
+    detalhe: str | None = None  # condicao: qual (envenenado, caido...)
 
     def to_dict(self) -> dict:
         return asdict(self)

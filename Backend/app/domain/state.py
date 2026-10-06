@@ -33,6 +33,19 @@ class Inimigo(BaseModel):
     xp: int = 0
     intencao: str = "atacar"
     efeitos: dict[str, int] = {}
+    # Combate v2 (services/turnos.py). `id` é estável durante a luta — o
+    # nome pode repetir e a ordem na lista não é a ordem de quem age.
+    id: str = ""
+    distancia: Literal["perto", "longe"] = "perto"
+    iniciativa: int = 0
+    # Ficha tática, copiada de data/monsters.json ao entrar na luta.
+    alcance: Literal["corpo", "distancia", "ambos"] = "corpo"
+    tatica: Literal["agressivo", "covarde", "matilha", "atirador", "bruto", "regenera", "implacavel"] = "agressivo"
+    foge_abaixo: float = 0.0  # fração de PV abaixo da qual foge; 0 = nunca
+    fortes: list[str] = []  # resistências em que é bom: vigor, reflexo, vontade
+    habilidade: dict | None = None
+    recarga: int = 0  # vezes até a habilidade de ação ficar pronta
+    reacao_usada: bool = False  # ataque de oportunidade: um por rodada
 
 
 class Aliado(BaseModel):
@@ -50,6 +63,8 @@ class Aliado(BaseModel):
     bonus_ataque: int = 0
     dano_dado: str = "1d4"
     nome_ataque: str = ""
+    id: str = ""
+    iniciativa: int = 0
 
 
 class CombatState(BaseModel):
@@ -98,6 +113,20 @@ class CombatState(BaseModel):
     heroi_vantagem_inimiga: bool | None = None  # True=investir (vantagem p/ inimigo), False=esquivar (desvantagem)
     heroi_bonus_ca: int = 0  # defender: +2 na CA do herói contra a próxima rodada
     heroi_escondido: bool = False  # esconder_se bem-sucedido: inimigos não acham o herói nesta rodada
+    # Combate v2 (services/turnos.py). `versao` 1 = luta do motor antigo,
+    # migrada por `turnos.migrar_combate`. `fila` são ids ("heroi", "i1",
+    # "a1") na ordem da iniciativa; `vez` é o índice de quem age agora.
+    versao: int = 1
+    fila: list[str] = []
+    vez: int = 0
+    # O que o herói já gastou neste turno.
+    acao_usada: bool = False
+    bonus_usada: bool = False
+    movimento_usado: bool = False
+    reacao_usada: bool = False
+    # Comandar (ação bônus): o aliado bate neste inimigo, com vantagem uma vez.
+    alvo_marcado: str | None = None
+    comando: bool = False
 
 
 class LocalDescoberto(BaseModel):

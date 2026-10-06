@@ -1,0 +1,216 @@
+"""Simulador de balanceamento: duelos sem LLM e sem banco, pelo caminho real do
+juiz (`ToolExecutor.executar`, o mesmo que `/game/action` chama a cada clique).
+
+Uso:
+    uv run python -m evals.simulador --n 200 --niveis 1-10 --classes Guerreiro --bot basico
+    uv run python -m evals.simulador --n 300 --classes todas --bot tatico
+
+Os números que saem daqui são a referência para mexer em fichas de monstro,
+custo de técnica e CD — não a intuição. Ver docs/relatorios/."""
+
+import argparse
+import json
+import random
+from dataclasses import dataclass, field
+
+from app.domain.state import CombatState, Inimigo, QuestLog, WorldState
+from app.infra.data_manager import regras
+from app.infra.db import Personagem
+from app.services import combat
+from app.services import rules_engine as motor
+from app.services.class_abilities import perfil_classe
+from app.services.encounters import preparar_encontro
+from app.services.items import auto_equipar
+from app.services.tools import ToolExecutor
+
+POCAO = "Poção de Cura"
+LIMIAR_POCAO = 0.35
+MAX_TURNOS = 60
+
+@dataclass
+class Duelo:
+    vitoria: bool
+    pv_restante: float  # fração do PV máximo; 0 na derrota
+    turnos: int
+    foco_gasto: int
+    caiu_no_turno_1: bool
+
+
+@dataclass
+class Resumo:
+    classe: str
+    nivel: int
+    encontro: str
+    banda: str
+    bot: str
+    n: int
+    vitoria: float
+    pv_restante: float  # média só entre as vitórias
+    turnos: float
+    foco_gasto: float
+    queda_turno_1: float
+    duelos: list[Duelo] = field(default_factory=list, repr=False)
+
+
+def heroi_de_referencia(classe: str, nivel: int) -> Personagem:
+    """Herói em memória, nunca gravado: atributo da classe em 16, o resto
+    mediano, o equipamento inicial da classe vestido pelo mesmo
+    `auto_equipar` da criação de personagem, e duas poções."""
+    detalhes = regras.get_class_details(classe) or {}
+    principal = perfil_classe(classe)["atributo"]
+    atributos = {a: 10 for a in ("forca", "destreza", "constituicao", "inteligencia", "sabedoria", "carisma")}
+    atributos.update({"constituicao": 12, "destreza": 12, principal: 16})
+    # Quem joga de Clérigo ou Paladino põe Força suficiente para vestir a
+    # armadura com que a classe começa; sem isso ela fica na mochila.
+    inicial = detalhes.get("equipamento_inicial", [])
+    exigida = max(((regras.get_item(i) or {}).get("forca_min", 0) for i in inicial), default=0)
+    atributos["forca"] = max(atributos["forca"], exigida)
+    dado_vida = detalhes.get("dado_vida", 8)
+    mod_con = motor.calcular_modificador(atributos["constituicao"])
+    hp = dado_vida + mod_con + (nivel - 1) * (dado_vida // 2 + 1 + mod_con)
+    heroi = Personagem(
+        nome="Referência", raca="Humano", classe=classe, nivel=nivel, xp=motor.XP_POR_NIVEL.get(nivel, 0),
+        hp_atual=hp, hp_max=hp, defesa=10, atributos=atributos,
+        inventario=[*inicial, POCAO, POCAO], equipamento={},
+        dificuldade="Normal", reputacao_npcs={}, monstros_derrotados={}, aliados=[], ouro=0,
+    )
+    auto_equipar(heroi)
+    return heroi
+
+
+def _abrir_luta(heroi: Personagem, monstros: list[str], rng: random.Random) -> tuple[CombatState, WorldState]:
+    """Abre o combate direto no motor: `chefe_reservado` é o que deixa um
+    chefe entrar com a própria ficha, fora do orçamento da banda."""
+    reservado = monstros[0] if monstros[0] in regras.get_monstros_chefe() else None
+    c_state, _, dano_surpresa = combat.iniciar_combate(
+        monstros, heroi.atributos, heroi.defesa, rng, nivel_heroi=heroi.nivel, chefe_reservado=reservado,
+    )
+    w_state = WorldState(local="Arena", versao_progressao=1, versao_mundo=1)
+    preparar_encontro(c_state, w_state, "duelo")
+    heroi.hp_atual = max(0, heroi.hp_atual - dano_surpresa)
+    return c_state, w_state
+
+
+def _vivos(c_state: CombatState) -> list[Inimigo]:
+    return [i for i in c_state.inimigos if i.hp > 0 and not i.afastado]
+
+
+def _jogada_basica(heroi: Personagem, c_state: CombatState) -> tuple[str, dict]:
+    if heroi.hp_atual < LIMIAR_POCAO * heroi.hp_max and POCAO in heroi.inventario:
+        return "usar_item", {"item": POCAO}
+    alvo = min(_vivos(c_state), key=lambda i: i.hp)
+    return "atacar", {"alvo": alvo.nome}
+
+
+def _jogada_tatica(heroi: Personagem, c_state: CombatState) -> tuple[str, dict]:
+    """Um jogador que aprendeu o sistema: usa a técnica mais forte que o Foco
+    paga, área só contra grupo, e reforço próprio uma vez por luta."""
+    nome, args = _jogada_basica(heroi, c_state)
+    if nome == "usar_item":
+        return nome, args
+    vivos = _vivos(c_state)
+    disponiveis = [
+        h for h in perfil_classe(heroi.classe)["habilidades"]
+        if h["nivel"] <= heroi.nivel and h["custo"] <= c_state.foco
+    ]
+    reforco = next((h for h in disponiveis if h["alvo"] == "heroi" and not c_state.efeitos_heroi), None)
+    if reforco is not None and c_state.rodada == 1:
+        return "usar_habilidade", {"habilidade": reforco["id"]}
+    ofensivas = [h for h in disponiveis if h.get("dano") and (h["alvo"] != "todos" or len(vivos) > 1)]
+    if not ofensivas:
+        return nome, args
+    melhor = max(ofensivas, key=lambda h: (h["custo"], h["nivel"]))
+    return "usar_habilidade", {"habilidade": melhor["id"], "alvo": args["alvo"]}
+
+
+BOTS = {"basico": _jogada_basica, "tatico": _jogada_tatica}
+
+
+def simular_duelo(classe: str, nivel: int, monstros: list[str], bot: str, semente: str) -> Duelo:
+    rng = random.Random(semente)
+    heroi = heroi_de_referencia(classe, nivel)
+    c_state, w_state = _abrir_luta(heroi, monstros, rng)
+    q_state = QuestLog()
+    foco_gasto, turnos = 0, 0
+    caiu_no_turno_1 = heroi.hp_atual <= 0
+    while c_state.ativo and heroi.hp_atual > 0 and turnos < MAX_TURNOS:
+        turnos += 1
+        foco_antes = c_state.foco
+        nome, args = BOTS[bot](heroi, c_state)
+        # Um executor por jogada, como um clique: `_acao_gasta` nasce zerado.
+        resultado, ok = ToolExecutor(heroi, c_state, w_state, q_state, rng).executar(
+            nome, json.dumps(args, ensure_ascii=False)
+        )
+        if not ok:
+            raise RuntimeError(f"jogada recusada pelo juiz: {nome} {args} → {resultado}")
+        foco_gasto += max(0, foco_antes - c_state.foco)
+        if turnos == 1 and heroi.hp_atual <= 0:
+            caiu_no_turno_1 = True
+    vitoria = c_state.resultado == "vitoria" and heroi.hp_atual > 0
+    return Duelo(
+        vitoria=vitoria, pv_restante=heroi.hp_atual / heroi.hp_max if vitoria else 0.0,
+        turnos=turnos, foco_gasto=foco_gasto, caiu_no_turno_1=caiu_no_turno_1,
+    )
+
+
+def simular(classe: str, nivel: int, monstros: list[str], bot: str, n: int, semente: int = 0,
+            banda: str = "") -> Resumo:
+    encontro = " + ".join(monstros)
+    duelos = [simular_duelo(classe, nivel, monstros, bot, f"{semente}:{classe}:{nivel}:{encontro}:{bot}:{k}")
+              for k in range(n)]
+    vitorias = [d for d in duelos if d.vitoria]
+    return Resumo(
+        classe=classe, nivel=nivel, encontro=encontro, banda=banda, bot=bot, n=n,
+        vitoria=len(vitorias) / n,
+        pv_restante=sum(d.pv_restante for d in vitorias) / len(vitorias) if vitorias else 0.0,
+        turnos=sum(d.turnos for d in duelos) / n,
+        foco_gasto=sum(d.foco_gasto for d in duelos) / n,
+        queda_turno_1=sum(d.caiu_no_turno_1 for d in duelos) / n,
+        duelos=duelos,
+    )
+
+
+def encontros_do_nivel(nivel: int) -> list[tuple[str, list[str]]]:
+    """Cada monstro das bandas sugeridas ao nível, sozinho, mais o chefe que
+    um arco aberto naquele nível sortearia."""
+    pares = [(banda, [nome]) for banda in motor.desafio_sugerido(nivel)
+             for nome in regras.get_monstros_por_banda(banda)]
+    ja = {m[0] for _, m in pares}
+    pares += [("chefe do arco", [nome]) for nome in regras.chefes_para_nivel(nivel) if nome not in ja]
+    return pares
+
+
+def tabela(resumos: list[Resumo]) -> str:
+    linhas = ["| Classe | Nível | Banda | Encontro | Vitória | PV restante | Turnos | Foco gasto | Queda no turno 1 |",
+              "|---|---|---|---|---|---|---|---|---|"]
+    for r in resumos:
+        linhas.append(
+            f"| {r.classe} | {r.nivel} | {r.banda} | {r.encontro} | {r.vitoria:.0%} | {r.pv_restante:.0%} | "
+            f"{r.turnos:.1f} | {r.foco_gasto:.1f} | {r.queda_turno_1:.0%} |"
+        )
+    return "\n".join(linhas)
+
+
+def _faixa(texto: str) -> list[int]:
+    inicio, _, fim = texto.partition("-")
+    return list(range(int(inicio), int(fim or inicio) + 1))
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--n", type=int, default=200, help="duelos por par (classe, nível, encontro)")
+    parser.add_argument("--niveis", default="1-10")
+    parser.add_argument("--classes", default="Guerreiro", help="nomes separados por vírgula, ou 'todas'")
+    parser.add_argument("--bot", default="basico", choices=sorted(BOTS))
+    parser.add_argument("--semente", type=int, default=0)
+    opcoes = parser.parse_args()
+    classes = regras.get_classes_list() if opcoes.classes == "todas" else opcoes.classes.split(",")
+    resumos = [
+        simular(classe, nivel, monstros, opcoes.bot, opcoes.n, opcoes.semente, banda)
+        for classe in classes for nivel in _faixa(opcoes.niveis) for banda, monstros in encontros_do_nivel(nivel)
+    ]
+    print(tabela(resumos))
+
+
+if __name__ == "__main__":
+    main()

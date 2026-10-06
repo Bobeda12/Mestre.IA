@@ -5,6 +5,7 @@ import json
 
 import pytest
 
+from app.domain.living_world import CondicaoPasso, Passo
 from app.domain.state import CombatState, Inimigo
 from app.services import living_world as mundo
 from app.services.emergent_start import criar_origem, validar_mundo_inicial
@@ -21,10 +22,13 @@ def test_origem_abre_o_arco_um(executor):
 
 def test_encerrar_cedo_e_recusado_por_cada_condicao(executor):
     r, ok = agir(executor, "encerrar_arco", resumo_proposto="fim")
-    assert ok is False and "turnos" in r["erro"] and "fatos" in r["erro"] and "conflito" in r["erro"]
-    executor.w_state.turno = 20
+    assert ok is False and "passos" in r["erro"] and "fatos" in r["erro"] and "conflito" in r["erro"]
+    executor.w_state.turno = 20  # tempo de jogo não conta mais: o que conta são os passos da trilha
     r, ok = agir(executor, "encerrar_arco")
-    assert ok is False and "turnos" not in r["erro"]
+    assert ok is False and "passos" in r["erro"]
+    _passos_feitos(executor)
+    r, ok = agir(executor, "encerrar_arco")
+    assert ok is False and "passos" not in r["erro"]
 
 
 def test_uma_tentativa_por_turno(executor):
@@ -33,7 +37,16 @@ def test_uma_tentativa_por_turno(executor):
     assert ok2 is False and "já tentou" in r2["erro"]
 
 
+def _passos_feitos(executor):
+    arco = mundo.arco_ativo(executor.w_state.mundo)
+    arco.passos = [
+        Passo(id=f"p{n}", texto=f"Passo {n}.", condicao=CondicaoPasso(tipo="registrar_fato"), estado="feito")
+        for n in range(1, mundo.MIN_PASSOS_ARCO + 1)
+    ]
+
+
 def _resolver_conflito(executor):
+    _passos_feitos(executor)
     arco = mundo.arco_ativo(executor.w_state.mundo)
     conflito = executor.w_state.mundo.conflitos[arco.conflito_central]
     conflito.estado = "resolvido"
@@ -59,7 +72,7 @@ def test_encerrar_com_acordo_da_recompensa_e_marco(executor):
 def test_consequencia_da_metade_sem_item(executor):
     arco = mundo.arco_ativo(executor.w_state.mundo)
     executor.w_state.mundo.conflitos[arco.conflito_central].estado = "concretizado"
-    executor.w_state.turno = 12
+    _passos_feitos(executor)
     mundo.registrar_fato(executor, "a")
     mundo.registrar_fato(executor, "b")
     r, ok = agir(executor, "encerrar_arco")
@@ -101,7 +114,7 @@ def test_validar_mundo_inicial_aceita_um_arco_e_recusa_dois(executor):
 def test_vitoria_contra_chefe_habilita_encerrar(executor):
     arco = mundo.arco_ativo(executor.w_state.mundo)
     arco.chefe = "Bugbear"
-    executor.w_state.turno = 12
+    _passos_feitos(executor)
     mundo.registrar_fato(executor, "a")
     mundo.registrar_fato(executor, "b")
     executor.c_state = CombatState(ativo=True, chefe_do_arco=True, inimigos=[

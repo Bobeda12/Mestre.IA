@@ -128,11 +128,7 @@ class ToolExecutor:
         self._recuperar_foco(1)
 
         if all(i.hp <= 0 or i.afastado for i in self.c_state.inimigos):
-            self.c_state.ativo = False
-            self.c_state.resultado = "vitoria"
-            self.eventos.append("🏆 Combate vencido!")
-            resultado_xp = self._conceder_xp(self.c_state.inimigos)
-            return {"resultado": "vitoria", **resultado_xp}
+            return self._fechar_vitoria()
 
         return self._resolver_reacao_inimiga()
 
@@ -143,16 +139,23 @@ class ToolExecutor:
         if self.c_state.foco > antes:
             self.eventos.append(f"🔹 Recupera {self.c_state.foco - antes} Foco.")
 
+    def _fechar_vitoria(self, mensagem: str = "🏆 Combate vencido!") -> dict:
+        """Ponto único de vitória por inimigos derrotados. Antes, `atacar`,
+        `investir`, `atacar_com_aliado` e o terreno fechavam a luta cada um
+        por conta própria e só `_verificar_vitoria` avisava o arco — um chefe
+        morto por ataque básico nunca contava como enfrentado."""
+        from app.services.living_world import marcar_chefe_enfrentado
+
+        self.c_state.ativo = False
+        self.c_state.resultado = "vitoria"
+        self.eventos.append(mensagem)
+        if self.c_state.chefe_do_arco:
+            marcar_chefe_enfrentado(self.w_state)
+        return {"resultado": "vitoria", **self._conceder_xp(self.c_state.inimigos)}
+
     def _verificar_vitoria(self) -> dict:
         if self.c_state.ativo and all(i.hp <= 0 or i.afastado for i in self.c_state.inimigos):
-            self.c_state.ativo = False
-            self.c_state.resultado = "vitoria"
-            self.eventos.append("🏆 Combate vencido!")
-            from app.services.living_world import marcar_chefe_enfrentado
-
-            if self.c_state.chefe_do_arco:
-                marcar_chefe_enfrentado(self.w_state)
-            return {"resultado": "vitoria", **self._conceder_xp(self.c_state.inimigos)}
+            return self._fechar_vitoria()
         return {}
 
     def usar_habilidade(self, habilidade: str, alvo: str | None = None) -> dict:
@@ -310,11 +313,7 @@ class ToolExecutor:
         )
         self.eventos.extend(eventos)
         if all(i.hp <= 0 or i.afastado for i in self.c_state.inimigos):
-            self.c_state.ativo = False
-            self.c_state.resultado = "vitoria"
-            self.eventos.append("🏆 Combate vencido!")
-            resultado_xp = self._conceder_xp(self.c_state.inimigos)
-            return {"resultado": "vitoria", **resultado_xp}
+            return self._fechar_vitoria()
         # A abertura de uma investida custa caro: os inimigos atacam de
         # volta com vantagem até a próxima rodada.
         self.c_state.heroi_vantagem_inimiga = True
@@ -388,9 +387,12 @@ class ToolExecutor:
         `routers/game.py` (ADR-0006: o LLM propõe a cena, nunca decide o
         número). Sobe nível em loop porque uma vitória grande pode cruzar
         mais de um limiar de `rules_engine.XP_POR_NIVEL` de uma vez."""
+        # Só quem caiu rende XP: inimigo que recuou (`afastado`, ainda com PV)
+        # encerra a ameaça, mas não é um abate — mesmo critério da contagem
+        # do bestiário logo abaixo.
         xp_ganho = sum(
             i.xp or (regras.get_monster(i.arquetipo or i.nome) or {}).get("xp", 0)
-            for i in inimigos_derrotados
+            for i in inimigos_derrotados if i.hp <= 0
         )
         # Pendência do remaster UX (PLANO_REMASTER_UX.md, item 3) —
         # bestiário persistente: `_conceder_xp` é chamado exatamente uma
@@ -936,11 +938,7 @@ class ToolExecutor:
         eventos = combat.turno_aliado(self.c_state, aliado_obj, alvo, self.rng)
         self.eventos.extend(eventos)
         if all(i.hp <= 0 or i.afastado for i in self.c_state.inimigos):
-            self.c_state.ativo = False
-            self.c_state.resultado = "vitoria"
-            self.eventos.append("🏆 Combate vencido!")
-            resultado_xp = self._conceder_xp(self.c_state.inimigos)
-            return {"resultado": "vitoria", **resultado_xp}
+            return self._fechar_vitoria()
         # Simplificação deliberada (ver ADR-0027): o ataque do aliado NÃO
         # aciona a resposta dos inimigos sozinho — o herói ainda tem a
         # própria ação nesta rodada, e é ela (atacar/esquivar/...) que
@@ -1025,6 +1023,9 @@ class ToolExecutor:
                 avancar_tempo(self, minutos, atualizar_hora=nome not in {"mover", "descansar"})
             if nome == "atacar_com_aliado":
                 self.c_state.aliados_agiram = [*self.c_state.aliados_agiram, args.get("aliado", "")]
+            from app.services.capitulo import conferir_passo
+
+            conferir_passo(self)
         return resultado, "erro" not in resultado
 
 
@@ -1593,6 +1594,9 @@ _SO_FORA_DE_COMBATE = {
 _NUNCA_PARA_O_NARRADOR = {
     "escolher_especializacao", "escolher_nivel", "escolher_aprendizado", "gerir_projeto", "decidir_acordo_projeto",
     "usar_instalacao",
+    # A trilha do capítulo dá o XP de cada passo quando o SERVIDOR confere
+    # (services/capitulo.py); o narrador não declara mais objetivo cumprido.
+    "concluir_objetivo",
 }
 
 
@@ -1606,7 +1610,7 @@ GRUPOS_FERRAMENTAS = {
     "consequencias": {"registrar_conflito", "desenvolver_consequencia", "intervir_conflito", "registrar_vinculo"},
     "comercio": {"comerciar", "equipar", "desequipar", "usar_item"},
     "viagem": {"mover", "descansar", "definir_objetivo", "iniciar_combate"},
-    "progressao": {"propor_aprendizado", "abrir_arco", "encerrar_arco", "definir_objetivo", "concluir_objetivo"},
+    "progressao": {"propor_aprendizado", "definir_objetivo"},
     "combate": _SO_EM_COMBATE | {"iniciar_combate", "aplicar_dano"},
     "recompensas": {"dar_item", "gastar_ouro", "ajustar_reputacao_npc", "recrutar_aliado"},
     "regras": {"consultar_regra"},
@@ -1652,6 +1656,16 @@ def tools_para(c_state: CombatState, acao: str | None = None, w_state: WorldStat
             ativas |= GRUPOS_FERRAMENTAS[grupo]
     if c_state.ativo:
         ativas |= _SO_EM_COMBATE | {"usar_item"}
-    elif w_state is not None and w_state.local not in w_state.mundo.cenas:
-        ativas |= GRUPOS_FERRAMENTAS["criacao"]
+    elif w_state is not None:
+        if w_state.local not in w_state.mundo.cenas:
+            ativas |= GRUPOS_FERRAMENTAS["criacao"]
+        # Abrir e fechar capítulo dependem do estado, não de o jogador ter
+        # escrito "arco" ou "missão": a ferramenta aparece quando cabe.
+        from app.services.living_world import arco_ativo, condicoes_arco
+
+        if arco_ativo(w_state.mundo) is None:
+            if any(c.estado == "ativo" for c in w_state.mundo.conflitos.values()):
+                ativas.add("abrir_arco")
+        elif condicoes_arco(w_state)["pode_encerrar"]:
+            ativas.add("encerrar_arco")
     return [t for t in disponiveis if t["function"]["name"] in ativas]

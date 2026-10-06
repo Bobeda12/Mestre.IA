@@ -7,7 +7,13 @@
       "destreza": 14,
       "ataque": "Cimitarra (+4 para acertar, 1d6+2 dano)",
       "comportamento": "Covarde. Ataca e foge (Ação Ardilosa).",
-      "xp": 50
+      "xp": 50,
+      "alcance": "ambos",
+      "tatica": "covarde",
+      "foge_abaixo": 0.3,
+      "fortes": [
+        "reflexo"
+      ]
     },
     "Esqueleto": {
       "hp": 13,
@@ -16,7 +22,13 @@
       "destreza": 14,
       "ataque": "Espada Curta (+4 para acertar, 1d6+2 dano)",
       "comportamento": "Mente vazia. Segue ordens até ser destruído.",
-      "xp": 50
+      "xp": 50,
+      "alcance": "corpo",
+      "tatica": "implacavel",
+      "foge_abaixo": 0,
+      "fortes": [
+        "vigor"
+      ]
     },
     "Lobo": {
       "hp": 11,
@@ -25,7 +37,21 @@
       "destreza": 15,
       "ataque": "Mordida (+4 para acertar, 2d4+2 dano)",
       "comportamento": "Alcatéia. Ganha vantagem se tiver aliado perto.",
-      "xp": 50
+      "xp": 50,
+      "alcance": "corpo",
+      "tatica": "matilha",
+      "foge_abaixo": 0,
+      "fortes": [
+        "reflexo"
+      ],
+      "habilidade": {
+        "nome": "Derrubar",
+        "gatilho": "no_acerto",
+        "resistencia": "vigor",
+        "cd": 11,
+        "condicao": "caido",
+        "duracao": 1
+      }
     },
     "Kobold": {
       "hp": 5,
@@ -34,7 +60,13 @@
       "destreza": 15,
       "ataque": "Adaga (+4 para acertar, 1d4+2 dano)",
       "comportamento": "Ataca em grupo. Foge se estiver sozinho.",
-      "xp": 25
+      "xp": 25,
+      "alcance": "corpo",
+      "tatica": "matilha",
+      "foge_abaixo": 0.5,
+      "fortes": [
+        "reflexo"
+      ]
     }
   },
   "Nivel_2": {
@@ -45,7 +77,13 @@
       "destreza": 12,
       "ataque": "Machado Grande (+5 para acertar, 1d12+3 dano)",
       "comportamento": "Agressivo. Avança e ataca sem hesitar.",
-      "xp": 100
+      "xp": 100,
+      "alcance": "corpo",
+      "tatica": "bruto",
+      "foge_abaixo": 0,
+      "fortes": [
+        "vigor"
+      ]
     },
     "Aranha Gigante": {
       "hp": 18,
@@ -54,7 +92,21 @@
       "destreza": 16,
       "ataque": "Mordida Venenosa (+5 para acertar, 2d6+3 dano)",
       "comportamento": "Emboscada. Ataca de surpresa a partir de uma teia; recua se ferida.",
-      "xp": 100
+      "xp": 100,
+      "alcance": "corpo",
+      "tatica": "agressivo",
+      "foge_abaixo": 0.25,
+      "fortes": [
+        "reflexo"
+      ],
+      "habilidade": {
+        "nome": "Veneno",
+        "gatilho": "no_acerto",
+        "resistencia": "vigor",
+        "condicao": "envenenado",
+        "duracao": 3,
+        "cd": 11
+      }
     },
     "Capitão Bandido": {
       "hp": 16,
@@ -63,7 +115,13 @@
       "destreza": 14,
       "ataque": "Espada Curta (+4 para acertar, 1d6+2 dano)",
       "comportamento": "Calculista. Foge se estiver em desvantagem numérica.",
-      "xp": 100
+      "xp": 100,
+      "alcance": "ambos",
+      "tatica": "agressivo",
+      "foge_abaixo": 0,
+      "fortes": [
+        "reflexo"
+      ]
     }
   },
   "Nivel_3": {
@@ -74,7 +132,13 @@
       "destreza": 8,
       "ataque": "Porrete Grande (+6 para acertar, 2d8+4 dano)",
       "comportamento": "Bruto simples. Ataca o alvo mais próximo, sem tática.",
-      "xp": 200
+      "xp": 200,
+      "alcance": "corpo",
+      "tatica": "bruto",
+      "foge_abaixo": 0,
+      "fortes": [
+        "vigor"
+      ]
     },
     "Harpia": {
       "hp": 21,
@@ -83,7 +147,13 @@
       "destreza": 13,
       "ataque": "Garras (+5 para acertar, 2d4+2 dano)",
       "comportamento": "Cruel. Sobrevoa e ataca alvos feridos primeiro.",
-      "xp": 200
+      "xp": 200,
+      "alcance": "ambos",
+      "tatica": "agressivo",
+      "foge_abaixo": 0,
+      "fortes": [
+        "reflexo"
+      ]
     },
     "Múmia": {
       "hp": 30,
@@ -92,7 +162,22 @@
       "destreza": 8,
       "ataque": "Punho Amaldiçoado (+5 para acertar, 2d6+3 dano)",
       "comportamento": "Implacável. Nunca recua, avança devagar e sem pressa.",
-      "xp": 200
+      "xp": 200,
+      "alcance": "corpo",
+      "tatica": "implacavel",
+      "foge_abaixo": 0,
+      "fortes": [
+        "vigor",
+        "vontade"
+      ],
+      "habilidade": {
+        "nome": "Olhar da tumba",
+        "gatilho": "no_acerto",
+        "resistencia": "vontade",
+        "cd": 12,
+        "condicao": "amedrontado",
+        "duracao": 2
+      }
     }
   },
   "Nivel_4": {
@@ -103,7 +188,13 @@
       "destreza": 13,
       "ataque": "Garras (+7 para acertar, 2d6+4 dano)",
       "comportamento": "Regenera. Volta a atacar mesmo gravemente ferido.",
-      "xp": 400
+      "xp": 400,
+      "alcance": "corpo",
+      "tatica": "regenera",
+      "foge_abaixo": 0,
+      "fortes": [
+        "vigor"
+      ]
     },
     "Espectro": {
       "hp": 32,
@@ -112,7 +203,21 @@
       "destreza": 13,
       "ataque": "Toque Drenante (+6 para acertar, 3d6 dano)",
       "comportamento": "Etéreo. Ignora terreno, ataca e some entre os turnos.",
-      "xp": 400
+      "xp": 400,
+      "alcance": "corpo",
+      "tatica": "agressivo",
+      "foge_abaixo": 0,
+      "fortes": [
+        "vontade"
+      ],
+      "habilidade": {
+        "nome": "Toque gélido",
+        "gatilho": "no_acerto",
+        "resistencia": "vigor",
+        "cd": 13,
+        "condicao": "enfraquecido",
+        "duracao": 2
+      }
     }
   },
   "Nivel_5": {
@@ -123,7 +228,13 @@
       "destreza": 14,
       "ataque": "Machado Gnoll (+5 para acertar, 2d6+3 dano)",
       "comportamento": "Matilha. Comanda os outros; ganha vantagem se tiver aliado perto.",
-      "xp": 450
+      "xp": 450,
+      "alcance": "corpo",
+      "tatica": "matilha",
+      "foge_abaixo": 0,
+      "fortes": [
+        "vigor"
+      ]
     },
     "Urso-Coruja": {
       "hp": 42,
@@ -132,7 +243,13 @@
       "destreza": 12,
       "ataque": "Bico e Garras (+6 para acertar, 2d6+3 dano)",
       "comportamento": "Fúria cega. Ataca o alvo mais próximo, nunca recua.",
-      "xp": 700
+      "xp": 700,
+      "alcance": "corpo",
+      "tatica": "bruto",
+      "foge_abaixo": 0,
+      "fortes": [
+        "vigor"
+      ]
     },
     "Carniçal Cinzento": {
       "hp": 34,
@@ -141,7 +258,21 @@
       "destreza": 15,
       "ataque": "Garras Paralisantes (+5 para acertar, 2d6+2 dano)",
       "comportamento": "Faminto. Ataca os feridos primeiro.",
-      "xp": 450
+      "xp": 450,
+      "alcance": "corpo",
+      "tatica": "agressivo",
+      "foge_abaixo": 0,
+      "fortes": [
+        "vigor"
+      ],
+      "habilidade": {
+        "nome": "Garras paralisantes",
+        "gatilho": "no_acerto",
+        "resistencia": "vigor",
+        "cd": 13,
+        "condicao": "contido",
+        "duracao": 1
+      }
     }
   },
   "Nivel_6": {
@@ -152,7 +283,13 @@
       "destreza": 14,
       "ataque": "Espada Longa Drenante (+6 para acertar, 2d8+2 dano)",
       "comportamento": "Frio e calculista. Recua para as sombras quando ferido.",
-      "xp": 700
+      "xp": 700,
+      "alcance": "corpo",
+      "tatica": "agressivo",
+      "foge_abaixo": 0.25,
+      "fortes": [
+        "vontade"
+      ]
     },
     "Minotauro": {
       "hp": 48,
@@ -161,7 +298,13 @@
       "destreza": 11,
       "ataque": "Machado Grande (+6 para acertar, 2d8+3 dano)",
       "comportamento": "Investida. Avança com tudo; nunca recua.",
-      "xp": 700
+      "xp": 700,
+      "alcance": "corpo",
+      "tatica": "bruto",
+      "foge_abaixo": 0,
+      "fortes": [
+        "vigor"
+      ]
     },
     "Manticora": {
       "hp": 46,
@@ -170,7 +313,13 @@
       "destreza": 16,
       "ataque": "Espinhos da Cauda (+5 para acertar, 2d6+3 dano)",
       "comportamento": "Predadora. Ataca de longe e recua quando abaixo de 30% de HP.",
-      "xp": 700
+      "xp": 700,
+      "alcance": "distancia",
+      "tatica": "atirador",
+      "foge_abaixo": 0.3,
+      "fortes": [
+        "reflexo"
+      ]
     }
   },
   "Nivel_7": {
@@ -181,7 +330,21 @@
       "destreza": 17,
       "ataque": "Toque Ardente (+6 para acertar, 2d6+4 dano)",
       "comportamento": "Incendiário. Ignora terreno; ataca quem estiver mais perto.",
-      "xp": 1100
+      "xp": 1100,
+      "alcance": "corpo",
+      "tatica": "agressivo",
+      "foge_abaixo": 0,
+      "fortes": [
+        "reflexo"
+      ],
+      "habilidade": {
+        "nome": "Chamas",
+        "gatilho": "no_acerto",
+        "resistencia": "reflexo",
+        "cd": 14,
+        "condicao": "queimando",
+        "duracao": 2
+      }
     },
     "Cavaleiro Negro": {
       "hp": 50,
@@ -190,7 +353,14 @@
       "destreza": 11,
       "ataque": "Espada Longa (+7 para acertar, 2d8+3 dano)",
       "comportamento": "Disciplinado. Defende quando ferido, ataca quando o alvo hesita.",
-      "xp": 1100
+      "xp": 1100,
+      "alcance": "corpo",
+      "tatica": "implacavel",
+      "foge_abaixo": 0,
+      "fortes": [
+        "vigor",
+        "vontade"
+      ]
     },
     "Gigante da Colina": {
       "hp": 62,
@@ -199,7 +369,13 @@
       "destreza": 8,
       "ataque": "Clava Gigante (+7 para acertar, 2d10+4 dano)",
       "comportamento": "Bruto lento. Ataca o maior alvo; nunca recua.",
-      "xp": 1800
+      "xp": 1800,
+      "alcance": "ambos",
+      "tatica": "bruto",
+      "foge_abaixo": 0,
+      "fortes": [
+        "vigor"
+      ]
     }
   },
   "Nivel_8": {
@@ -210,7 +386,23 @@
       "destreza": 18,
       "ataque": "Garras (+7 para acertar, 2d8+3 dano)",
       "comportamento": "Sedutor e cruel. Ataca os feridos; some entre os turnos.",
-      "xp": 1800
+      "xp": 1800,
+      "alcance": "corpo",
+      "tatica": "agressivo",
+      "foge_abaixo": 0,
+      "fortes": [
+        "reflexo",
+        "vontade"
+      ],
+      "habilidade": {
+        "nome": "Olhar dominador",
+        "gatilho": "acao",
+        "recarga": 4,
+        "resistencia": "vontade",
+        "cd": 15,
+        "condicao": "amedrontado",
+        "duracao": 2
+      }
     },
     "Hidra Menor": {
       "hp": 66,
@@ -219,7 +411,13 @@
       "destreza": 12,
       "ataque": "Mordidas (+7 para acertar, 2d10+4 dano)",
       "comportamento": "Regenera. Volta a atacar mesmo gravemente ferida.",
-      "xp": 2300
+      "xp": 2300,
+      "alcance": "corpo",
+      "tatica": "regenera",
+      "foge_abaixo": 0,
+      "fortes": [
+        "vigor"
+      ]
     },
     "Golem de Pedra": {
       "hp": 64,
@@ -228,7 +426,13 @@
       "destreza": 9,
       "ataque": "Punho de Pedra (+8 para acertar, 2d10+4 dano)",
       "comportamento": "Mente vazia. Segue ordens até ser destruído.",
-      "xp": 2300
+      "xp": 2300,
+      "alcance": "corpo",
+      "tatica": "implacavel",
+      "foge_abaixo": 0,
+      "fortes": [
+        "vigor"
+      ]
     }
   },
   "Chefe_Elite": {
@@ -239,7 +443,22 @@
       "destreza": 16,
       "ataque": "Toque Gélido (+8 para acertar, 3d8+3 dano)",
       "comportamento": "Calculista. Recua para as sombras quando abaixo de 30% de HP.",
-      "xp": 3000
+      "xp": 3000,
+      "alcance": "distancia",
+      "tatica": "atirador",
+      "foge_abaixo": 0,
+      "fortes": [
+        "vontade"
+      ],
+      "habilidade": {
+        "nome": "Raio necrótico",
+        "gatilho": "acao",
+        "recarga": 3,
+        "resistencia": "reflexo",
+        "cd": 16,
+        "dano": "4d6",
+        "meio": true
+      }
     },
     "Dragão Adulto Jovem": {
       "hp": 88,
@@ -248,7 +467,23 @@
       "destreza": 10,
       "ataque": "Presas e Fogo (+9 para acertar, 3d10+4 dano)",
       "comportamento": "Territorial. Recua para o ar quando abaixo de 30% de HP e ataca de longe.",
-      "xp": 3900
+      "xp": 3900,
+      "alcance": "ambos",
+      "tatica": "implacavel",
+      "foge_abaixo": 0,
+      "fortes": [
+        "vigor",
+        "vontade"
+      ],
+      "habilidade": {
+        "nome": "Sopro",
+        "gatilho": "acao",
+        "recarga": 3,
+        "resistencia": "reflexo",
+        "cd": 16,
+        "dano": "6d6",
+        "meio": true
+      }
     }
   },
   "Chefe": {
@@ -259,7 +494,13 @@
       "destreza": 14,
       "ataque": "Maça Estrela (+4 para acertar, 2d8+2 dano)",
       "comportamento": "Brutal. Tenta matar com um golpe surpresa.",
-      "xp": 200
+      "xp": 200,
+      "alcance": "corpo",
+      "tatica": "bruto",
+      "foge_abaixo": 0,
+      "fortes": [
+        "vigor"
+      ]
     },
     "Dragão Jovem": {
       "hp": 78,
@@ -268,7 +509,23 @@
       "destreza": 10,
       "ataque": "Garras e Presas (+8 para acertar, 2d10+4 dano)",
       "comportamento": "Territorial. Recua para o ar quando abaixo de 30% de HP e ataca de longe.",
-      "xp": 700
+      "xp": 700,
+      "alcance": "ambos",
+      "tatica": "implacavel",
+      "foge_abaixo": 0,
+      "fortes": [
+        "vigor",
+        "vontade"
+      ],
+      "habilidade": {
+        "nome": "Sopro",
+        "gatilho": "acao",
+        "recarga": 3,
+        "resistencia": "reflexo",
+        "cd": 14,
+        "dano": "4d6",
+        "meio": true
+      }
     }
   }
 }

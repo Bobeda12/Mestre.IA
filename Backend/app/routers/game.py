@@ -25,6 +25,7 @@ from app.infra.tracing import medir, turno_span
 from app.services import combat, memory, rag_regras, rules_engine, telemetria
 from app.services.agent_loop import executar_turno, executar_turno_stream
 from app.services.auth import get_current_user, get_current_verified_user
+from app.services.capitulo import migrar_capitulo, painel_capitulo, proximo_passo
 from app.services.encounters import painel_cena
 from app.services.guardrail import (
     corrigir_narrativa,
@@ -34,7 +35,7 @@ from app.services.guardrail import (
     sem_negrito,
     validar_narrativa,
 )
-from app.services.living_world import condicoes_arco, migrar_mundo, painel_mundo
+from app.services.living_world import condicoes_arco, fatos_do_arco, migrar_mundo, painel_mundo
 from app.services.memory import contexto_recente
 from app.services.narrator import gerar_desfecho_arco, gerar_epitafio, montar_contexto
 from app.services.progression import migrar_equipamento, migrar_progressao, painel_progressao
@@ -151,7 +152,10 @@ def _resposta(heroi: Personagem, c_state: CombatState, q_state: QuestLog, **extr
         "marcos": mundo.marcos,
         # Fase 4 (ADR-0035) — o arco atual (condições para encerrar) e o
         # último desfecho gerado, para o overlay do frontend.
-        "arco": condicoes_arco(mundo),
+        # O chefe reservado é segredo do servidor e do narrador até o confronto.
+        "arco": {k: v for k, v in condicoes_arco(mundo).items() if k != "chefe"},
+        # A trilha que a aba Jornada desenha: objetivo, passos e o que ficou para trás.
+        "capitulo": painel_capitulo(mundo, q_state),
         "arco_encerrado": next(
             ({"id": a.id, "titulo": a.desfecho["titulo"], "texto": a.desfecho["texto"], "resultado": a.resultado,
               "recompensa": a.recompensa}
@@ -238,6 +242,15 @@ def regras_xp_proximo_nivel(nivel: int) -> int | None:
     return rules_engine.XP_POR_NIVEL.get(nivel + 1)
 
 
+def _gerar_proximo_passo(
+    heroi: Personagem, w_state: WorldState, q_state: QuestLog, chave: ChaveUsuario | None
+) -> None:
+    """Quando um passo da trilha fechou neste request, a IA escolhe e redige
+    o seguinte entre candidatos do servidor (papel "fundo": cota separada do
+    turno). Sem IA, o servidor usa o próprio molde — a trilha não para."""
+    proximo_passo(w_state, heroi, q_state, chamar_fn=chave.chamar_fn_barato if chave else None)
+
+
 def _persistir_desfecho_arco(
     db: Session, heroi: Personagem, w_state: WorldState, chave: ChaveUsuario | None
 ) -> None:
@@ -251,7 +264,9 @@ def _persistir_desfecho_arco(
     w_state.arco_recem_encerrado = None
     if arco is None or arco.desfecho is not None:
         return
-    eventos = w_state.marcos[arco.marcos_no_inicio:]
+    # `marcos` é uma janela cortada: o índice de quando o arco abriu não vale
+    # mais. Os fatos do arco são os últimos N, mais o marco do encerramento.
+    eventos = w_state.marcos[-(fatos_do_arco(w_state, arco) + 1):]
     arco.desfecho = gerar_desfecho_arco(
         heroi, arco.model_dump(), eventos, chamar_fn=chave.chamar_fn_destaque if chave else None
     )
@@ -303,7 +318,7 @@ def load_game(
         migrar_progressao(heroi, w_state)
         heroi.world_state = w_state.model_dump()
         db.commit()
-    if migrar_mundo(w_state, heroi):
+    if migrar_mundo(w_state, heroi) | migrar_capitulo(w_state, heroi):
         heroi.world_state = w_state.model_dump()
         db.commit()
     if migrar_equipamento(heroi):
@@ -367,13 +382,14 @@ def game_action(
     if heroi.hp_atual <= 0 and action.acao != "resistir":
         raise HTTPException(status_code=400, detail="Você está caído. Use Resistir para lutar pela vida.")
     if (action.acao in {"atacar", "investir", "usar_habilidade"} and action.alvo
-            and action.alvo not in {i.nome for i in c_state.inimigos if i.hp > 0}):
+            and action.alvo not in {i.nome for i in c_state.inimigos if i.hp > 0 and not i.afastado}):
         raise HTTPException(status_code=400, detail="Escolha um inimigo vivo como alvo.")
     if action.acao == "atacar_com_aliado" and action.aliado not in {a.nome for a in c_state.aliados if a.hp > 0}:
         raise HTTPException(status_code=400, detail="Esse aliado não está de pé neste combate.")
 
     migrar_progressao(heroi, w_state)
     migrar_mundo(w_state, heroi)
+    migrar_capitulo(w_state, heroi)
     migrar_equipamento(heroi)
     executor = ToolExecutor(heroi, c_state, w_state, q_state)
     if action.acao == "resistir":
@@ -462,6 +478,7 @@ def game_action(
                             **({"aviso": True, "opcoes": opcoes} if aviso and not c_state.ativo else
                                {"aviso": True} if aviso else {})}]
     _persistir_desfecho_arco(db, heroi, w_state, chave)
+    _gerar_proximo_passo(heroi, w_state, q_state, chave)
     sincronizar_aliados(heroi, c_state)
     heroi.combat_state = c_state.model_dump()
     heroi.quest_log = q_state.model_dump()
@@ -522,6 +539,7 @@ async def chat_endpoint(
     turno_mundo_persistido = w_state.turno
     migrar_progressao(heroi, w_state)
     migrar_mundo(w_state, heroi)
+    migrar_capitulo(w_state, heroi)
     migrar_equipamento(heroi)
     w_state.turno += 1
     hist = contexto_recente(list(heroi.historico_chat), n=3)
@@ -634,6 +652,7 @@ async def chat_endpoint(
     # a mudança numa coluna JSON. Ver Lição 03.
     heroi.historico_chat = novo_hist
     _persistir_desfecho_arco(db, heroi, w_state, chave)
+    _gerar_proximo_passo(heroi, w_state, q_state, chave)
     sincronizar_aliados(heroi, c_state)  # Fase 3 — HP de aliado em combate precisa sobreviver ao turno
     heroi.combat_state = c_state.model_dump()
     heroi.world_state = w_state.model_dump()
@@ -712,6 +731,7 @@ def chat_stream_endpoint(
     turno_mundo_persistido = w_state.turno
     migrar_progressao(heroi, w_state)
     migrar_mundo(w_state, heroi)
+    migrar_capitulo(w_state, heroi)
     migrar_equipamento(heroi)
     w_state.turno += 1
     hist = contexto_recente(list(heroi.historico_chat), n=3)
@@ -860,6 +880,7 @@ def chat_stream_endpoint(
         novo_hist.append({"role": "assistant", "content": narrativa, "opcoes": opcoes})
         heroi.historico_chat = novo_hist
         _persistir_desfecho_arco(db, heroi, w_state, chave)
+        _gerar_proximo_passo(heroi, w_state, q_state, chave)
         sincronizar_aliados(heroi, c_state)  # Fase 3 — HP de aliado em combate precisa sobreviver ao turno
         heroi.combat_state = c_state.model_dump()
         heroi.world_state = w_state.model_dump()

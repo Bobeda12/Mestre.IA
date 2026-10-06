@@ -97,6 +97,25 @@ def migrar_mundo(w_state, heroi) -> bool:
     return True
 
 
+LIMITE_MARCOS = 60
+
+
+def fatos_do_arco(w_state, arco: Arco) -> int:
+    """Quantos fatos o arco acumulou. `marcos` é uma janela dos últimos
+    LIMITE_MARCOS, então `len(marcos) - marcos_no_inicio` congela (ou fica
+    negativo) em campanha longa; o contador próprio do arco não depende dela."""
+    if arco.fatos_registrados is not None:
+        return arco.fatos_registrados
+    return max(0, len(w_state.marcos) - arco.marcos_no_inicio)
+
+
+def acrescentar_marco(w_state, texto: str) -> None:
+    arco = arco_ativo(w_state.mundo)
+    if arco is not None:
+        arco.fatos_registrados = fatos_do_arco(w_state, arco) + 1
+    w_state.marcos = [*w_state.marcos, texto][-LIMITE_MARCOS:]
+
+
 def registrar_fato(
     executor: "ToolExecutor", texto: str, fonte: str = "Observação direta", natureza: str = "fato"
 ) -> None:
@@ -108,7 +127,7 @@ def registrar_fato(
     )
     mundo.conhecimento = [*mundo.conhecimento, registro][-150:]
     if natureza == "fato":
-        executor.w_state.marcos = [*executor.w_state.marcos, texto][-60:]
+        acrescentar_marco(executor.w_state, texto)
 
 
 def registrar_cena(executor: "ToolExecutor", descricao: str, entidades: list[dict]) -> dict:
@@ -513,6 +532,7 @@ def _agir_pessoa(executor: "ToolExecutor", pessoa: PessoaMundo, acao: str, propo
         if pessoa.disposicao == "hostil":
             fala = f"{pessoa.nome} recusa a conversa. Você pode mudar a situação ou seguir outro caminho."
         else:
+            pessoa.ouvida = True
             for conhecimento in pessoa.conhecimentos:
                 if conhecimento.publico:
                     registrar_fato(executor, conhecimento.texto, pessoa.nome, conhecimento.natureza)
@@ -751,7 +771,10 @@ def painel_mundo(w_state, classe: str, privado: bool = False) -> dict:
 
 
 # ---------------------------------------------------------------- arcos (Fase 4, ADR-0035)
-MIN_TURNOS_ARCO = 8
+# A regra antiga pedia 8 turnos de jogo; a trilha do capítulo pede passos
+# cumpridos (services/capitulo.py), que medem o que o jogador fez e não
+# quanto tempo passou.
+MIN_PASSOS_ARCO = 3
 MIN_MARCOS_ARCO = 2
 XP_ARCO_BASE = 60
 XP_ARCO_POR_NIVEL = 20
@@ -768,7 +791,7 @@ def condicoes_arco(w_state) -> dict:
         return {"ativo": False}
     conflito = w_state.mundo.conflitos.get(arco.conflito_central)
     turnos = w_state.turno - arco.turno_inicio
-    marcos = len(w_state.marcos) - arco.marcos_no_inicio
+    marcos = fatos_do_arco(w_state, arco)
     if arco.chefe_enfrentado:
         resultado = "vitoria_chefe"
     elif conflito is not None and conflito.estado == "resolvido":
@@ -778,8 +801,9 @@ def condicoes_arco(w_state) -> dict:
     else:
         resultado = ""
     faltas = []
-    if turnos < MIN_TURNOS_ARCO:
-        faltas.append(f"faltam {MIN_TURNOS_ARCO - turnos} turnos de jogo")
+    passos_feitos = sum(p.estado == "feito" and p.condicao.tipo != "encerrar_capitulo" for p in arco.passos)
+    if passos_feitos < MIN_PASSOS_ARCO:
+        faltas.append(f"faltam {MIN_PASSOS_ARCO - passos_feitos} passos da trilha")
     if marcos < MIN_MARCOS_ARCO:
         faltas.append(f"faltam {MIN_MARCOS_ARCO - marcos} fatos registrados")
     if not resultado:
@@ -787,7 +811,7 @@ def condicoes_arco(w_state) -> dict:
     return {
         "ativo": True, "id": arco.id, "titulo": arco.titulo, "premissa": arco.premissa,
         "conflito": conflito.nome if conflito else "", "estado_conflito": conflito.estado if conflito else "",
-        "turnos": turnos, "marcos": marcos, "resultado_esperado": resultado,
+        "turnos": turnos, "marcos": marcos, "passos_feitos": passos_feitos, "resultado_esperado": resultado,
         "pode_encerrar": not faltas, "motivo_bloqueio": "; ".join(faltas), "chefe": arco.chefe,
         "chefe_enfrentado": arco.chefe_enfrentado,
     }
@@ -811,13 +835,14 @@ def abrir_arco(executor: "ToolExecutor", titulo: str, premissa: str, conflito: s
     mundo.arcos = [*mundo.arcos, Arco(
         id=id_, titulo=titulo[:100], premissa=premissa[:600], conflito_central=alvo.id, chefe=chefe,
         turno_inicio=executor.w_state.turno, marcos_no_inicio=len(executor.w_state.marcos),
+        fatos_registrados=0, passo_pendente=True,
     )]
     executor.eventos.append(f"📖 Novo arco: {titulo}.")
     return {"arco": id_, "titulo": titulo, "conflito_central": alvo.id}
 
 
 def encerrar_arco(executor: "ToolExecutor", resumo_proposto: str = "", abandonar: bool = False) -> dict:
-    """Só passa se o SERVIDOR confirmar: turnos mínimos, fatos registrados e o
+    """Só passa se o SERVIDOR confirmar: passos da trilha, fatos registrados e o
     conflito central resolvido/concretizado (ou o chefe enfrentado). Abandono
     é decisão do jogador pela interface: encerra sem recompensa."""
     from app.services.loot import recompensa_arco
@@ -839,6 +864,11 @@ def encerrar_arco(executor: "ToolExecutor", resumo_proposto: str = "", abandonar
     arco.estado = "encerrado"
     arco.resultado = resultado  # type: ignore[assignment]
     arco.turno_fim = w.turno
+    arco.passo_pendente = False
+    for passo in arco.passos:
+        if passo.estado == "atual":
+            fechou = passo.condicao.tipo == "encerrar_capitulo" and not abandonar
+            passo.estado, passo.turno_fim = ("feito" if fechou else "pulado"), w.turno
     recompensa: dict = {"xp": 0, "ouro": 0, "itens": []}
     if resultado != "abandono":
         nivel = executor.heroi.nivel or 1
@@ -858,7 +888,7 @@ def encerrar_arco(executor: "ToolExecutor", resumo_proposto: str = "", abandonar
     arco.recompensa = recompensa
     rotulo = {"acordo": "um acordo", "consequencia": "consequências", "vitoria_chefe": "a queda do chefe",
               "abandono": "abandono"}[resultado]
-    w.marcos = [*w.marcos, f"Arco encerrado: {arco.titulo} ({rotulo})."][-60:]
+    w.marcos = [*w.marcos, f"Arco encerrado: {arco.titulo} ({rotulo})."][-LIMITE_MARCOS:]
     executor.eventos.append(f"📖 Arco encerrado: {arco.titulo} — {rotulo}.")
     if resumo_proposto:
         # A proposta (do narrador ou do jogador) não sobrescreve fatos do

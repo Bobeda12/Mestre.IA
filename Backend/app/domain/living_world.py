@@ -77,6 +77,8 @@ class PessoaMundo(BaseModel):
     mercadoria: list[str] = Field(default_factory=list, max_length=8)
     segredo: str = Field(default="", max_length=600)
     segredo_revelado: bool = False
+    # O herói já conversou com esta pessoa (a trilha do capítulo confere isto).
+    ouvida: bool = False
     confianca: int = Field(default=0, ge=-100, le=100)
     disposicao: Literal["reservado", "cooperativo", "hostil", "ausente"] = "reservado"
     conhecimentos: list[Conhecimento] = Field(default_factory=list, max_length=40)
@@ -105,6 +107,30 @@ class ConflitoMundo(BaseModel):
     desfecho: str = ""
 
 
+class CondicaoPasso(BaseModel):
+    """O que o servidor confere para dar um passo por cumprido. Todo tipo é
+    lido do estado do jogo; nenhum depende de a IA dizer que aconteceu."""
+
+    tipo: Literal[
+        "chegar_local", "falar_pessoa", "ganhar_confianca", "investigar", "obter_item",
+        "enfrentar_chefe", "intervir_conflito", "registrar_fato", "encerrar_capitulo",
+    ]
+    alvo: str = Field(default="", max_length=100)  # id de pessoa/entidade/conflito, ou nome do local
+    local: str = Field(default="", max_length=100)  # cena onde a entidade está (investigar, obter_item)
+
+
+class Passo(BaseModel):
+    id: str = Field(pattern=r"^p[0-9]{1,4}$")
+    texto: str = Field(min_length=1, max_length=140)
+    condicao: CondicaoPasso
+    origem: Literal["ia", "servidor"] = "servidor"  # quem redigiu o texto
+    estado: Literal["atual", "feito", "pulado"] = "atual"
+    base: int = 0  # contador (fatos, intervenções) na criação: só o que vier depois conta
+    evidencia: str = Field(default="", max_length=200)
+    turno_inicio: int = 1
+    turno_fim: int | None = None
+
+
 class Arco(BaseModel):
     """Fase 4 do plano "jogo completo" (ADR-0035) — um conflito central que
     vira capítulo. O servidor decide quando ele pode encerrar; a IA só
@@ -121,9 +147,16 @@ class Arco(BaseModel):
     turno_inicio: int = 1
     turno_fim: int | None = None
     marcos_no_inicio: int = 0
+    # Fatos registrados desde a abertura. `None` = arco de save anterior a
+    # este contador, que ainda se mede por `marcos_no_inicio`.
+    fatos_registrados: int | None = None
     desfecho: dict | None = None
     recompensa: dict = Field(default_factory=dict)
     resumo_proposto: str = Field(default="", max_length=300)
+    # Trilha do capítulo (services/capitulo.py): o último "atual" é o passo
+    # de agora; `passo_pendente` pede ao router que gere o próximo.
+    passos: list[Passo] = Field(default_factory=list)
+    passo_pendente: bool = False
 
 
 class MundoVivo(BaseModel):

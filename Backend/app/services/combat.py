@@ -303,7 +303,8 @@ def turno_jogador(
 
 
 def turno_aliado(
-    c_state: CombatState, aliado: Aliado, alvo_proposto: str | None, rng: random.Random | None = None
+    c_state: CombatState, aliado: Aliado, alvo_proposto: str | None, rng: random.Random | None = None,
+    vantagem: bool | None = None,
 ) -> list[str]:
     """Fase 3 da revisão de gameplay (ADR-0027) — resolve o ataque de um
     aliado recrutado contra um inimigo vivo. Mais simples que
@@ -316,7 +317,7 @@ def turno_aliado(
     if not vivos:
         return []
     alvo = next((i for i in vivos if i.nome == alvo_proposto), vivos[0])
-    resultado = motor.resolver_ataque(aliado.bonus_ataque, alvo.ca, rng)
+    resultado = motor.resolver_ataque(aliado.bonus_ataque, alvo.ca, rng, vantagem=vantagem)
     linha = (
         f"🎲 {aliado.nome} ataca {alvo.nome} com {aliado.nome_ataque or 'um golpe'}: "
         f"d20({resultado.rolagem})+{resultado.bonus}={resultado.total} vs CA {alvo.ca} → "
@@ -361,7 +362,10 @@ def _comportamento_inimigo(inimigo: Inimigo, outros_vivos: int) -> tuple[bool, b
     if "sozinho" in texto and outros_vivos == 0:
         return True, None
     ferido = inimigo.max_hp > 0 and inimigo.hp / inimigo.max_hp < 0.3
-    if ferido and ("recua" in texto or "foge" in texto) and "nunca recua" not in texto:
+    # Chefe luta até o fim: "recua para o ar" na ficha dele é sabor, e recuar
+    # aqui encerraria o confronto do capítulo como vitória aos 30% de PV.
+    chefe = (inimigo.arquetipo or inimigo.nome) in regras.get_monstros_chefe()
+    if ferido and not chefe and ("recua" in texto or "foge" in texto) and "nunca recua" not in texto:
         return True, None
     em_matilha = any(p in texto for p in ("alcateia", "alcatéia", "matilha", "grupo")) and outros_vivos > 0
     return False, (True if em_matilha else None)
