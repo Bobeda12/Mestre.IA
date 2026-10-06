@@ -1078,6 +1078,98 @@ class ToolExecutor:
         self.eventos.append(f"📣 Você aponta {inimigo.nome} para {aliado.nome}.")
         return {"aliado": aliado.nome, "alvo": inimigo.nome}
 
+    # Improvisar (ADR-0041): a IA escolheu atributo, dificuldade e efeito
+    # numa lista fechada; os números e as travas são daqui.
+    CD_IMPROVISO = {"facil": 10, "media": 13, "dificil": 16}
+    EFEITOS_COM_ALVO = {"dano_leve", "derrubar", "desequilibrar", "empurrar", "intimidar"}
+
+    def improvisar(self, atributo: str, dificuldade: str, efeito: str, alvo: str = "", descricao: str = "") -> dict:
+        c = self.c_state
+        if not c.ativo:
+            return {"erro": "improvisar é uma ação de combate"}
+        if atributo not in motor.ATRIBUTOS_VALIDOS or dificuldade not in self.CD_IMPROVISO:
+            return {"erro": "julgamento inválido para o improviso"}
+        inimigo = self._inimigo_vivo(alvo)
+        if efeito in self.EFEITOS_COM_ALVO and inimigo is None:
+            inimigo = min(turnos.vivos(c), key=lambda i: (i.distancia != "perto", i.id), default=None)
+            if inimigo is None:
+                return {"erro": "não há inimigo de pé"}
+        # Chefe não cai nem se abala com um truque: o efeito vira abrir a guarda.
+        if inimigo is not None and efeito in {"derrubar", "intimidar"} and turnos.e_chefe(inimigo):
+            efeito = "desequilibrar"
+        if efeito == "empurrar" and inimigo is not None and inimigo.distancia == "longe":
+            efeito = "desequilibrar"
+        if efeito == "dano_area_leve" and "improviso_area" in c.interacoes_usadas:
+            efeito = "dano_leve"  # a área vale uma vez por luta
+            inimigo = inimigo or min(turnos.vivos(c), key=lambda i: i.id, default=None)
+        # Os dois efeitos mais fortes nunca saem baratos, julgue a IA o que julgar.
+        if efeito in {"derrubar", "dano_area_leve"} and dificuldade == "facil":
+            dificuldade = "media"
+        repetido = efeito != "nada" and efeito == c.improviso_anterior
+        cd = motor.ajustar_cd_por_dificuldade(
+            self.CD_IMPROVISO[dificuldade] + (3 if repetido else 0), self.heroi.dificuldade
+        )
+        mod = motor.calcular_modificador(self.heroi.atributos.get(atributo, 10))
+        prof = motor.bonus_proficiencia(self._nivel())
+        r = motor.resolver_teste_atributo(mod + prof, cd, self.rng)
+        self.eventos.append(EventoRolagem(
+            f"🎲 Improviso ({atributo}): d20({r.rolagem})+{mod + prof}={r.total} vs CD {cd}"
+            f"{' (truque repetido)' if repetido else ''} → {'SUCESSO' if r.sucesso else 'FALHA'}.",
+            DadosRolagem(tipo="teste", quem="heroi", ator="heroi", d20=r.rolagem, bonus=mod + prof, total=r.total,
+                         cd=cd, sucesso=r.sucesso, atributo=atributo, motivo=descricao.strip()[:120] or "improvisar",
+                         partes_bonus=[{"rotulo": motor.ATRIBUTO_LABEL[atributo], "valor": mod},
+                                       {"rotulo": "Proficiência", "valor": prof}]),
+        ))
+        if not r.sucesso:
+            c.improviso_anterior = ""
+            self.eventos.append("A ideia não funciona; a brecha se fecha.")
+            return {"sucesso": False, "efeito": efeito}
+        c.improviso_anterior = efeito
+        nivel = self._nivel()
+
+        def ferir(quem: Inimigo, dado: str, bonus: int) -> None:
+            dano = motor.calcular_dano(dado, rng=self.rng) + bonus
+            quem.hp = max(0, quem.hp - dano)
+            self.eventos.append(EventoRolagem(
+                f"O improviso causa {dano} de dano em {quem.nome}.",
+                DadosRolagem(tipo="dano", quem="heroi", ator="heroi", alvo=quem.nome, alvo_id=quem.id, dano=dano),
+            ))
+            if quem.hp == 0:
+                self.eventos.append(EventoRolagem(
+                    f"💀 {quem.nome} cai.", EventoStatus(tipo="morte_inimigo", quem=quem.nome)
+                ))
+
+        if efeito == "dano_leve" and inimigo is not None:
+            ferir(inimigo, "1d6", nivel)
+        elif efeito == "dano_area_leve":
+            c.interacoes_usadas = [*c.interacoes_usadas, "improviso_area"]
+            for quem in turnos.vivos(c):
+                ferir(quem, "1d4", nivel // 2)
+        elif efeito == "derrubar" and inimigo is not None:
+            inimigo.efeitos = {**inimigo.efeitos, "atordoado": 1}
+            self.eventos.append(f"{inimigo.nome} perde o equilíbrio e a próxima vez.")
+        elif efeito == "desequilibrar" and inimigo is not None:
+            inimigo.efeitos = {**inimigo.efeitos, "vulneravel": 2}
+            self.eventos.append(f"{inimigo.nome} fica com a guarda aberta.")
+        elif efeito == "intimidar" and inimigo is not None:
+            inimigo.efeitos = {**inimigo.efeitos, "enfraquecido": 2}
+            self.eventos.append(f"{inimigo.nome} hesita e bate mais fraco.")
+        elif efeito == "empurrar" and inimigo is not None:
+            inimigo.distancia = "longe"
+            self.eventos.append(f"{inimigo.nome} é afastado de você.")
+        elif efeito == "distrair":
+            c.heroi_vantagem_inimiga = False
+            self.eventos.append("Os inimigos perdem a mira até o seu próximo turno.")
+        elif efeito == "cobertura":
+            c.heroi_bonus_ca = 3
+            self.eventos.append("Você se protege: mais difícil de acertar até o seu próximo turno.")
+        elif efeito == "vantagem":
+            c.efeitos_heroi = {**c.efeitos_heroi, "precisao": 2}
+            self.eventos.append("Você cria a abertura: seu próximo ataque sai com vantagem.")
+        else:
+            self.eventos.append("A manobra impressiona, mas não muda a luta.")
+        return {"sucesso": True, "efeito": efeito, **self._verificar_vitoria()}
+
     def _custo_de(self, nome: str, args: dict) -> str | None:
         """O que a ferramenta gasta do turno do herói: "acao", "bonus",
         "movimento", "livre" (encerrar) ou None (não mexe no turno)."""
@@ -1102,7 +1194,7 @@ class ToolExecutor:
         if nome == "agir_no_mundo":
             return None if args.get("acao") == "examinar" else "acao"
         if nome in {"atacar", "investir", "esquivar", "defender", "esconder_se", "fugir", "interagir", "equipar",
-                    "resolver_intencao", "intervir_conflito"}:
+                    "resolver_intencao", "intervir_conflito", "improvisar"}:
             return "acao"
         return None
 
@@ -1291,6 +1383,7 @@ ToolExecutor._DESPACHO = {
     "recuar": ToolExecutor.recuar,
     "levantar": ToolExecutor.levantar,
     "encerrar_turno": ToolExecutor.encerrar_turno,
+    "improvisar": ToolExecutor.improvisar,
     "esquivar": ToolExecutor.esquivar,
     "defender": ToolExecutor.defender,
     "investir": ToolExecutor.investir,

@@ -42,6 +42,7 @@ Template: [`0000-template.md`](0000-template.md) · Sistema completo: [`../READM
 | [0038](0038-um-modelo-por-papel.md) | Um modelo por papel: cada chamada de IA declara volume, destaque ou fundo, e cada papel tem a própria cadeia de modelos, escolhida pelas cotas medidas do plano gratuito | Pós-lançamento | ✅ aceito | 05/10/2026 |
 | [0039](0039-trilha-do-capitulo-conferida-pelo-servidor.md) | Trilha do capítulo: passos em sequência com condição lida do estado do jogo; a IA escolhe e redige entre candidatos do servidor, o servidor confere; capítulo fecha com 3 passos em vez de 8 turnos | Plano "Trilha + Combate v2" (Fase 2) | ✅ aceito | 06/10/2026 |
 | [0040](0040-combate-por-fila-de-turnos-com-distancia-sem-mapa.md) | Combate por fila de turnos: iniciativa que vale, ação / bônus / movimento, distância como etiqueta perto/longe por inimigo, tática e habilidade na ficha do monstro, resistências e condições | Plano "Trilha + Combate v2" (Fases 4 e 5) | ✅ aceito | 06/10/2026 |
+| [0041](0041-ia-pequena-no-combate-narrar-e-julgar-improviso.md) | No combate a IA faz duas chamadas pequenas e sem ferramentas: narra a rodada a partir de fatos sem número montados pelo servidor, e julga o improviso escolhendo atributo, dificuldade e efeito em listas fechadas; sem IA, a luta segue | Plano "Trilha + Combate v2" (Fase 6) | ✅ aceito | 06/10/2026 |
 
 **Legenda:** 🕓 previsto · ✅ aceito · ⛔ substituído
 

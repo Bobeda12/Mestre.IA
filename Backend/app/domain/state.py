@@ -127,6 +127,9 @@ class CombatState(BaseModel):
     # Comandar (ação bônus): o aliado bate neste inimigo, com vantagem uma vez.
     alvo_marcado: str | None = None
     comando: bool = False
+    # Improvisar: o último efeito conseguido — repetir o mesmo truque em
+    # seguida fica mais difícil.
+    improviso_anterior: str = ""
 
 
 class LocalDescoberto(BaseModel):

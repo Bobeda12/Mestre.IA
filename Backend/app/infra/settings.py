@@ -217,6 +217,11 @@ class Settings(BaseSettings):
     # evita que isso vire um jeito de sempre ter mais turnos trocando de
     # chave. Ver `routers/game.py._verificar_teto_diario`.
     teto_turnos_emergencia: int = 5
+    # Combate v2 (ADR-0041) — narração de rodada e julgamento de improviso
+    # são chamadas pequenas, contadas à parte do teto de turnos: uma luta
+    # não gasta os turnos do dia. Acima deste teto a luta segue normalmente,
+    # com o texto do servidor no lugar da prosa e o improviso julgado sem IA.
+    teto_chamadas_combate: int = 60
 
     # Etapa 10 (A-2) — confirmação de e-mail bloqueante. Mesmo padrão
     # condicional do Google/Langfuse: sem nenhum dos dois métodos abaixo

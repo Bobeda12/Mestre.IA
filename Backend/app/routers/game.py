@@ -10,7 +10,7 @@ from sqlalchemy import func, update
 from sqlalchemy.orm import Session
 from starlette.background import BackgroundTask
 
-from app.domain.actions import GameAction
+from app.domain.actions import GameAction, PedidoNarracao
 from app.domain.character import LoadRequest, UserAction
 from app.domain.eventos import EventoRolagem
 from app.domain.memoria import ResumoRolante
@@ -22,7 +22,7 @@ from app.infra.llm_client import ErroMestre, chamar_com_fallback
 from app.infra.rate_limit import limiter
 from app.infra.settings import settings
 from app.infra.tracing import medir, turno_span
-from app.services import combat, memory, rag_regras, rules_engine, telemetria, turnos
+from app.services import combat, combate_ia, memory, rag_regras, rules_engine, telemetria, turnos
 from app.services.agent_loop import executar_turno, executar_turno_stream
 from app.services.auth import get_current_user, get_current_verified_user
 from app.services.capitulo import migrar_capitulo, painel_capitulo, proximo_passo
@@ -371,6 +371,88 @@ def _opcoes_ao_carregar(heroi: Personagem, c_state: CombatState) -> list[str]:
     return opcoes_padrao(heroi, c_state)
 
 
+def _cota_de_combate(db: Session, usuario: Usuario, chave: ChaveUsuario) -> bool:
+    """Há cota para mais uma chamada pequena de combate? Quem traz a própria
+    chave não gasta a do servidor."""
+    if chave.presente:
+        return True
+    return telemetria.turnos_hoje(db, usuario.id, tipo="chamada_combate") < settings.teto_chamadas_combate
+
+
+def _julgar_improviso(db: Session, usuario: Usuario, heroi: Personagem, c_state: CombatState,
+                      w_state: WorldState, action: GameAction, chave: ChaveUsuario) -> dict:
+    """A IA escolhe atributo, dificuldade e efeito numa lista fechada; sem
+    cota ou sem resposta válida, o servidor julga por palavra-chave. O
+    resultado são só os argumentos de `ToolExecutor.improvisar`."""
+    texto = action.proposta.strip()[:combate_ia.TEXTO_IMPROVISO_MAX]
+    if not c_state.ativo:
+        raise HTTPException(status_code=400, detail="Improvisar é uma ação de combate.")
+    if len(texto) < 3:
+        raise HTTPException(status_code=400, detail="Descreva o que você tenta fazer.")
+    alvo = next((i.id for i in turnos.vivos(c_state) if action.alvo in (i.id, i.nome)), "")
+    if _cota_de_combate(db, usuario, chave):
+        cenario = str(painel_cena(c_state, w_state).get("descricao", ""))
+        julgamento, pela_ia = combate_ia.julgar_improviso(texto, heroi, c_state, cenario, alvo, chave.chamar_fn)
+        if pela_ia and not chave.presente:
+            telemetria.registrar_evento(db, usuario.id, "chamada_combate", heroi.id)
+    else:
+        julgamento = combate_ia.julgamento_padrao(texto, alvo)
+    return {**julgamento.model_dump(), "descricao": texto}
+
+
+AVISO_SEM_VOZ = "O mestre ficou sem voz nesta rodada; os dados contam o que houve."
+
+
+@router.post("/game/narrar_rodada")
+@limiter.limit("40/minute")
+def narrar_rodada(
+    request: Request,
+    pedido: PedidoNarracao,
+    current_user: Usuario = Depends(get_current_verified_user),
+    db: Session = Depends(get_db),
+    chave_usuario: str | None = Header(default=None, alias="X-Gemini-Key"),
+) -> dict:
+    """Prosa curta para uma rodada que o juiz JÁ resolveu. Os fatos vêm do
+    histórico gravado pelo servidor, nunca do cliente. Sem IA, devolve
+    `prosa: null` e o texto do servidor continua valendo: a luta não espera."""
+    chave = ChaveUsuario(chave_usuario)
+    heroi = _buscar_personagem(db, current_user, pedido.session_id, "Sessão não encontrada.")
+    historico = list(heroi.historico_chat or [])
+    indice = pedido.turno_index
+    if indice >= len(historico) or not historico[indice].get("fim_de_turno"):
+        raise HTTPException(status_code=400, detail="Esta mensagem não fecha uma rodada de combate.")
+    mensagem = historico[indice]
+    if mensagem.get("prosa"):
+        return {"prosa": mensagem["prosa"], "turno_index": indice}
+    # As jogadas do mesmo turno do herói: mensagens de combate seguidas, da
+    # mesma rodada, até a anterior que fechou turno.
+    fatos: list[str] = list(mensagem.get("fatos", []))
+    j = indice - 2
+    while j >= 0 and "fatos" in historico[j] and not historico[j].get("fim_de_turno") and (
+        historico[j].get("rodada") == mensagem.get("rodada")
+    ):
+        fatos = [*historico[j]["fatos"], *fatos]
+        j -= 2
+    if not _cota_de_combate(db, current_user, chave):
+        return {"prosa": None, "turno_index": indice, "aviso": AVISO_SEM_VOZ}
+    c_state = CombatState.model_validate(heroi.combat_state or {})
+    w_state = WorldState.model_validate(heroi.world_state or {})
+    prosa = combate_ia.narrar_rodada(heroi, c_state, w_state.local, fatos[-combate_ia.MAX_FATOS:], chave.chamar_fn)
+    if prosa is None:
+        return {"prosa": None, "turno_index": indice, "aviso": AVISO_SEM_VOZ}
+    if not chave.presente:
+        telemetria.registrar_evento(db, current_user.id, "chamada_combate", heroi.id)
+    # A chamada levou segundos e o jogador pode ter clicado: relê o histórico
+    # (que só cresce) e grava a prosa na mesma mensagem.
+    db.refresh(heroi)
+    atual = list(heroi.historico_chat or [])
+    if indice < len(atual):
+        atual[indice] = {**atual[indice], "prosa": prosa}
+        heroi.historico_chat = atual
+        db.commit()
+    return {"prosa": prosa, "turno_index": indice}
+
+
 @router.post("/game/action")
 @limiter.limit("60/minute")
 def game_action(
@@ -378,9 +460,10 @@ def game_action(
     action: GameAction,
     current_user: Usuario = Depends(get_current_verified_user),
     db: Session = Depends(get_db),
+    chave_usuario: str | None = Header(default=None, alias="X-Gemini-Key"),
 ) -> dict:
     """Um clique é uma ação resolvida pelo juiz; disponível mesmo sem conexão com o narrador."""
-    chave = None  # sem chave do jogador aqui: o desfecho de arco (Fase 4) usa a cadeia do servidor
+    chave = ChaveUsuario(chave_usuario)
     heroi = _buscar_personagem(db, current_user, action.session_id, "Sessão não encontrada.")
     w_state = WorldState.model_validate(heroi.world_state or {})
     c_state = CombatState.model_validate(heroi.combat_state or {})
@@ -403,6 +486,7 @@ def game_action(
     migrar_mundo(w_state, heroi)
     migrar_capitulo(w_state, heroi)
     migrar_equipamento(heroi)
+    em_combate, rodada_antes = c_state.ativo, c_state.rodada
     executor = ToolExecutor(heroi, c_state, w_state, q_state)
     if action.acao == "resistir":
         if heroi.hp_atual > 0:
@@ -467,6 +551,8 @@ def game_action(
             argumentos = {"npc": action.alvo or "", "operacao": action.operacao, "item": action.item}
         elif action.acao == "escolher_especializacao":
             argumentos = {"marco": action.marco, "escolha": action.escolha}
+        elif action.acao == "improvisar":
+            argumentos = _julgar_improviso(db, current_user, heroi, c_state, w_state, action, chave)
         resultado, sucesso = executor.executar(action.acao, json.dumps(argumentos, ensure_ascii=False))
         if not sucesso:
             db.rollback()
@@ -476,6 +562,7 @@ def game_action(
 
     w_state.turno += 1
     narrativa = "\n".join(str(e) for e in executor.eventos)
+    fim_de_turno = em_combate and (executor.turno_passou or not c_state.ativo)
     if action.rotulo and action.rotulo.strip():
         texto_acao = action.rotulo.strip()
     else:
@@ -485,10 +572,18 @@ def game_action(
     # então as sugestões da última narração continuam valendo (e ficam gravadas
     # na mensagem, para sobreviver a um recarregamento).
     aviso = action.acao in ("equipar", "desequipar")
+    # Combate: os fatos sem número desta jogada ficam na mensagem, para a
+    # narração da rodada (`/game/narrar_rodada`) não depender do cliente.
+    marcas_de_combate: dict = {}
+    if em_combate:
+        marcas_de_combate = {"rodada": rodada_antes,
+                             "fatos": combate_ia.fatos_da_jogada(texto_acao, executor.eventos)}
+        if fim_de_turno:
+            marcas_de_combate["fim_de_turno"] = True
     opcoes = _opcoes_ao_carregar(heroi, c_state) if aviso and not c_state.ativo else opcoes_padrao(heroi, c_state)
     heroi.historico_chat = [*(heroi.historico_chat or []),
                            {"role": "user", "content": texto_acao},
-                           {"role": "assistant", "content": narrativa,
+                           {"role": "assistant", "content": narrativa, **marcas_de_combate,
                             **({"aviso": True, "opcoes": opcoes} if aviso and not c_state.ativo else
                                {"aviso": True} if aviso else {})}]
     _persistir_desfecho_arco(db, heroi, w_state, chave)
@@ -521,6 +616,8 @@ def game_action(
         eventos_estruturados=[e.dados.to_dict() for e in executor.eventos
                              if isinstance(e, EventoRolagem) and e.dados is not None],
         opcoes=opcoes, turno_index=len(heroi.historico_chat) - 1,
+        # A tela pede a prosa desta rodada em `/game/narrar_rodada` com o `turno_index` acima.
+        narravel=fim_de_turno,
     )
 
 

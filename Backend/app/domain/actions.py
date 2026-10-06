@@ -16,6 +16,8 @@ class GameAction(BaseModel):
         "escolher_aprendizado", "gerir_projeto", "decidir_acordo_projeto", "usar_instalacao",
         # Combate v2 — movimento e fim do turno.
         "aproximar", "recuar", "levantar", "encerrar_turno",
+        # Ação criativa em combate: o texto vai em `proposta` (ADR-0041).
+        "improvisar",
     ]
     turno_esperado: int = Field(ge=1)
     alvo: str | None = Field(default=None, max_length=120)
@@ -39,3 +41,12 @@ class GameAction(BaseModel):
     nivel_escolha: int | None = Field(default=None, ge=1, le=20)
     tipo_escolha: Literal["atributo", "talento", "especializacao"] | None = None
     opcao: str | None = Field(default=None, max_length=40)
+
+
+class PedidoNarracao(BaseModel):
+    """Pede a prosa de uma rodada de combate já resolvida. `turno_index` é o
+    índice, no histórico, da mensagem que fechou o turno do herói."""
+
+    model_config = ConfigDict(extra="forbid")
+    session_id: str = Field(min_length=1, max_length=150)
+    turno_index: int = Field(ge=0)
