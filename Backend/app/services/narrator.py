@@ -24,7 +24,6 @@ from app.infra.llm_client import ErroMestre
 from app.services import rules_engine as motor
 from app.services.contexto_ia import contexto_mundo, selecionar, serializar
 from app.services.emergent_start import criar_origem, validar_mundo_inicial
-from app.services.encounters import painel_cena
 from app.services.guardrail import limpar_formatacao, sem_negrito
 from app.services.imersao import direcao_cena
 from app.services.progression import painel_progressao
@@ -1061,26 +1060,6 @@ _EFEITO_HEROI_TEXTO = {
 }
 
 
-def _secao_estado_heroi(c_state: CombatState) -> str:
-    """Frase pronta para o prompt, ou vazia quando não há nada ativo (seção
-    condicional, mesmo padrão de [ARCO ATUAL]/[TRAÇOS])."""
-    partes = [_EFEITO_HEROI_TEXTO.get(nome, nome) for nome, duracao in c_state.efeitos_heroi.items() if duracao > 0]
-    if c_state.heroi_escondido:
-        partes.append("está escondido, tentando não ser visto pelos inimigos")
-    if c_state.heroi_bonus_ca:
-        partes.append("está numa postura defensiva nesta rodada")
-    if c_state.heroi_vantagem_inimiga is True:
-        partes.append("se lançou num ataque arriscado, mais exposto que o normal")
-    elif c_state.heroi_vantagem_inimiga is False:
-        partes.append("está esquivando, difícil de acertar neste instante")
-    if not partes:
-        return ""
-    return (
-        f"\n    [ESTADO DO HERÓI] Agora ele {'; '.join(partes)}. Narre refletindo isso — "
-        "não é só um número por trás, é como ele se move e como os inimigos o veem."
-    )
-
-
 def montar_contexto(
     heroi: Personagem,
     w_state: WorldState,
@@ -1133,57 +1112,15 @@ def montar_contexto(
         )
         secao_memoria += f"[REPUTAÇÃO DO HERÓI COM NPCS PRESENTES]\n{linhas_reputacao}\n"
 
-    if c_state.ativo:
-        inimigos_vivos = [i for i in c_state.inimigos if i.hp > 0]
-        vivos = [i.model_dump(include={"nome", "hp", "max_hp", "intencao", "efeitos", "afastado"})
-                 for i in inimigos_vivos]
-        # Etapa 11 (B-9) — gatilhos de "momento de alto impacto": o modelo
-        # narra a INTENÇÃO antes de saber o resultado do dado (ver a regra
-        # logo abaixo), então o único jeito honesto de avisar "isso é
-        # decisivo" é pelo que já está no contexto ANTES da rolagem — HP
-        # crítico (de qualquer lado) ou a presença de um chefe do bestiário.
-        # Ver [MOMENTOS DE ALTO IMPACTO] na bíblia.
-        heroi_critico = heroi.hp_max > 0 and heroi.hp_atual / heroi.hp_max < 0.25
-        inimigo_critico = any(i.max_hp > 0 and i.hp / i.max_hp < 0.25 for i in inimigos_vivos)
-        e_chefe = any((i.arquetipo or i.nome) in regras.get_monstros_chefe() for i in inimigos_vivos)
-        aviso_impacto = (
-            "\n    [MOMENTO DE ALTO IMPACTO] Vida por um fio, o golpe que pode "
-            "decidir o combate, ou um chefe — deixe a cena crescer aqui (ver "
-            "[MOMENTOS DE ALTO IMPACTO] na bíblia)."
-            if heroi_critico or inimigo_critico or e_chefe
-            else ""
-        )
-        # Fase 3 — aliados em combate (não confundir com o roster fora de
-        # combate em [ALIADOS PRESENTES]; aqui é quem de fato entrou nesta
-        # luta, via iniciar_combate/recrutar_aliado) têm ação própria.
-        aviso_aliado = (
-            '\n    Se o jogador dirigir um aliado ("Bob ataca o goblin") ou a cena pedir que ele entre na '
-            'luta, chame também "atacar_com_aliado" — ela não substitui a ação do herói, as duas '
-            "ferramentas resolvem coisas diferentes na mesma rodada."
-            if c_state.aliados
-            else ""
-        )
-        secao_combate = f"""[COMBATE ATIVO] Inimigos vivos: {json.dumps(vivos, ensure_ascii=False)}
-    O jogador está em combate. Chame a ferramenta que corresponde à
-    INTENÇÃO dele: "atacar" (alvo, e arma se ele escolheu uma), "investir"
-    (ataque arriscado: menos precisão, mais dano), "esquivar" (foca em não
-    ser atingido), "defender" (postura defensiva), "esconder_se" (tenta
-    sumir de vista) ou "fugir" (tenta sair do combate). Nunca resolva o
-    combate narrando um resultado sozinho — a ferramenta certa decide o
-    número, você só narra a INTENÇÃO da ação, num parágrafo curto. Nunca
-    peça ao jogador para rolar um dado ou informar um resultado, e não
-    escreva números de ataque, dano ou PV: o resultado real da ferramenta
-    aparece automaticamente logo depois da sua narrativa.{aviso_impacto}{aviso_aliado}{_secao_estado_heroi(c_state)}"""
-    else:
-        # Fase 0 da revisão de gameplay (Etapa 12/13) — escalonamento de
-        # perigo: o servidor decide QUAIS bandas de monstro são compatíveis
-        # com o nível do herói (motor.desafio_sugerido); o modelo continua
-        # só propondo nomes dentro delas (ADR-0006: dificuldade não é
-        # decisão do LLM). `iniciar_combate` também descarta nomes fora do
-        # bestiário, então isto é orientação, não a única barreira.
-        bandas = motor.desafio_sugerido(heroi.nivel or 1)
-        monstros_sugeridos = [n for banda in bandas for n in regras.get_monstros_por_banda(banda)]
-        secao_combate = f"""Se a cena pedir um confronto, chame a ferramenta "iniciar_combate" com os
+    # Fase 0 da revisão de gameplay (Etapa 12/13) — escalonamento de
+    # perigo: o servidor decide QUAIS bandas de monstro são compatíveis
+    # com o nível do herói (motor.desafio_sugerido); o modelo continua
+    # só propondo nomes dentro delas (ADR-0006: dificuldade não é
+    # decisão do LLM). `iniciar_combate` também descarta nomes fora do
+    # bestiário, então isto é orientação, não a única barreira.
+    bandas = motor.desafio_sugerido(heroi.nivel or 1)
+    monstros_sugeridos = [n for banda in bandas for n in regras.get_monstros_por_banda(banda)]
+    secao_combate = f"""Se a cena pedir um confronto, chame a ferramenta "iniciar_combate" com os
     nomes dos monstros do bestiário que encaixam na cena (ex: ["Goblin"]).
     O servidor confirma que os nomes existem antes de criar o combate.
     [DESAFIO SUGERIDO] Para o nível do herói, prefira: {json.dumps(monstros_sugeridos, ensure_ascii=False)}."""
@@ -1209,7 +1146,6 @@ def montar_contexto(
         "\n    [ALIADOS PRESENTES] "
         + ", ".join(
             f"{a['nome']}, {a.get('raca', 'Humano')} {a['classe']} (HP {a['hp']}/{a['hp_max']})"
-            + (" — já agiu nesta rodada" if a["nome"] in c_state.aliados_agiram else "")
             for a in aliados_vivos
         )
         if aliados_vivos
@@ -1282,31 +1218,6 @@ def montar_contexto(
             f"Escolha de nível pendente ({', '.join(map(str, pendentes))}): lembre o jogador com uma frase "
             "que a ficha espera uma decisão; nunca escolha por ele." if pendentes else ""
         )
-    ficha_tatica = {campo: progressao[campo] for campo in ("estilo", "recurso", "habilidades")}
-    cena_tatica = painel_cena(c_state, w_state)
-    # Fase 0 do plano "jogo completo" — técnicas de classe e cenário tático
-    # só fazem sentido com combate ativo (as ferramentas que os usam nem
-    # são enviadas fora dele, ver `tools.tools_para`); fora de combate eram
-    # ~550 tokens de painel de exploração e Foco que o modelo não usa.
-    secao_tatica_instr = (
-        """Se a intenção corresponder a uma técnica, use "usar_habilidade" com o id
-    exato e um alvo válido. Respeite nível, Foco e disponibilidade; nunca invente
-    técnicas nem efeitos. Use "interagir" com o id de uma interação
-    disponível quando a intenção for cobertura, resgate, mecanismo ou negociação.
-    Mostre oportunidades do terreno e a intenção anunciada de cada inimigo antes
-    da próxima escolha. Objetivos de cenário podem encerrar o conflito com inimigos vivos.
-    Uma decisão do jogador corresponde a uma ação principal de combate; não use
-    uma técnica e um ataque adicional na mesma rodada. A reação inimiga é do motor."""
-        if c_state.ativo
-        else ""
-    )
-    secao_tatica = (
-        f"[TÉCNICAS DA CLASSE] {json.dumps(ficha_tatica, ensure_ascii=False)}\n"
-        f"    [CENÁRIO INTERATIVO] {json.dumps(cena_tatica, ensure_ascii=False)}"
-        if c_state.ativo
-        else ""
-    )
-
     return f"""Você é o Mestre de um RPG em português. O jogador escolhe intenções; o motor decide resultados.
 {secao_tom_mestre(heroi.temperamento_mestre)}
 [CONTRATO DO MESTRE]
@@ -1372,6 +1283,4 @@ Grupos instalacoes/economia: melhorias exigem projeto concluído; estoque finito
 {secao_memoria}
 {secao_regras}
 {secao_combate}
-{secao_tatica}
-{secao_tatica_instr}
 """

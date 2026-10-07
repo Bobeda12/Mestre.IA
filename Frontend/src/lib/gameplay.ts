@@ -6,6 +6,9 @@ export interface Habilidade {
   custo: number;
   alvo: 'inimigo' | 'todos' | 'heroi';
   disponivel: boolean;
+  /** Combate v2 (ADR-0042): o que a técnica gasta do turno e de onde alcança. */
+  acao?: 'acao' | 'bonus';
+  alcance?: 'corpo' | 'distancia' | 'area' | 'pessoal';
 }
 
 export interface OpcaoNivel { tipo: 'atributo' | 'talento' | 'especializacao'; id: string; nome: string; descricao: string }
@@ -15,6 +18,8 @@ export interface Progressao {
   estilo: string;
   recurso: { nome: string; atual: number; maximo: number };
   habilidades: Habilidade[];
+  /** O traço da classe, sempre ligado (ADR-0042). */
+  passiva?: { nome: string; descricao: string };
   niveis: { nivel: number; xp: number; descricao: string }[];
   /** Fase 3 (ADR-0034) — escolhas de nível que o jogador ainda não fez. */
   pendencias?: { nivel: number; opcoes: OpcaoNivel[] }[];
@@ -40,10 +45,28 @@ export interface AliadoVisual {
   raca?: string;
   hp: number;
   hp_max: number;
-  ja_agiu?: boolean;
 }
 
+/** Combate v2 (ADR-0040) — a fila de turnos e o que o herói já gastou neste turno. */
+export interface TurnoCombate {
+  fila: string[]; vez: string; rodada: number;
+  acao_usada: boolean; bonus_usada: boolean; movimento_usado: boolean;
+  efeitos_heroi: Record<string, number>; alvo_marcado: string | null;
+  /** Alcance do ataque básico do herói com a arma equipada. */
+  alcance_ataque?: 'corpo' | 'distancia' | 'ambos';
+}
+
+/** Nome de cada condição do herói, como aparece na tela. */
+export const CONDICOES: Record<string, string> = {
+  envenenado: 'envenenado', caido: 'caído', amedrontado: 'amedrontado', contido: 'contido',
+  queimando: 'em chamas', enfraquecido: 'enfraquecido', atordoado: 'atordoado',
+  furia: 'fúria', protecao: 'proteção', guarda: 'guarda', esquiva: 'esquiva', precisao: 'precisão', lamina: 'lâmina',
+};
+
 export interface InimigoVisual {
+  /** Id estável na luta ("i1"); ausente em lutas anteriores ao combate v2. */
+  id?: string;
+  distancia?: 'perto' | 'longe';
   nome: string;
   hp: number;
   max_hp: number;
@@ -56,7 +79,7 @@ export interface InimigoVisual {
 }
 
 export interface AcaoDireta {
-  acao: 'atacar' | 'defender' | 'esquivar' | 'investir' | 'esconder_se' | 'fugir' | 'usar_habilidade' | 'interagir' | 'descansar' | 'resistir' | 'agir_no_mundo' | 'intervir_conflito' | 'definir_objetivo' | 'escolher_especializacao' | 'equipar' | 'desequipar' | 'comerciar' | 'usar_item' | 'atacar_com_aliado' | 'escolher_nivel' | 'encerrar_arco' | 'escolher_aprendizado' | 'gerir_projeto' | 'decidir_acordo_projeto' | 'usar_instalacao';
+  acao: 'atacar' | 'defender' | 'esquivar' | 'investir' | 'esconder_se' | 'fugir' | 'usar_habilidade' | 'interagir' | 'descansar' | 'resistir' | 'agir_no_mundo' | 'intervir_conflito' | 'definir_objetivo' | 'escolher_especializacao' | 'equipar' | 'desequipar' | 'comerciar' | 'usar_item' | 'atacar_com_aliado' | 'escolher_nivel' | 'encerrar_arco' | 'escolher_aprendizado' | 'gerir_projeto' | 'decidir_acordo_projeto' | 'usar_instalacao' | 'aproximar' | 'recuar' | 'levantar' | 'encerrar_turno' | 'improvisar';
   tipo?: 'curto' | 'longo';
   alvo?: string;
   nivel_escolha?: number;
@@ -94,11 +117,6 @@ export interface ItemInfo {
   preco_venda: number;
 }
 export interface Equipamento { arma?: string | null; armadura?: string | null; escudo?: string | null }
-/** Fase 4 (ADR-0035) — o arco atual, com o que o servidor exige para encerrar. */
-export interface ArcoAtual {
-  ativo: boolean; id?: string; titulo?: string; premissa?: string; conflito?: string; estado_conflito?: string;
-  turnos?: number; marcos?: number; resultado_esperado?: string; pode_encerrar?: boolean; motivo_bloqueio?: string;
-}
 /** Trilha do capítulo (ADR-0039) — o que a aba Jornada desenha. O servidor
  *  manda só texto, estado e evidência de cada passo; a condição fica com ele. */
 export interface PassoTrilha { texto: string; estado: 'atual' | 'feito' | 'pulado'; evidencia: string }
@@ -110,46 +128,15 @@ export interface Capitulo {
 export interface ArcoEncerrado { id: string; titulo: string; texto: string; resultado: string; recompensa: { xp: number; ouro: number; itens: string[] } }
 
 export interface MundoPersistente {
-  remessas?: { id: string; item: string; quantidade: number; destino: string;
-    estado: 'em_transito' | 'retida' | 'entregue'; chegada_em: number }[];
-  instalacoes?: {
-    lugares: { id: string; projeto: string; nome: string; descricao: string; tipo: 'abrigo' | 'oficina';
-      atributo: string; local: string; ativa: boolean; disponivel: boolean; evidencia: string }[];
-    preparacao: { nome: string; atributo: string; expira_em: number } | null;
-  };
-  organizacoes?: {
-    id: string; nome: string; proposito: string; principio: string; local: string;
-    membros: { id: string; nome: string }[];
-    iniciativas: { id: string; nome: string; estado: string; sinal: string }[];
-  }[];
-  projetos?: {
-    id: string; ambicao: string; local: string; estado: 'ativo' | 'concluido' | 'abandonado';
-    propostas?: {
-      organizacao?: string; nome_organizacao?: string;
-      id: string; npc: string; nome_npc: string; condicao: string; oferta: string; contrapartida: string;
-      motivo_declarado: string; exclusiva: boolean; evidencia: string;
-      estado: 'oferecida' | 'aceita' | 'recusada' | 'cumprida' | 'renunciada';
-    }[];
-    condicoes: { id: string; descricao: string; alvo: string; estado: 'aberta' | 'satisfeita' | 'superada'; evidencia: string }[];
-  }[];
-  imersao?: {
-    momentos: { id: string; npc: string; gesto: string; convite: string; local: string; turno: number }[];
-    marcas: { id: string; nome: string; significado: string; tipo: string; alvo: string; local: string }[];
-    oportunidades: { id: string; percepcao: string; risco: string; alvo: string }[];
-  };
+  // Só o que a tela desenha do Mundo Vivo (`_mundo_da_tela`, no backend):
+  // a cena do local e as pessoas (palco, aba Relações), as oportunidades
+  // (sinais da cena) e os aprendizados (aba Poderes). Projetos, organizações,
+  // remessas e conflitos seguem no servidor, sem painel (ADR-0039).
+  local: string; descricao: string; entidades: EntidadeMundo[]; pessoas: PessoaMundo[];
+  imersao?: { oportunidades: { id: string; percepcao: string; risco: string; alvo: string }[] };
   emergencia?: {
-    acontecimentos: { id: string; turno: number; local: string; descricao: string }[];
-    particularidades: { id: string; alvo: string; pista: string; regra?: string; pistas?: string[] }[];
-    condicoes: Record<string, string[]>;
-    consequencias: { id: string; sinal: string; estado: string }[];
     aprendizados: { id: string; nome: string; descricao: string; atributo: string; alvo: string; ativo: boolean }[];
   };
-  local: string; descricao: string; entidades: EntidadeMundo[]; pessoas: PessoaMundo[];
-  conflitos: {id: string; nome: string; sinal: string; progresso: number; etapas: number;
-    estado: string; desfecho: string; minutos_restantes: number; intervencoes: number}[];
-  conhecimento: {texto: string; natureza: string; fonte: string; turno: number}[];
-  objetivos: string[]; especializacoes: Record<string, string>;
-  aptidao: {nome: string; acoes: string[]; bonus: number}; minutos: number;
 }
 
 /** Arquétipos do bestiário com sprite em /assets/monstros (slug sem acento). Fase 5: a lista

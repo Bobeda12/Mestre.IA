@@ -52,7 +52,7 @@ continua usando busca híbrida. Não há garantia de memória perfeita.
 ## Controle de consumo e falhas
 
 `AGENT_LIMITE_ENTRADA_ESTIMADO` (12.000) limita a estimativa de entrada de uma chamada;
-`AGENT_LIMITE_TURNO_ESTIMADO` (24.000) limita a soma antes das chamadas do loop.
+`AGENT_LIMITE_TURNO_ESTIMADO` (60.000 desde o diário 0040; era 24.000) limita a soma antes das chamadas do loop.
 `AGENT_MAX_PASSOS` também é respeitado. Os limites são configuráveis e registrados
 em log como estimativas, separando mensagens e schemas. São controles do loop,
 não limites de faturamento: saída, tentativas do SDK/fallback e outras chamadas

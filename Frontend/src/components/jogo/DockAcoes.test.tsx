@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import DockAcoes from './DockAcoes';
-import type { AcaoDireta, PessoaMundo } from '../../lib/gameplay';
+import type { AcaoDireta, ItemInfo, PessoaMundo, TurnoCombate } from '../../lib/gameplay';
 
 // Fase 6 ("uma tela só", ADR-0036) — o dock é a barra de ação única que
 // substitui os três lugares que existiam antes (console do palco,
@@ -155,5 +155,88 @@ describe('DockAcoes — pessoa selecionada', () => {
     render(<Harness aoAgir={vi.fn()} selecao={{ tipo: 'pessoa', id: 'olma' }} pessoaSelecionada={pessoa()} onLimparSelecao={onLimparSelecao} />);
     fireEvent.click(screen.getByRole('button', { name: /limpar seleção/i }));
     expect(onLimparSelecao).toHaveBeenCalled();
+  });
+});
+
+// Combate v2 (ADR-0040) — o turno tem ação, ação bônus e movimento; o dock
+// mostra o que já foi gasto e trava só aquela parte.
+describe('DockAcoes — turno de combate', () => {
+  const turno = (extra: Partial<TurnoCombate> = {}): TurnoCombate => ({
+    fila: ['heroi', 'i1'], vez: 'heroi', rodada: 1, acao_usada: false, bonus_usada: false,
+    movimento_usado: false, efeitos_heroi: {}, alvo_marcado: null, ...extra,
+  });
+  const POCAO: Record<string, ItemInfo> = { 'Poção de Cura': { tipo: 'consumivel', tags: ['Cura'], descricao: 'Recupera PV.', preco_venda: 10 } };
+
+  it('mostra o que o turno ainda tem e o que já foi gasto', () => {
+    render(<Harness aoAgir={vi.fn()} combate alvo="Goblin" turno={turno({ acao_usada: true })} />);
+    expect(screen.getByLabelText('Ação: usada')).toBeInTheDocument();
+    expect(screen.getByLabelText('Bônus: livre')).toBeInTheDocument();
+    expect(screen.getByLabelText('Movimento: livre')).toBeInTheDocument();
+  });
+
+  it('com a ação usada, trava atacar e defender e destaca Encerrar turno', () => {
+    const aoAgir = vi.fn();
+    render(<Harness aoAgir={aoAgir} combate alvo="Goblin" turno={turno({ acao_usada: true })} />);
+    expect(screen.getByRole('button', { name: /atacar goblin/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /defender/i })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: /encerrar turno/i }));
+    expect(aoAgir).toHaveBeenCalledWith({ acao: 'encerrar_turno' }, 'Encerrar turno');
+  });
+
+  it('Mover oferece aproximar do alvo longe e recuar de quem está perto', () => {
+    const aoAgir = vi.fn();
+    const { rerender } = render(<Harness aoAgir={aoAgir} combate alvo="Goblin" turno={turno()} alvoLonge haInimigoPerto={false} />);
+    fireEvent.click(screen.getByRole('button', { name: /mover/i }));
+    expect(screen.getByRole('button', { name: /recuar/i })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: /aproximar de goblin/i }));
+    expect(aoAgir).toHaveBeenCalledWith({ acao: 'aproximar', alvo: 'Goblin' }, 'Aproximar de Goblin');
+    rerender(<Harness aoAgir={aoAgir} combate alvo="Goblin" turno={turno()} alvoLonge={false} haInimigoPerto />);
+    fireEvent.click(screen.getByRole('button', { name: /mover/i }));
+    fireEvent.click(screen.getByRole('button', { name: /recuar/i }));
+    expect(aoAgir).toHaveBeenLastCalledWith({ acao: 'recuar' }, 'Recuar');
+  });
+
+  it('com o movimento usado, Mover fica travado; caído, oferece levantar', () => {
+    const aoAgir = vi.fn();
+    const { rerender } = render(<Harness aoAgir={aoAgir} combate alvo="Goblin" turno={turno({ movimento_usado: true })} haInimigoPerto />);
+    expect(screen.getByRole('button', { name: /mover/i })).toBeDisabled();
+    rerender(<Harness aoAgir={aoAgir} combate alvo="Goblin" turno={turno({ efeitos_heroi: { caido: 1 } })} haInimigoPerto />);
+    fireEvent.click(screen.getByRole('button', { name: /mover/i }));
+    fireEvent.click(screen.getByRole('button', { name: /levantar/i }));
+    expect(aoAgir).toHaveBeenCalledWith({ acao: 'levantar' }, 'Levantar');
+  });
+
+  it('poção é ação bônus: trava quando o bônus já foi usado, não quando a ação foi', () => {
+    const base = { aoAgir: vi.fn(), combate: true, alvo: 'Goblin', inventory: ['Poção de Cura'], catalogoItens: POCAO };
+    const { rerender } = render(<Harness {...base} turno={turno({ acao_usada: true })} />);
+    fireEvent.click(screen.getByRole('button', { name: /itens/i }));
+    expect(screen.getByRole('button', { name: /poção de cura/i })).toBeEnabled();
+    rerender(<Harness {...base} turno={turno({ bonus_usada: true })} />);
+    expect(screen.getByRole('button', { name: /poção de cura/i })).toBeDisabled();
+  });
+
+  it('o campo de texto vira o improviso e avisa quando a ação já foi', () => {
+    const { rerender } = render(<Harness aoAgir={vi.fn()} combate alvo="Goblin" turno={turno()} />);
+    expect(screen.getByLabelText('Sua ação')).toHaveAttribute('placeholder', expect.stringMatching(/improvis/i));
+    rerender(<Harness aoAgir={vi.fn()} combate alvo="Goblin" turno={turno({ acao_usada: true })} />);
+    expect(screen.getByLabelText('Sua ação')).toBeDisabled();
+  });
+
+  it('com arma de corpo a corpo, alvo longe e movimento gasto, Atacar trava e explica', () => {
+    const base = { aoAgir: vi.fn(), combate: true, alvo: 'Goblin', alvoLonge: true };
+    const { rerender } = render(<Harness {...base} turno={turno({ alcance_ataque: 'corpo', movimento_usado: true })} />);
+    const atacar = screen.getByRole('button', { name: /atacar goblin/i });
+    expect(atacar).toBeDisabled();
+    expect(atacar).toHaveAttribute('title', expect.stringMatching(/longe/i));
+    rerender(<Harness {...base} turno={turno({ alcance_ataque: 'corpo' })} />);  // ainda pode avançar
+    expect(screen.getByRole('button', { name: /atacar goblin/i })).toBeEnabled();
+    rerender(<Harness {...base} turno={turno({ alcance_ataque: 'distancia', movimento_usado: true })} />);  // arco alcança
+    expect(screen.getByRole('button', { name: /atacar goblin/i })).toBeEnabled();
+  });
+
+  it('sem os dados do turno (luta antiga), o dock continua como era', () => {
+    render(<Harness aoAgir={vi.fn()} combate alvo="Goblin" />);
+    expect(screen.getByRole('button', { name: /atacar goblin/i })).toBeEnabled();
+    expect(screen.queryByRole('button', { name: /encerrar turno/i })).not.toBeInTheDocument();
   });
 });

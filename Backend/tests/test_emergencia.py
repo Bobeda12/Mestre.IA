@@ -159,27 +159,6 @@ def test_saves_anteriores_carregam_sem_migracao():
     assert not estado.mundo.acontecimentos and not estado.mundo.aprendizados
 
 
-def test_reacao_inimiga_ocorre_uma_vez(executor, monkeypatch):
-    executor.c_state.ativo = True
-    chamadas = []
-    monkeypatch.setattr(executor, "_resolver_reacao_inimiga", lambda: chamadas.append(True) or {})
-    assert chamar(executor, "resolver_intencao", proposta=proposta())[1]
-    assert not chamar(executor, "resolver_intencao", proposta=proposta())[1]
-    assert chamadas == [True] and executor.w_state.mundo.minutos == 1
-
-
-def test_inimigo_real_pode_ser_alvo_de_intencao(executor, monkeypatch):
-    from app.domain.state import Inimigo
-
-    executor.c_state.ativo = True
-    executor.c_state.inimigos = [Inimigo(nome="Sentinela", hp=10, max_hp=10, ca=12)]
-    monkeypatch.setattr(executor, "_resolver_reacao_inimiga", lambda: {})
-    resposta, valido = chamar(executor, "resolver_intencao", proposta=proposta(
-        alvo="Sentinela", sucesso=[{"tipo": "condicao", "alvo": "Sentinela", "texto": "Coberto de fuligem"}],
-    ))
-    assert valido and resposta["sucesso"]
-
-
 def test_replanejamento_exige_nova_causa_e_preserva_historico(executor):
     resposta, _ = chamar(executor, "resolver_intencao", proposta=proposta())
     plano = {
@@ -226,3 +205,14 @@ def test_limite_condicoes_valida_o_ramo_inteiro(executor):
         {"tipo": "condicao", "alvo": "zelador", "texto": "Outra nova condição"},
     ]))
     assert not valido and executor.w_state.model_dump_json() == antes
+
+
+def test_inimigo_real_pode_ser_alvo_de_intencao(executor):
+    from app.domain.state import Inimigo
+
+    executor.c_state.ativo = True
+    executor.c_state.inimigos = [Inimigo(nome="Sentinela", hp=10, max_hp=10, ca=12)]
+    resposta, valido = chamar(executor, "resolver_intencao", proposta=proposta(
+        alvo="Sentinela", sucesso=[{"tipo": "condicao", "alvo": "Sentinela", "texto": "Coberto de fuligem"}],
+    ))
+    assert valido and resposta["sucesso"]

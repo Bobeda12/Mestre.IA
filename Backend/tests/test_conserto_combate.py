@@ -10,7 +10,6 @@ from app.infra.db import Personagem, SessionLocal
 from app.main import app
 from app.routers.game import _resposta
 from app.routers.regras import _ACOES_TATICAS
-from app.services import combat
 from app.services import living_world as mundo
 from tests.helpers import RngFixo
 from tests.test_game_actions import _partida
@@ -60,15 +59,6 @@ def test_inimigo_que_recuou_nao_rende_xp(executor):
     fujao = Inimigo(nome="Kobold", arquetipo="Kobold", hp=3, max_hp=5, ca=12, xp=25, afastado=True)
     r = executor._conceder_xp([caido, fujao])
     assert r["xp_ganho"] == 50
-
-
-def test_chefe_ferido_nao_recua_mas_monstro_comum_sim():
-    texto = "Territorial. Recua para o ar quando abaixo de 30% de HP e ataca de longe."
-    chefe = Inimigo(nome="Vharn", arquetipo="Dragão Jovem", hp=10, max_hp=78, ca=17, comportamento=texto)
-    comum = Inimigo(nome="Manticora", arquetipo="Manticora", hp=10, max_hp=46, ca=14,
-                    comportamento="Predadora. Ataca de longe e recua quando abaixo de 30% de HP.")
-    assert combat._comportamento_inimigo(chefe, 0)[0] is False
-    assert combat._comportamento_inimigo(comum, 0)[0] is True
 
 
 def test_fatos_do_arco_contam_mesmo_com_marcos_cortados(executor):

@@ -1,4 +1,4 @@
-import random
+import secrets
 from typing import Literal
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
@@ -95,7 +95,10 @@ def create_character(
     hp = d_classe.get("dado_vida", 8) + calcular_modificador(attr_final["constituicao"])
     defesa = 10 + calcular_modificador(attr_final["destreza"])  # provisória; auto_equipar recalcula abaixo
 
-    session_id = f"{char.nome.lower()}_{random.randint(1000, 9999)}"
+    # Sufixo com 32 bits aleatórios: os quatro dígitos de antes (9 mil
+    # combinações) colidiam entre personagens de mesmo nome e derrubavam a
+    # criação com erro de chave única.
+    session_id = f"{char.nome.lower()}_{secrets.token_hex(4)}"
     roteiro = gerar_prologo_missao(char, chamar_fn=chave.chamar_fn_destaque)
 
     world_state = WorldState(

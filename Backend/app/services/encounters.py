@@ -241,4 +241,4 @@ def interagir_cenario(executor: "ToolExecutor", interacao: str) -> dict:
                 )
             if all(i.hp <= 0 or i.afastado for i in c_state.inimigos):
                 return executor._fechar_vitoria("🏆 O terreno decidiu o combate!")
-    return {"interacao": interacao, "progresso": c_state.progresso_objetivo, **executor._resolver_reacao_inimiga()}
+    return {"interacao": interacao, "progresso": c_state.progresso_objetivo}

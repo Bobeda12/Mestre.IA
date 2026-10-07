@@ -34,13 +34,22 @@ _ESCALA_DIFICULDADE = [
 # os NÚMEROS dentro de cada descrição (CD_ACAO_TATICA), então a frase fica
 # fixa aqui, mas o valor nunca pode desatualizar sozinho.
 _ACOES_TATICAS = [
-    {"nome": "Atacar", "efeito": "Ataque normal contra um inimigo."},
+    {
+        "nome": "Seu turno",
+        "efeito": "Uma ação, uma ação bônus e um movimento, em qualquer ordem. O turno fecha em "
+                  "\"Encerrar turno\", ou sozinho quando não sobra nada útil.",
+    },
+    {
+        "nome": "Atacar",
+        "efeito": "Ação. Arma corpo a corpo só alcança quem está perto (você avança sozinho se ainda "
+                  "tem o movimento); atirar com um inimigo colado dá desvantagem.",
+    },
     {
         "nome": "Investir",
         "efeito": "-2 no bônus de acerto, +50% no dano — troca precisão por força.",
     },
     {"nome": "Esquivar", "efeito": "Inimigos atacam você com desvantagem até o seu próximo turno."},
-    {"nome": "Defender", "efeito": "+2 na Defesa até o seu próximo turno."},
+    {"nome": "Defender", "efeito": "+2 na Defesa até o seu próximo turno, e recupera 1 de Foco."},
     {
         "nome": "Esconder-se",
         "efeito": f"Teste de Destreza (CD {ToolExecutor.CD_ACAO_TATICA}) — sucesso tira você da mira dos inimigos.",
@@ -48,6 +57,26 @@ _ACOES_TATICAS = [
     {
         "nome": "Fugir",
         "efeito": f"Teste de Destreza (CD {ToolExecutor.CD_ACAO_TATICA}) — sucesso encerra o combate.",
+    },
+    {
+        "nome": "Aproximar e Recuar",
+        "efeito": "Movimento. Recuar abre distância, mas cada inimigo perto ataca uma vez quando você se "
+                  "afasta (ataque de oportunidade). Algumas classes recuam sem levar o golpe.",
+    },
+    {
+        "nome": "Ação bônus",
+        "efeito": "Beber uma poção, comandar um aliado (ele mira o alvo, com vantagem no primeiro golpe) "
+                  "ou usar a técnica de ação bônus da sua classe.",
+    },
+    {
+        "nome": "Improvisar",
+        "efeito": "Ação. Descreva uma ideia no campo de texto: o Mestre escolhe o atributo, a dificuldade "
+                  "e o efeito; o dado decide.",
+    },
+    {
+        "nome": "Foco",
+        "efeito": "Não volta sozinho. Descanso curto devolve metade (até dois entre descansos longos); "
+                  "o longo devolve tudo.",
     },
 ]
 

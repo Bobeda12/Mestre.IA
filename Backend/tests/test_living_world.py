@@ -231,7 +231,7 @@ def test_api_clique_e_texto_resolvem_mesma_operacao_e_save(monkeypatch):
     depois = client.post("/load_game", json={"session_id": sid}).json()
     registro = next(e for e in depois["mundo"]["entidades"] if e["id"] == "registro")
     assert registro["descoberto"] and registro["pista"]
-    assert depois["turno_mundo"] == 2 and depois["xp"] > antes["xp"]
+    assert depois["revisao"] == 2 and depois["xp"] > antes["xp"]
     with SessionLocal() as db:
         heroi = db.query(Personagem).filter_by(session_id=sid).one()
         assert heroi.world_state["mundo"]["cenas"][depois["local"]]["entidades"]["registro"]["descoberto"]

@@ -307,9 +307,12 @@ def test_ferramentas_de_arco_aparecem_pelo_estado_nao_pela_palavra(executor):
     assert "abrir_arco" in _nomes(executor.c_state, acao, executor.w_state)
 
 
-def test_narrador_nao_recebe_mais_concluir_objetivo(executor):
-    assert "concluir_objetivo" not in _nomes(executor.c_state, "Cumpri meu objetivo e a missão.", executor.w_state)
-    assert "concluir_objetivo" not in {t["function"]["name"] for t in tools_para(executor.c_state)}
+def test_concluir_objetivo_nao_existe_mais(executor):
+    # O XP de progresso é o dos passos, conferidos pelo servidor; a ferramenta saiu.
+    from app.services.tools import TOOLS_SCHEMA, ToolExecutor
+
+    assert "concluir_objetivo" not in {t["function"]["name"] for t in TOOLS_SCHEMA}
+    assert "concluir_objetivo" not in ToolExecutor._DESPACHO
 
 
 # -- caminho real: clique, conferência, próximo passo, recarga ---------------
@@ -334,7 +337,7 @@ def test_clique_fecha_o_passo_e_a_resposta_ja_traz_o_seguinte(monkeypatch):
     alvo = arco["passos"][0]["condicao"]["alvo"]
     resposta = client.post("/game/action", json={
         "session_id": sid, "acao": "agir_no_mundo", "operacao": "conversar", "alvo": alvo,
-        "turno_esperado": carga["turno_mundo"],
+        "turno_esperado": carga["revisao"],
     })
     assert resposta.status_code == 200, resposta.text
     corpo = resposta.json()

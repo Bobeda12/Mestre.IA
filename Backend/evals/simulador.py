@@ -18,10 +18,10 @@ from app.infra.data_manager import regras
 from app.infra.db import Personagem
 from app.services import combat, turnos
 from app.services import rules_engine as motor
-from app.services.class_abilities import CONJURADORES, perfil_classe
+from app.services.class_abilities import RECUA_SEM_OPORTUNIDADE, limite_foco, perfil_classe
 from app.services.encounters import preparar_encontro
 from app.services.items import auto_equipar
-from app.services.tools import ToolExecutor
+from app.services.tools import ToolExecutor, alcance_do_ataque
 
 POCAO = "Poção de Cura"
 LIMIAR_POCAO = 0.35
@@ -88,6 +88,7 @@ def _abrir_luta(heroi: Personagem, monstros: list[str], rng: random.Random) -> t
     )
     w_state = WorldState(local="Arena", versao_progressao=1, versao_mundo=2)
     preparar_encontro(c_state, w_state, "duelo")
+    c_state.foco = c_state.foco_max = limite_foco(heroi.nivel, heroi.classe)  # chega descansado
     alvo = turnos.Alvo(hp=heroi.hp_atual, ca=heroi.defesa, atributos=heroi.atributos, nivel=heroi.nivel)
     turnos.abrir(c_state, alvo, rng)
     heroi.hp_atual = alvo.hp
@@ -101,46 +102,89 @@ def _vivos(c_state: CombatState) -> list[Inimigo]:
 ENCERRAR: tuple[str, dict] = ("encerrar_turno", {})
 
 
-def _jogada_basica(heroi: Personagem, c_state: CombatState) -> tuple[str, dict]:
-    """Só ataca; bebe poção (ação bônus) com pouca vida. Sem nada mais a
-    fazer no turno, encerra."""
+def _livre_para_mover(c_state: CombatState) -> bool:
+    preso = any(c_state.efeitos_heroi.get(e, 0) for e in ("caido", "contido"))
+    return not c_state.movimento_usado and not preso
+
+
+def _alcanca(heroi: Personagem, c_state: CombatState, alvo: Inimigo, alcance: str) -> bool:
+    """O herói consegue usar algo de `alcance` em `alvo` agora? Corpo a
+    corpo num alvo longe só com o movimento livre e sem medo."""
+    if alcance != "corpo" or alvo.distancia == "perto":
+        return True
+    return _livre_para_mover(c_state) and not c_state.efeitos_heroi.get("amedrontado", 0)
+
+
+def _basico(heroi: Personagem, c_state: CombatState) -> tuple[str, dict]:
+    """O que qualquer jogador faz: levanta se caiu, bebe poção com pouca
+    vida (ação bônus), ataca o mais ferido que alcança."""
+    if c_state.efeitos_heroi.get("caido", 0) and not c_state.movimento_usado:
+        return "levantar", {}
     if not c_state.bonus_usada and heroi.hp_atual < LIMIAR_POCAO * heroi.hp_max and POCAO in heroi.inventario:
         return "usar_item", {"item": POCAO}
     if c_state.acao_usada:
         return ENCERRAR
-    alvo = min(_vivos(c_state), key=lambda i: i.hp)
-    return "atacar", {"alvo": alvo.nome}
+    alcance = alcance_do_ataque(heroi)
+    alvos = [i for i in _vivos(c_state) if _alcanca(heroi, c_state, i, alcance)]
+    if not alvos:
+        return ENCERRAR
+    return "atacar", {"alvo": min(alvos, key=lambda i: i.hp).id}
+
+
+def _jogada_basica(heroi: Personagem, c_state: CombatState) -> tuple[str, dict]:
+    return _basico(heroi, c_state)
 
 
 def _jogada_tatica(heroi: Personagem, c_state: CombatState) -> tuple[str, dict]:
-    """Um jogador que aprendeu o sistema: usa a técnica mais forte que o Foco
-    paga, área só contra grupo, reforço próprio uma vez por luta, e quem
-    luta de longe abre distância depois de agir."""
-    nome, args = _jogada_basica(heroi, c_state)
-    if nome == "usar_item":
+    """Um jogador que aprendeu o sistema: usa a ação bônus da classe, a
+    técnica mais forte que o Foco paga, cura só quando ferido, e quem luta de
+    longe abre distância depois de agir."""
+    nome, args = _basico(heroi, c_state)
+    if nome in ("levantar", "usar_item"):
         return nome, args
     vivos = _vivos(c_state)
-    if nome == "encerrar_turno":
-        de_longe = turnos.alcance_da_arma(
-            combat.escolher_arma(heroi.inventario, None, (heroi.equipamento or {}).get("arma"))[1]
-            .get("propriedades", [])
-        ) != "corpo" or heroi.classe in CONJURADORES
-        livre = not c_state.movimento_usado and not any(c_state.efeitos_heroi.get(e, 0) for e in ("caido", "contido"))
-        if de_longe and livre and any(i.distancia == "perto" for i in vivos):
-            return "recuar", {}
-        return ENCERRAR
     disponiveis = [
         h for h in perfil_classe(heroi.classe)["habilidades"]
         if h["nivel"] <= heroi.nivel and h["custo"] <= c_state.foco
     ]
-    reforco = next((h for h in disponiveis if h["alvo"] == "heroi" and not c_state.efeitos_heroi), None)
-    if reforco is not None and c_state.rodada == 1:
-        return "usar_habilidade", {"habilidade": reforco["id"]}
-    ofensivas = [h for h in disponiveis if h.get("dano") and (h["alvo"] != "todos" or len(vivos) > 1)]
-    if not ofensivas:
-        return nome, args
-    melhor = max(ofensivas, key=lambda h: (h["custo"], h["nivel"]))
-    return "usar_habilidade", {"habilidade": melhor["id"], "alvo": args["alvo"]}
+
+    def escolher(custo: str) -> tuple[str, dict] | None:
+        do_custo = [h for h in disponiveis if h["acao"] == custo]
+        ferido = heroi.hp_atual < 0.6 * heroi.hp_max
+        reforco = next((
+            h for h in do_custo if h["alvo"] == "heroi"
+            # cura só com vida faltando; reforço puro quando não há outro ativo
+            and (ferido if (h.get("cura") or h.get("cura_fixa")) else not c_state.efeitos_heroi)
+        ), None)
+        if reforco is not None:
+            return "usar_habilidade", {"habilidade": reforco["id"]}
+        melhor: tuple[tuple[int, int], dict, Inimigo | None] | None = None
+        for h in do_custo:
+            if not h.get("dano"):
+                continue
+            alvos = [i for i in vivos if _alcanca(heroi, c_state, i, h["alcance"])]
+            if h["alvo"] == "inimigo" and not alvos:
+                continue
+            chave = (h["custo"], h["nivel"])
+            if melhor is None or chave > melhor[0]:
+                melhor = (chave, h, min(alvos, key=lambda i: i.hp) if h["alvo"] == "inimigo" else None)
+        if melhor is None:
+            return None
+        _, h, alvo = melhor
+        return "usar_habilidade", {"habilidade": h["id"], **({"alvo": alvo.nome} if alvo else {})}
+
+    if not c_state.bonus_usada and vivos:
+        bonus = escolher("bonus")
+        if bonus is not None:
+            return bonus
+    if not c_state.acao_usada:
+        return escolher("acao") or (nome, args)
+    # Abrir distância só compensa para quem recua sem levar golpe: o inimigo
+    # que volta a avançar ataca com desvantagem.
+    de_longe = alcance_do_ataque(heroi) != "corpo" and heroi.classe in RECUA_SEM_OPORTUNIDADE
+    if de_longe and _livre_para_mover(c_state) and any(i.distancia == "perto" for i in vivos):
+        return "recuar", {}
+    return ENCERRAR
 
 
 BOTS = {"basico": _jogada_basica, "tatico": _jogada_tatica}

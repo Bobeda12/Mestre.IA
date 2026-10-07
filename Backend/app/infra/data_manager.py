@@ -88,9 +88,17 @@ class DataManager:
         return [*self.monsters.get("Chefe", {}).keys(), *self.monsters.get("Chefe_Elite", {}).keys()]
 
     def chefes_para_nivel(self, nivel: int) -> list[str]:
-        """Fase 5 — o chefe do arco: fichas de 'Chefe' até o nível 5, 'Chefe_Elite' depois."""
-        banda = "Chefe" if nivel <= 5 else "Chefe_Elite"
-        return list(self.monsters.get(banda, {}).keys()) or self.get_monstros_chefe()
+        """O chefe que um capítulo aberto neste nível pode sortear. Cada
+        chefe tem `nivel_min` na ficha; valem os do degrau mais alto que o
+        herói já alcançou (Bugbear do 1 ao 4, Dragão Jovem do 5 ao 7, os de
+        elite a partir do 8). Antes era só "Chefe até o 5, elite depois", e
+        um herói de nível 1 podia sortear um dragão."""
+        fichas = {n: (self.get_monster(n) or {}).get("nivel_min", 1) for n in self.get_monstros_chefe()}
+        alcancados = [minimo for minimo in fichas.values() if minimo <= nivel]
+        if not alcancados:
+            return list(fichas)[:1]
+        degrau = max(alcancados)
+        return [n for n, minimo in fichas.items() if minimo == degrau]
 
     def get_monstros_por_banda(self, banda: str) -> list[str]:
         """Bestiário por banda de nível (Nivel_1..Nivel_4, Chefe) — usado pelo

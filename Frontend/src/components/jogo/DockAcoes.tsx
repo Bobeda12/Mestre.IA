@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import type { AcaoDireta, Cena, EntidadeMundo, ItemInfo, PessoaMundo, Progressao, Selecao } from '../../lib/gameplay';
+import type { AcaoDireta, Cena, EntidadeMundo, ItemInfo, PessoaMundo, Progressao, Selecao, TurnoCombate } from '../../lib/gameplay';
 import { ACEITAM_MEIO, ACOES, ICONE_INTERACAO, SOCIAIS, TATICAS, verbosPara } from '../../lib/verbos';
 import { categoriaDe } from '../InventoryGrid';
 import PixelIcon, { type PixelIconName } from '../PixelIcon';
@@ -38,9 +38,25 @@ interface Props {
   aoAgir: (acao: AcaoDireta, rotulo: string) => void;
   onAbrirBalcao: (id: string) => void;
   onLimparSelecao: () => void;
+  // Combate v2 (ADR-0040): o turno tem ação, bônus e movimento. Sem
+  // `turno` (luta de antes da fila), o dock se comporta como antes.
+  turno?: TurnoCombate | null;
+  alvoLonge?: boolean;
+  haInimigoPerto?: boolean;
+  /** A fila de turnos (`FilaTurnos`), montada por quem conhece os participantes. */
+  fila?: React.ReactNode;
 }
 
-type Popover = 'tecnicas' | 'taticas' | 'cena' | 'itens' | null;
+type Popover = 'tecnicas' | 'taticas' | 'cena' | 'itens' | 'mover' | null;
+
+function Gasto({ nome, usado, feminino = false }: { nome: string; usado: boolean; feminino?: boolean }) {
+  const estado = usado ? (feminino ? 'usada' : 'usado') : 'livre';
+  return (
+    <span className={`dock__gasto font-rpg ${usado ? 'is-usado' : ''}`} aria-label={`${nome}: ${estado}`}>
+      <span aria-hidden="true">{usado ? '○' : '●'}</span> {nome}
+    </span>
+  );
+}
 
 const BOTAO = 'dock__btn font-rpg';
 const ICONE_VERBO: Record<string, PixelIconName> = {
@@ -55,11 +71,19 @@ export default function DockAcoes(p: Props) {
   const [verboPendente, setVerboPendente] = useState<{ alvoId: string; alvoNome: string; operacao: string } | null>(null);
   const raiz = useRef<HTMLDivElement>(null);
   const textarea = useRef<HTMLTextAreaElement>(null);
+  const fileira = useRef<HTMLDivElement>(null);
 
   const bloqueado = p.loading || p.ocupado || p.encerrado;
   const alvoSel = p.pessoaSelecionada ?? p.entidadeSelecionada;
   const nomeSel = alvoSel?.nome ?? (p.selecao?.tipo === 'inimigo' ? p.selecao.id : null);
   const foco = p.progressao?.recurso;
+  const turno = p.combate ? p.turno ?? null : null;
+  const semAcao = !!turno?.acao_usada;
+  const semBonus = !!turno?.bonus_usada;
+  const semMovimento = !!turno?.movimento_usado;
+  const noChao = (turno?.efeitos_heroi.caido ?? 0) > 0;
+  // Arma de corpo a corpo, alvo longe e o movimento já gasto: não há como chegar lá neste turno.
+  const foraDeAlcance = !!turno && turno.alcance_ataque === 'corpo' && !!p.alvoLonge && semMovimento;
 
   useEffect(() => {
     const campo = textarea.current;
@@ -67,6 +91,14 @@ export default function DockAcoes(p: Props) {
     campo.style.height = 'auto';
     campo.style.height = `${Math.min(128, Math.max(48, campo.scrollHeight))}px`;
   }, [p.input]);
+
+  // No celular a fileira de botões rola para o lado e, quando o conteúdo
+  // dela muda (entrar em combate, virar o turno), o navegador a deixava
+  // parada no meio, com "Atacar" fora da tela. Cada turno começa do início.
+  const rodada = p.turno?.rodada;
+  useEffect(() => {
+    if (fileira.current) fileira.current.scrollLeft = 0;
+  }, [p.combate, rodada]);
 
   const estavaOcupado = useRef(p.loading || p.ocupado);
   useEffect(() => {
@@ -142,6 +174,7 @@ export default function DockAcoes(p: Props) {
 
   const placeholder = verboPendente
     ? `${ACOES[verboPendente.operacao]} com ${verboPendente.alvoNome}: o que você propõe?`
+    : turno ? (semAcao ? 'Você já usou sua ação neste turno.' : 'Improvise: descreva uma ideia (gasta a sua ação)…')
     : p.combate ? "Ameaça iminente! (Ex: 'Ataco o inimigo', 'Fujo')" : 'Sua ação...';
 
   const hint = p.encerrado ? 'Esta jornada chegou ao fim.'
@@ -162,12 +195,17 @@ export default function DockAcoes(p: Props) {
           {habilidades.map(h => {
             const trancada = h.nivel > p.nivel;
             const semFoco = (foco?.atual ?? 0) < h.custo;
-            const motivo = trancada ? `Desbloqueia no nível ${h.nivel}` : semFoco ? 'Foco insuficiente' : h.alvo === 'todos' ? 'Todos os inimigos' : h.alvo === 'heroi' ? 'Seu herói' : `Alvo: ${p.alvo ?? 'selecione um inimigo'}`;
+            // Combate v2: técnica de ação bônus gasta o bônus, não a ação.
+            const ehBonus = h.acao === 'bonus';
+            const semVez = ehBonus ? semBonus : semAcao;
+            const motivo = trancada ? `Desbloqueia no nível ${h.nivel}` : semFoco ? 'Foco insuficiente'
+              : semVez ? (ehBonus ? 'Ação bônus já usada' : 'Ação já usada')
+              : h.alvo === 'todos' ? 'Todos os inimigos' : h.alvo === 'heroi' ? 'Seu herói' : `Alvo: ${p.alvo ?? 'selecione um inimigo'}`;
             return (
               <button type="button" key={h.id} className={`dock__card ${trancada ? 'is-locked' : ''}`}
-                disabled={bloqueado || p.caido || trancada || semFoco || !h.disponivel || (h.alvo === 'inimigo' && !p.alvo)}
+                disabled={bloqueado || p.caido || semVez || trancada || semFoco || !h.disponivel || (h.alvo === 'inimigo' && !p.alvo)}
                 onClick={() => { p.aoAgir({ acao: 'usar_habilidade', habilidade: h.id, ...(h.alvo === 'inimigo' ? { alvo: p.alvo } : {}) }, `${h.nome}${h.alvo === 'inimigo' ? ` em ${p.alvo}` : ''}`); setPopover(null); }}>
-                <span className="dock__card-head font-rpg uppercase tracking-wide"><strong>{h.nome}</strong><span>{h.custo} {foco?.nome ?? 'Foco'}</span></span>
+                <span className="dock__card-head font-rpg uppercase tracking-wide"><strong>{h.nome}</strong><span>{turno && ehBonus ? 'Bônus · ' : ''}{h.custo} {foco?.nome ?? 'Foco'}</span></span>
                 <span className="dock__card-body font-rpg">{h.descricao}</span>
                 <small className="font-rpg">{motivo}</small>
               </button>
@@ -179,7 +217,7 @@ export default function DockAcoes(p: Props) {
         <div className="dock__popover" role="group" aria-label="Táticas">
           {TATICAS.map(t => (
             <button type="button" key={t.acao} className="dock__card" title={t.dica}
-              disabled={bloqueado || p.caido || (t.acao === 'investir' && !p.alvo)}
+              disabled={bloqueado || p.caido || semAcao || (t.acao === 'investir' && !p.alvo)}
               onClick={() => { p.aoAgir({ acao: t.acao, ...(t.acao === 'investir' ? { alvo: p.alvo } : {}) }, t.nome); setPopover(null); }}>
               <span className="dock__card-head font-rpg uppercase tracking-wide"><PixelIcon name={t.icone} size={14} /><strong>{t.nome}</strong></span>
               <span className="dock__card-body font-rpg">{t.dica}</span>
@@ -190,7 +228,7 @@ export default function DockAcoes(p: Props) {
       {popover === 'cena' && (
         <div className="dock__popover" role="group" aria-label="Interações do cenário">
           {interacoes.map(i => (
-            <button type="button" key={i.id} className="dock__card" disabled={bloqueado || p.caido}
+            <button type="button" key={i.id} className="dock__card" disabled={bloqueado || p.caido || semAcao}
               onClick={() => { p.aoAgir({ acao: 'interagir', interacao: i.id }, i.nome); setPopover(null); }}>
               <span className="dock__card-head font-rpg uppercase tracking-wide"><PixelIcon name={ICONE_INTERACAO[i.id] ?? 'bau'} size={14} /><strong>{i.nome}</strong></span>
               <span className="dock__card-body font-rpg">{i.descricao}</span>
@@ -202,7 +240,8 @@ export default function DockAcoes(p: Props) {
         <div className="dock__popover" role="group" aria-label="Itens">
           {p.inventory.length === 0 && <p className="dock__hint font-rpg">Mochila vazia.</p>}
           {consumiveis.map(item => (
-            <button type="button" key={`c:${item}`} className="dock__card" disabled={bloqueado || p.caido} title={p.catalogoItens[item]?.descricao}
+            <button type="button" key={`c:${item}`} className="dock__card" disabled={bloqueado || p.caido || semBonus}
+              title={semBonus ? 'Você já usou sua ação bônus neste turno.' : p.catalogoItens[item]?.descricao}
               onClick={() => { p.aoAgir({ acao: 'usar_item', item }, `Usar ${item}`); setPopover(null); }}>
               <span className="dock__card-head font-rpg uppercase tracking-wide"><PixelIcon name={categoriaDe(item, p.catalogoItens[item]).icone} size={14} /><strong>{item}</strong><span aria-label={`Quantidade: ${p.inventory.filter(i => i === item).length}`}>×{p.inventory.filter(i => i === item).length}</span></span>
               <span className="dock__card-body font-rpg">{p.catalogoItens[item]?.descricao ?? 'Usar agora.'}</span>
@@ -218,11 +257,45 @@ export default function DockAcoes(p: Props) {
         </div>
       )}
 
+      {popover === 'mover' && turno && (
+        <div className="dock__popover" role="group" aria-label="Movimento">
+          {noChao && (
+            <button type="button" className="dock__card" disabled={bloqueado}
+              onClick={() => { p.aoAgir({ acao: 'levantar' }, 'Levantar'); setPopover(null); }}>
+              <span className="dock__card-head font-rpg uppercase tracking-wide"><strong>Levantar</strong></span>
+              <span className="dock__card-body font-rpg">Fique de pé. Caído, você ataca pior e apanha mais.</span>
+            </button>
+          )}
+          <button type="button" className="dock__card" disabled={bloqueado || noChao || !p.alvo || !p.alvoLonge}
+            onClick={() => { p.aoAgir({ acao: 'aproximar', alvo: p.alvo }, `Aproximar de ${p.alvo}`); setPopover(null); }}>
+            <span className="dock__card-head font-rpg uppercase tracking-wide"><strong>Aproximar{p.alvo ? ` de ${p.alvo}` : ''}</strong></span>
+            <span className="dock__card-body font-rpg">{p.alvoLonge ? 'Chegue ao corpo a corpo.' : 'O alvo já está perto.'}</span>
+          </button>
+          <button type="button" className="dock__card" disabled={bloqueado || noChao || !p.haInimigoPerto}
+            onClick={() => { p.aoAgir({ acao: 'recuar' }, 'Recuar'); setPopover(null); }}>
+            <span className="dock__card-head font-rpg uppercase tracking-wide"><strong>Recuar</strong></span>
+            <span className="dock__card-body font-rpg">{p.haInimigoPerto ? 'Abra distância. Cada inimigo perto ataca uma vez quando você se afasta.' : 'Ninguém está perto de você.'}</span>
+          </button>
+        </div>
+      )}
+
       {/* Item 9 — verbos e campo de texto agora leem como UMA peça
           (`.dock__panel`), não duas caixas empilhadas com bordas diferentes. */}
+      {turno && p.fila}
+      {turno && !p.caido && (
+        <div className="dock__turno">
+          <span className="dock__turno-gastos" aria-label="O que resta neste turno">
+            <Gasto nome="Ação" usado={semAcao} feminino /><Gasto nome="Bônus" usado={semBonus} /><Gasto nome="Movimento" usado={semMovimento} />
+          </span>
+          <button type="button" className={`${BOTAO} dock__btn--fim ${semAcao ? 'dock__btn--primary' : ''}`} disabled={bloqueado}
+            onClick={() => p.aoAgir({ acao: 'encerrar_turno' }, 'Encerrar turno')}>
+            Encerrar turno
+          </button>
+        </div>
+      )}
       <div className="dock__panel">
       {/* Linha 1 — os verbos do contexto. */}
-      <div className="dock__row" role="toolbar" aria-label="Ações">
+      <div ref={fileira} className="dock__row" role="toolbar" aria-label="Ações">
         {nomeSel && !p.combate && (
           <span className="dock__chip font-rpg">
             <PixelIcon name={p.pessoaSelecionada ? 'rosto' : 'bau'} size={12} /> {nomeSel}
@@ -232,11 +305,12 @@ export default function DockAcoes(p: Props) {
 
         {p.combate ? (
           <>
-            <button type="button" className={`${BOTAO} dock__btn--primary`} disabled={bloqueado || p.caido || !p.alvo}
+            <button type="button" className={`${BOTAO} ${semAcao ? '' : 'dock__btn--primary'}`} disabled={bloqueado || p.caido || semAcao || !p.alvo || foraDeAlcance}
+              title={foraDeAlcance ? `${p.alvo} está longe e você já se moveu neste turno.` : undefined}
               onClick={() => p.aoAgir({ acao: 'atacar', alvo: p.alvo }, `Atacar ${p.alvo}`)}>
               <PixelIcon name="espada" size={16} /> Atacar{p.alvo ? ` ${p.alvo}` : ''}
             </button>
-            <button type="button" className={BOTAO} disabled={bloqueado}
+            <button type="button" className={BOTAO} disabled={bloqueado || (!p.caido && semAcao)}
               onClick={() => p.aoAgir({ acao: p.caido ? 'resistir' : 'defender' }, p.caido ? 'Resistir e avançar a rodada' : 'Defender')}>
               <PixelIcon name="escudo" size={16} /> {p.caido ? 'Resistir' : 'Defender'}
             </button>
@@ -256,6 +330,12 @@ export default function DockAcoes(p: Props) {
             <button type="button" className={BOTAO} aria-expanded={popover === 'itens'} onClick={() => alternarPopover('itens')}>
               <PixelIcon name="mochila" size={16} /> Itens ▾
             </button>
+            {turno && !p.caido && (
+              <button type="button" className={BOTAO} aria-expanded={popover === 'mover'} disabled={bloqueado || semMovimento}
+                title={semMovimento ? 'Você já se moveu neste turno.' : undefined} onClick={() => alternarPopover('mover')}>
+                <PixelIcon name="seta" size={16} /> Mover ▾
+              </button>
+            )}
           </>
         ) : alvoSel ? (
           <>
@@ -314,7 +394,7 @@ export default function DockAcoes(p: Props) {
           placeholder={placeholder}
           aria-label="Sua ação"
           aria-describedby="dock-instrucao"
-          disabled={bloqueado}
+          disabled={bloqueado || (!!turno && (semAcao || p.caido))}
           className="flex-1 bg-transparent text-gray-200 p-3 outline-none resize-none h-12 max-h-32 custom-scrollbar font-rpg text-sm placeholder-gray-500 disabled:opacity-50"
         />
         <button
@@ -327,7 +407,9 @@ export default function DockAcoes(p: Props) {
         </button>
       </div>
       <p id="dock-instrucao" className="dock__hint font-rpg px-3 pb-1" role="status" aria-live="polite">
-        {p.encerrado ? 'Esta jornada chegou ao fim.' : p.loading ? 'O Mestre está narrando…' : p.ocupado ? 'Resolvendo sua ação…' : 'Enter para enviar · Shift + Enter para uma nova linha'}
+        {p.encerrado ? 'Esta jornada chegou ao fim.' : p.loading ? 'O Mestre está narrando…' : p.ocupado ? 'Resolvendo sua ação…'
+          : turno ? 'Em combate, o texto é um improviso: o Mestre julga a ideia e o dado decide.'
+          : 'Enter para enviar · Shift + Enter para uma nova linha'}
       </p>
       </div>
     </div>

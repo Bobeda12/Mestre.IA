@@ -419,5 +419,94 @@ def perfil_classe(classe: str) -> dict:
     return CLASSES.get(classe, CLASSES["Guerreiro"])
 
 
-def limite_foco(nivel: int) -> int:
-    return 3 + (nivel >= 4) + (nivel >= 8)
+def limite_foco(nivel: int, classe: str | None = None) -> int:
+    """Foco máximo. Conjurador vive de técnica: tem 2 a mais (ADR-0042)."""
+    return 3 + (nivel >= 4) + (nivel >= 8) + (FOCO_EXTRA_CONJURADOR if classe in CONJURADORES else 0)
+
+
+FOCO_EXTRA_CONJURADOR = 2
+
+
+def defesa_de_classe(classe: str | None, nivel: int) -> int:
+    """Proteção mágica de quem não veste armadura pesada: cresce com o nível,
+    porque o bônus de ataque dos monstros também cresce."""
+    base = BONUS_DEFESA.get(classe or "", 0)
+    return base + nivel // 3 if base else 0
+
+
+def dado_do_pulso(classe: str | None) -> str:
+    """Ataque básico de conjurador sem arma na mão."""
+    return DADO_PULSO.get(classe or "", "1d6")
+
+
+# -- Combate v2 (ADR-0042): o que cada técnica gasta, de onde alcança e a que
+# o alvo resiste. Fica à parte do catálogo acima para a identidade de cada
+# classe caber numa tela: quem tem técnica de ação bônus faz duas coisas por
+# turno; quem luta corpo a corpo precisa chegar perto; efeito de controle
+# (atordoar, enfraquecer, queimar, abrir a guarda) só entra se o alvo falhar
+# no teste de resistência.
+
+# Técnicas que custam a ação BÔNUS (as outras custam a ação).
+TECNICAS_BONUS = {
+    "furia",            # Bárbaro: entra em fúria e ainda ataca
+    "golpe_tatico",     # Guerreiro: o segundo golpe do turno
+    "bomba_fumaca",     # Ladino: some e prepara o próximo ataque
+    "rajada_punhos",    # Monge: rajada depois do golpe
+    "marca_cacador",    # Patrulheiro: marca e ainda atira
+    "aura_guardia",     # Paladino: protege e ainda golpeia
+    "palavra_cortante", # Bardo: a palavra é rápida
+    "santuario",        # Clérigo: cura e ainda age
+    "forma_urso",       # Druida: muda de forma e ainda ataca
+    "maldicao",         # Bruxo: amaldiçoa e ainda ataca
+}
+CORPO_A_CORPO = {"Bárbaro", "Guerreiro", "Ladino", "Monge", "Paladino"}
+# A que o alvo resiste para escapar de cada efeito de controle.
+RESISTENCIA_DO_EFEITO = {
+    "atordoado": "vigor", "enfraquecido": "vontade", "vulneravel": "reflexo", "queimando": "reflexo",
+}
+
+# O traço que faz a classe jogar diferente, sempre ligado. Texto para a ficha;
+# a regra está em services/tools.py e services/turnos.py.
+PASSIVAS: dict[str, dict] = {
+    "Bárbaro": {"nome": "Sangue quente", "descricao": "Ao ser ferido, recupera 1 de Foco (uma vez por rodada)."},
+    "Guerreiro": {"nome": "Veterano", "descricao": "Golpe tático é ação bônus: dois golpes no mesmo turno."},
+    "Ladino": {"nome": "Ataque furtivo", "descricao": "+1d6 de dano com vantagem ou contra alvo abalado; "
+                                                    "recua sem levar golpe de oportunidade."},
+    "Monge": {"nome": "Passo leve",
+              "descricao": "Recua sem levar golpe de oportunidade; rajada de punhos é ação bônus."},
+    "Patrulheiro": {"nome": "Caçador", "descricao": "Vantagem ao atirar de longe num alvo marcado."},
+    "Paladino": {"nome": "Aura de fé", "descricao": "+2 em todos os testes de resistência."},
+    "Bardo": {"nome": "Língua afiada", "descricao": "Palavra cortante é ação bônus."},
+    "Clérigo": {"nome": "Mãos que curam", "descricao": "Santuário é ação bônus: cura e ainda age no turno."},
+    "Druida": {"nome": "Forma selvagem", "descricao": "Forma de urso é ação bônus."},
+    "Feiticeiro": {"nome": "Magia potencializada",
+                   "descricao": "O dano das técnicas é rolado duas vezes e vale o maior; "
+                                "recua sem levar golpe de oportunidade."},
+    "Bruxo": {"nome": "Pacto", "descricao": "O descanso curto devolve todo o Foco."},
+    "Mago": {"nome": "Armadura arcana",
+             "descricao": "Defesa extra que cresce com o nível; CD +1 nas técnicas; "
+                          "recua sem levar golpe de oportunidade."},
+}
+BONUS_DEFESA = {"Mago": 2, "Feiticeiro": 2, "Bruxo": 2, "Bardo": 1, "Druida": 1}
+DADO_PULSO = {"Mago": "1d10", "Feiticeiro": "1d10", "Bruxo": "1d10", "Clérigo": "1d8", "Druida": "1d8", "Bardo": "1d8"}
+BONUS_RESISTENCIA = {"Paladino": 2}
+BONUS_CD = {"Mago": 1}
+RECUA_SEM_OPORTUNIDADE = {"Ladino", "Monge", "Mago", "Feiticeiro"}
+
+
+
+def _aplicar_mecanica() -> None:
+    for classe, perfil in CLASSES.items():
+        habilidades: list[dict] = perfil["habilidades"]  # type: ignore[assignment]
+        for h in habilidades:
+            h["acao"] = "bonus" if h["id"] in TECNICAS_BONUS else "acao"
+            if h["alvo"] == "heroi":
+                h["alcance"] = "pessoal"
+            elif h["alvo"] == "todos":
+                h["alcance"] = "area"
+            else:
+                h["alcance"] = "corpo" if classe in CORPO_A_CORPO else "distancia"
+        perfil["passiva"] = PASSIVAS[classe]  # type: ignore[assignment]
+
+
+_aplicar_mecanica()

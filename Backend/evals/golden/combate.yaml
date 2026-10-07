@@ -1,8 +1,20 @@
 # Golden dataset — categoria "combate" (PLANO_MESTRE.md, Etapa 6).
-# Cobre: ataque com/sem arma nomeada, ataque desarmado, criação de combate
-# (iniciar_combate), item usado em combate, consulta de regra em combate,
-# chefe com HP alto, grupo de inimigos, alvo citado por apelido em vez do
-# nome exato do bestiário.
+#
+# Reescrito em 07/10/2026 (plano "Trilha do capítulo + Combate v2", ADR-0040 e
+# ADR-0041). Desde o combate por turnos, o narrador NÃO resolve jogadas dentro
+# da luta: cada clique vai por `/game/action`, sem IA, e o chat fica fechado
+# enquanto o combate está ativo. Os 8 cenários antigos que esperavam "atacar",
+# "usar_item" e "consultar_regra" com combate ativo descreviam um caminho que
+# não existe mais.
+#
+# O que sobrou para o narrador nesta fronteira, e que estes cenários cobrem:
+#   - abrir a luta na hora certa, com `iniciar_combate` (e não narrar o
+#     resultado sozinho);
+#   - NÃO abrir luta quando a cena é só tensa;
+#   - o que acontece logo antes da luta (poção, pergunta de regra).
+# As duas chamadas pequenas de IA dentro do combate (narrar a rodada, julgar o
+# improviso) não passam pelo laço de ferramentas e são testadas em
+# tests/test_combate_ia.py.
 #
 # `heroi_padrao` é a mesma ficha de tests/test_tools.py::_heroi (Etapa 4) —
 # reaproveitar o mesmo personagem entre cenários deixa as diferenças de
@@ -20,57 +32,6 @@ heroi_padrao: &heroi_padrao
   reputacao_npcs: {}
 
 cenarios:
-  - id: combate_ataque_arma_nomeada
-    categoria: combate
-    descricao: "Jogador ataca um goblin já em combate, nomeando a arma."
-    estado_inicial:
-      heroi: {<<: *heroi_padrao}
-      combate:
-        ativo: true
-        inimigos:
-          - {nome: "Goblin", hp: 7, max_hp: 7, ca: 15, bonus_ataque: 4, dano_dado: "1d6+2", nome_ataque: "Cimitarra"}
-      mundo: {local: "Masmorra Esquecida", clima: "Frio e úmido", turno: 5}
-      missao: {nome_missao: "Limpar a masmorra", objetivo_missao: "Derrotar os goblins que guardam a entrada."}
-    acao_jogador: "Eu ataco o goblin com minha cimitarra!"
-    ferramenta_esperada: "atacar"
-    args_esperados: {alvo: "Goblin"}
-    resultado_mecanico_esperado: "A ferramenta 'atacar' resolve o golpe contra o Goblin; HP muda conforme o dado."
-    notas_rubrica: "Não deve escrever número de dano/HP na prosa — isso é o evento da ferramenta, narrado depois."
-
-  - id: combate_ataque_sem_arma_citada
-    categoria: combate
-    descricao: "Jogador ataca sem nomear a arma; o inventário tem uma arma reconhecida."
-    estado_inicial:
-      heroi: {<<: *heroi_padrao, inventario: ["Espada Curta"]}
-      combate:
-        ativo: true
-        inimigos:
-          - {nome: "Esqueleto", hp: 13, max_hp: 13, ca: 13, bonus_ataque: 4, dano_dado: "1d6+2", nome_ataque: "Espada Curta"}
-      mundo: {local: "Masmorra Esquecida", clima: "Frio e úmido", turno: 8}
-      missao: {nome_missao: "Limpar a masmorra", objetivo_missao: "Chegar à câmara final."}
-    acao_jogador: "Eu tento acertar o esqueleto com tudo que tenho!"
-    ferramenta_esperada: "atacar"
-    args_esperados: {alvo: "Esqueleto"}
-    resultado_mecanico_esperado: "A ferramenta usa a Espada Curta do inventário automaticamente."
-    notas_rubrica: ""
-
-  - id: combate_ataque_desarmado
-    categoria: combate
-    descricao: "Herói sem nenhuma arma no inventário ataca mesmo assim."
-    estado_inicial:
-      heroi: {<<: *heroi_padrao, inventario: []}
-      combate:
-        ativo: true
-        inimigos:
-          - {nome: "Lobo", hp: 11, max_hp: 11, ca: 13, bonus_ataque: 4, dano_dado: "2d4+2", nome_ataque: "Mordida"}
-      mundo: {local: "Floresta das Sombras", clima: "Neblina densa", turno: 3}
-      missao: {nome_missao: "Atravessar a floresta", objetivo_missao: "Chegar ao outro lado antes do anoitecer."}
-    acao_jogador: "Sem arma nenhuma, eu parto pra cima do lobo com os punhos!"
-    ferramenta_esperada: "atacar"
-    args_esperados: {alvo: "Lobo"}
-    resultado_mecanico_esperado: "A ferramenta resolve um ataque desarmado (sem arma reconhecida no inventário)."
-    notas_rubrica: "Não deve inventar uma arma que o herói não tem."
-
   - id: combate_iniciar_combate_ameaca_emergente
     categoria: combate
     descricao: "Sem combate ativo, a cena descreve uma ameaça hostil surgindo — deve iniciar combate."
@@ -96,92 +57,117 @@ cenarios:
     acao_jogador: "Dois goblins saltam das sombras, cimitarras em punho. Eu levanto minha guarda."
     ferramenta_esperada: "iniciar_combate"
     args_esperados: {}
-    resultado_mecanico_esperado: "iniciar_combate com 2 Goblins do bestiário."
-    notas_rubrica: "Deve chamar iniciar_combate com uma lista de 2 inimigos, não 1."
+    resultado_mecanico_esperado: "iniciar_combate com Goblins do bestiário; o servidor limita a quantidade pelo nível do herói."
+    notas_rubrica: "Deve propor os dois inimigos na lista; não deve narrar a luta já resolvida."
 
-  - id: combate_usar_pocao_em_combate
+  - id: combate_jogador_ataca_primeiro
     categoria: combate
-    descricao: "HP baixo em combate ativo; herói tem poção de cura no inventário."
+    descricao: "O jogador parte para o ataque fora de combate: a luta precisa ser aberta antes de qualquer golpe."
+    estado_inicial:
+      heroi: {<<: *heroi_padrao}
+      combate: {ativo: false, inimigos: []}
+      mundo: {local: "Masmorra Esquecida", clima: "Frio e úmido", turno: 4}
+      missao: {nome_missao: "Limpar a masmorra", objetivo_missao: "Passar pelo guardião da porta."}
+    acao_jogador: "Saco a cimitarra e avanço contra o esqueleto que guarda a porta!"
+    ferramenta_esperada: "iniciar_combate"
+    args_esperados: {}
+    resultado_mecanico_esperado: "iniciar_combate com um Esqueleto. O golpe em si é do turno do jogador, pelos botões da luta."
+    notas_rubrica: "Não deve narrar acerto, dano nem a queda do esqueleto: quem resolve o golpe é o juiz, depois."
+
+  - id: combate_nao_narra_vitoria_sem_luta
+    categoria: combate
+    descricao: "O jogador declara o resultado de uma luta que nem começou."
+    estado_inicial:
+      heroi: {<<: *heroi_padrao}
+      combate: {ativo: false, inimigos: []}
+      mundo: {local: "Masmorra Esquecida", clima: "Frio e úmido", turno: 6}
+      missao: {nome_missao: "Limpar a masmorra", objetivo_missao: "Derrotar os goblins que guardam a entrada."}
+    acao_jogador: "Mato o goblin da entrada com um golpe só e pego todo o ouro dele."
+    ferramenta_esperada: "iniciar_combate"
+    args_esperados: {}
+    resultado_mecanico_esperado: "iniciar_combate com um Goblin. Nenhuma morte, nenhum ouro: nada disso foi decidido pelo servidor."
+    notas_rubrica: "Não deve aceitar a vitória nem o saque declarados pelo jogador. Não deve dar item nem ouro."
+
+  - id: combate_nome_inventado_vira_pele
+    categoria: combate
+    descricao: "A ameaça tem um nome narrativo que não existe no bestiário."
+    estado_inicial:
+      heroi: {<<: *heroi_padrao}
+      combate: {ativo: false, inimigos: []}
+      mundo: {local: "Estrada do Rei", clima: "Vento forte", turno: 3}
+      missao: {nome_missao: "Escoltar a carroça", objetivo_missao: "Levar a carga inteira até a cidade."}
+    acao_jogador: "O batedor rasgacouro que nos seguia salta da vala com a adaga na mão. Eu me coloco entre ele e a carroça."
+    ferramenta_esperada: "iniciar_combate"
+    args_esperados: {}
+    resultado_mecanico_esperado: "iniciar_combate aceita o nome proposto como pele de uma ficha do bestiário compatível com o nível."
+    notas_rubrica: "Pode propor o nome narrativo ou um monstro do bestiário. Não deve inventar HP, CA nem dano na prosa."
+
+  - id: combate_emboscada_na_estrada
+    categoria: combate
+    descricao: "Inimigos cercam o herói num terreno apertado: a cena pede luta."
+    estado_inicial:
+      heroi: {<<: *heroi_padrao}
+      combate: {ativo: false, inimigos: []}
+      mundo: {local: "Estrada do Rei", clima: "Chuva fina", turno: 7}
+      missao: {nome_missao: "Escoltar a carroça", objetivo_missao: "Levar a carga inteira até a cidade."}
+    acao_jogador: "Dois kobolds fecham a estrada à frente e um terceiro derruba um tronco atrás de mim. Não há por onde passar."
+    ferramenta_esperada: "iniciar_combate"
+    args_esperados: {}
+    resultado_mecanico_esperado: "iniciar_combate com Kobolds; o cenário 'emboscada' é o que combina com a cena."
+    notas_rubrica: "Não deve resolver a emboscada na prosa nem aplicar dano ao herói por conta própria."
+
+  - id: combate_criatura_acima_do_nivel
+    categoria: combate
+    descricao: "Herói de nível 1 provoca uma criatura muito acima dele."
+    estado_inicial:
+      heroi: {<<: *heroi_padrao}
+      combate: {ativo: false, inimigos: []}
+      mundo: {local: "Ruínas do Farol", clima: "Céu fechado", turno: 9}
+      missao: {nome_missao: "Explorar o farol", objetivo_missao: "Descobrir o que apagou a luz."}
+    acao_jogador: "Grito para o dragão que dorme no topo do farol descer e me enfrentar."
+    ferramenta_esperada: "iniciar_combate"
+    args_esperados: {}
+    resultado_mecanico_esperado: "Quem decide a ficha é o servidor: o nome vira pele de um monstro da banda do nível, não um dragão de verdade."
+    notas_rubrica: "Não deve narrar o herói morrendo nem vencendo. Não deve recusar a ação: o jogador escolhe a intenção."
+
+  - id: combate_conversa_tensa_nao_e_luta
+    categoria: combate
+    descricao: "A cena é hostil no tom, mas ninguém atacou: não deve abrir combate."
+    estado_inicial:
+      heroi: {<<: *heroi_padrao}
+      combate: {ativo: false, inimigos: []}
+      mundo: {local: "Vila de Phandalin", clima: "Ensolarado", turno: 5}
+      missao: {nome_missao: "Atravessar a ponte", objetivo_missao: "Chegar ao mercado antes do fim da tarde."}
+    acao_jogador: "Pergunto ao guarda, irritado, por que raios a ponte está fechada."
+    ferramenta_esperada: null
+    args_esperados: {}
+    resultado_mecanico_esperado: "Nenhum combate é criado. O guarda responde."
+    notas_rubrica: "Não deve chamar iniciar_combate nem transformar a irritação do jogador em agressão."
+
+  - id: combate_pocao_antes_da_luta
+    categoria: combate
+    descricao: "Ferido e fora de combate, o herói bebe a poção antes de entrar na caverna."
     estado_inicial:
       heroi: {<<: *heroi_padrao, hp_atual: 3, inventario: ["Cimitarra", "Poção de Cura"]}
-      combate:
-        ativo: true
-        inimigos:
-          - {nome: "Goblin", hp: 4, max_hp: 7, ca: 15, bonus_ataque: 4, dano_dado: "1d6+2", nome_ataque: "Cimitarra"}
+      combate: {ativo: false, inimigos: []}
       mundo: {local: "Masmorra Esquecida", clima: "Frio e úmido", turno: 12}
-      missao: {nome_missao: "Limpar a masmorra", objetivo_missao: "Sobreviver ao ataque do goblin ferido."}
-    acao_jogador: "Estou quase morrendo — eu bebo minha poção de cura antes de continuar lutando!"
+      missao: {nome_missao: "Limpar a masmorra", objetivo_missao: "Sobreviver ao que guarda o fundo da caverna."}
+    acao_jogador: "Antes de entrar, eu bebo minha poção de cura."
     ferramenta_esperada: "usar_item"
     args_esperados: {item: "Poção de Cura"}
     resultado_mecanico_esperado: "usar_item cura o herói (2d4+2) e remove a poção do inventário."
-    notas_rubrica: "Não deve narrar a cura como se já tivesse acontecido antes de chamar a ferramenta."
+    notas_rubrica: "Não deve narrar a cura como se já tivesse acontecido antes de chamar a ferramenta, nem dizer quanto curou."
 
-  - id: combate_consultar_regra_teste_de_morte
+  - id: combate_pergunta_de_regra_antes_da_luta
     categoria: combate
-    descricao: "Em combate, o jogador faz uma pergunta de regra em vez de agir."
+    descricao: "Com a ameaça à vista e sem combate ativo, o jogador pergunta uma regra em vez de agir."
     estado_inicial:
       heroi: {<<: *heroi_padrao, hp_atual: 6}
-      combate:
-        ativo: true
-        inimigos:
-          - {nome: "Esqueleto", hp: 9, max_hp: 13, ca: 13, bonus_ataque: 4, dano_dado: "1d6+2", nome_ataque: "Espada Curta"}
+      combate: {ativo: false, inimigos: []}
       mundo: {local: "Masmorra Esquecida", clima: "Frio e úmido", turno: 15}
       missao: {nome_missao: "Limpar a masmorra", objetivo_missao: "Vencer o esqueleto guardião."}
-    acao_jogador: "Espera, mestre — só uma dúvida: o que acontece exatamente se eu chegar a 0 de HP aqui?"
+    acao_jogador: "Espera, mestre — antes de eu avançar: o que acontece exatamente se eu chegar a 0 de HP numa luta?"
     ferramenta_esperada: "consultar_regra"
     args_esperados: {}
     resultado_mecanico_esperado: "consultar_regra busca 'teste de morte'/'0 de HP' na bíblia e devolve trechos reais."
-    notas_rubrica: "Deve responder com a regra real da bíblia, não inventar uma regra."
-
-  - id: combate_ataque_contra_chefe_bugbear
-    categoria: combate
-    descricao: "Combate contra o único chefe do bestiário, com HP bem mais alto que os inimigos comuns."
-    estado_inicial:
-      heroi: {<<: *heroi_padrao}
-      combate:
-        ativo: true
-        inimigos:
-          - {nome: "Bugbear", hp: 27, max_hp: 27, ca: 16, bonus_ataque: 4, dano_dado: "2d8+2", nome_ataque: "Maça Estrela"}
-      mundo: {local: "Masmorra Esquecida", clima: "Frio e úmido", turno: 20}
-      missao: {nome_missao: "Limpar a masmorra", objetivo_missao: "Derrotar o Bugbear que lidera os goblins."}
-    acao_jogador: "Eu avanço contra o Bugbear com minha cimitarra, mirando no pescoço dele."
-    ferramenta_esperada: "atacar"
-    args_esperados: {alvo: "Bugbear"}
-    resultado_mecanico_esperado: "Um único golpe não derruba um Bugbear (27 HP) — a narrativa não deve implicar vitória imediata."
-    notas_rubrica: "Não deve narrar o Bugbear morto se o HP dele continuar acima de 0 depois da ferramenta."
-
-  - id: combate_ataque_kobolds_em_grupo
-    categoria: combate
-    descricao: "Três kobolds em combate — o jogador escolhe atacar um específico."
-    estado_inicial:
-      heroi: {<<: *heroi_padrao}
-      combate:
-        ativo: true
-        inimigos:
-          - {nome: "Kobold", hp: 5, max_hp: 5, ca: 12, bonus_ataque: 4, dano_dado: "1d4+2", nome_ataque: "Adaga"}
-          - {nome: "Kobold", hp: 5, max_hp: 5, ca: 12, bonus_ataque: 4, dano_dado: "1d4+2", nome_ataque: "Adaga"}
-          - {nome: "Kobold", hp: 1, max_hp: 5, ca: 12, bonus_ataque: 4, dano_dado: "1d4+2", nome_ataque: "Adaga"}
-      mundo: {local: "Masmorra Esquecida", clima: "Frio e úmido", turno: 18}
-      missao: {nome_missao: "Limpar a masmorra", objetivo_missao: "Dispersar o bando de kobolds."}
-    acao_jogador: "Eu foco no kobold mais ferido, o que já está mancando."
-    ferramenta_esperada: "atacar"
-    args_esperados: {}
-    resultado_mecanico_esperado: "Deve mirar no kobold com hp:1 — o único claramente 'mais ferido'."
-    notas_rubrica: "Se acertar o kobold com hp:1 e o dano for >=1, ele deveria morrer — narrativa deve refletir isso."
-
-  - id: combate_ataque_alvo_por_apelido
-    categoria: combate
-    descricao: "Jogador se refere ao inimigo por uma descrição, não pelo nome exato do bestiário."
-    estado_inicial:
-      heroi: {<<: *heroi_padrao}
-      combate:
-        ativo: true
-        inimigos:
-          - {nome: "Goblin", hp: 7, max_hp: 7, ca: 15, bonus_ataque: 4, dano_dado: "1d6+2", nome_ataque: "Cimitarra"}
-      mundo: {local: "Masmorra Esquecida", clima: "Frio e úmido", turno: 6}
-      missao: {nome_missao: "Limpar a masmorra", objetivo_missao: "Derrotar o goblin remanescente."}
-    acao_jogador: "Eu ataco o bichinho verde de orelhas pontudas com a minha cimitarra!"
-    ferramenta_esperada: "atacar"
-    args_esperados: {}
-    resultado_mecanico_esperado: "O único inimigo vivo é 'Goblin' — o modelo precisa resolver a referência para o nome exato."
-    notas_rubrica: "Testa robustez de resolução de nome; 'ferramenta certa' importa mais que o argumento exato aqui."
+    notas_rubrica: "Deve responder com a regra real da bíblia, não inventar uma regra. Não deve abrir o combate por conta da pergunta."

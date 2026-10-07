@@ -1,5 +1,7 @@
 # Lugares transformados pela jornada
 
+> **Sem painel desde 07/10/2026** (ADR-0039). A aba Jornada virou a trilha do capítulo e este sistema saiu da tela. Ele continua funcionando no servidor e no contexto do narrador; o jogador mexe nele conversando com o mestre. As menções a botões e seções da Jornada abaixo descrevem a tela antiga.
+
 Uma melhoria física pode nascer de um projeto concluído no local atual. A IA propõe nome, descrição e uso, vinculando uma condição com evidência já realizada em lugar ou objeto existente. O jogador inaugura pela Jornada. Cada projeto sustenta uma instalação; há até trinta por campanha. A inauguração não cobra recursos nem concede itens.
 
 ## Efeitos desta etapa

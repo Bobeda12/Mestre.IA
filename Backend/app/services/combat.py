@@ -14,7 +14,7 @@ from app.domain.eventos import DadosRolagem, EventoRolagem, EventoStatus
 from app.domain.state import Aliado, CombatState, Inimigo
 from app.infra.data_manager import regras
 from app.services import rules_engine as motor
-from app.services.class_abilities import CONJURADORES, limite_foco, perfil_classe
+from app.services.class_abilities import CONJURADORES, dado_do_pulso, limite_foco, perfil_classe
 
 NOME_ARMA_DESARMADA = "Ataque Desarmado"
 _ARMA_DESARMADA = {"dano": "1d1", "propriedades": []}
@@ -162,7 +162,6 @@ def iniciar_combate(
         contagens[inimigo.nome] = contagens.get(inimigo.nome, 0) + 1
         if contagens[inimigo.nome] > 1:
             inimigo.nome += f" {contagens[inimigo.nome]}"
-        inimigo.intencao = intencao_inimiga(inimigo, 1)
     inimigos = [i for i, _ in pares]
     foco = limite_foco(nivel_heroi)
     c_state = CombatState(ativo=bool(inimigos), inimigos=inimigos, foco=foco, foco_max=foco)
@@ -189,6 +188,7 @@ def turno_jogador(
     investida: bool = False,
     classe: str | None = None,
     arma_equipada: str | None = None,
+    dano_extra: str | None = None,
 ) -> list[str]:
     """Resolve o ataque do jogador contra um inimigo vivo, mutando
     `c_state.inimigos` in place (mesmo padrão de reatribuição de coluna JSON
@@ -208,7 +208,9 @@ def turno_jogador(
     if classe in CONJURADORES and arma_proposta is None:
         attr_usado = perfil_classe(classe)["atributo"]
         mod_atributo = motor.calcular_modificador(atributos_heroi.get(attr_usado, 10))
-        nome_arma, dados_arma = "Pulso " + ("sagrado" if classe == "Clérigo" else "mágico"), {"dano": "1d6"}
+        nome_arma, dados_arma = "Pulso " + ("sagrado" if classe == "Clérigo" else "mágico"), {
+            "dano": dado_do_pulso(classe),
+        }
     elif classe == "Monge" and arma_proposta is None:
         attr_usado = "destreza"
         mod_atributo = motor.calcular_modificador(atributos_heroi.get(attr_usado, 10))
@@ -245,12 +247,14 @@ def turno_jogador(
     # o mesmo usado no bônus de ataque — entra aqui, fora do crítico (que
     # dobra dados, não modificador). O ataque de monstro já vem com o mod
     # embutido no texto de data/monsters.json (parse_ataque_monstro), por
-    # isso turno_inimigos() não repete essa soma.
+    # isso o ataque do inimigo (`turnos._atacar`) não repete essa soma.
     dano = motor.calcular_dano(dados_arma["dano"], resultado.critico, rng) + mod_atributo
     if classe:
         dano += nivel // 2
         if nivel >= 5:
             dano += motor.calcular_dano("2d6" if nivel >= 10 else "1d6", resultado.critico, rng)
+    if dano_extra:  # traço de classe (ex.: ataque furtivo do Ladino); o crítico dobra
+        dano += motor.calcular_dano(dano_extra, resultado.critico, rng)
     dano += 3 if alvo.efeitos.get("marcado", 0) else 0
     dano += 2 if c_state.efeitos_heroi.get("furia", 0) else 0
     dano += 2 if c_state.efeitos_heroi.get("lamina", 0) else 0  # Óleo de Lâmina (Fase 1)
@@ -320,24 +324,6 @@ def _combinar_vantagem(a: bool | None, b: bool | None) -> bool | None:
     return a if a == b else None
 
 
-def _comportamento_inimigo(inimigo: Inimigo, outros_vivos: int) -> tuple[bool, bool | None]:
-    """Fase 1 da revisão de gameplay — leitura simples do texto livre de
-    `comportamento` (data/monsters.json): três padrões por palavra-chave,
-    não geração nem IA de verdade. Devolve (pula_o_ataque, vantagem) —
-    `pula` quando o inimigo foge/recua em vez de atacar nesta rodada."""
-    texto = inimigo.comportamento.lower()
-    if "sozinho" in texto and outros_vivos == 0:
-        return True, None
-    ferido = inimigo.max_hp > 0 and inimigo.hp / inimigo.max_hp < 0.3
-    # Chefe luta até o fim: "recua para o ar" na ficha dele é sabor, e recuar
-    # aqui encerraria o confronto do capítulo como vitória aos 30% de PV.
-    chefe = (inimigo.arquetipo or inimigo.nome) in regras.get_monstros_chefe()
-    if ferido and not chefe and ("recua" in texto or "foge" in texto) and "nunca recua" not in texto:
-        return True, None
-    em_matilha = any(p in texto for p in ("alcateia", "alcatéia", "matilha", "grupo")) and outros_vivos > 0
-    return False, (True if em_matilha else None)
-
-
 def _escolher_alvo(c_state: CombatState, rng: random.Random | None) -> tuple[str, int | None]:
     """Fase 2 da revisão de gameplay — o inimigo escolhe entre o herói e os
     aliados vivos, peso aleatório entre os dois (regra de primeira passada,
@@ -355,144 +341,8 @@ def _escolher_alvo(c_state: CombatState, rng: random.Random | None) -> tuple[str
     return dado.choice(candidatos)
 
 
-def intencao_inimiga(inimigo: Inimigo, rodada: int) -> str:
-    """Intenção pública e previsível: o jogador pode responder antes do golpe."""
-    if inimigo.efeitos.get("atordoado", 0):
-        return "atordoado"
-    texto = inimigo.comportamento.lower()
-    if "regenera" in texto and rodada % 3 == 0:
-        return "regenerar"
-    if any(p in texto for p in ("brut", "agressiv", "territorial", "porrete")):
-        return "golpe pesado" if rodada % 2 == 0 else "preparar golpe"
-    if any(p in texto for p in ("etéreo", "emboscada", "calculista")) and rodada % 3 == 0:
-        return "ataque preciso"
-    return "atacar"
-
-
 def _avancar_efeitos(efeitos: dict[str, int]) -> dict[str, int]:
     return {nome: duracao - 1 for nome, duracao in efeitos.items() if duracao > 1}
-
-
-def finalizar_rodada(c_state: CombatState) -> None:
-    c_state.rodada += 1
-    c_state.aliados_agiram = []  # Fase 2 — cada aliado ataca uma vez por rodada
-    c_state.efeitos_heroi = _avancar_efeitos(c_state.efeitos_heroi)
-    for inimigo in c_state.inimigos:
-        inimigo.efeitos = _avancar_efeitos(inimigo.efeitos)
-        inimigo.intencao = intencao_inimiga(inimigo, c_state.rodada)
-
-
-def turno_inimigos(
-    c_state: CombatState, ca_heroi: int, rng: random.Random | None = None, vantagem: bool | None = None
-) -> tuple[list[str], int]:
-    """Cada inimigo vivo ataca, na ordem de `c_state.ordem_iniciativa`
-    (Etapa 7) — antes disso, todo mundo atacava de uma vez, na ordem de
-    spawn. Combates sem ordem calculada (ex: `CombatState` montado à mão em
-    teste, sem passar por `iniciar_combate`) caem de volta pra ordem de
-    `inimigos`, pra não quebrar chamadas antigas.
-
-    Fase 2 — o alvo de cada ataque não é mais sempre o herói: pode ser um
-    aliado vivo (`_escolher_alvo`), revisando a leitura original da decisão
-    de escopo §9.3 do PLANO_MESTRE.md (ver ADR-0027). `vantagem` (efeito de
-    uma ação tática do HERÓI — esquivar/investir, Fase 1) só se aplica
-    quando o alvo escolhido É o herói; contra um aliado, só o comportamento
-    de matilha do próprio inimigo (Fase 1) conta. Dano contra aliado é
-    aplicado direto em `c_state.aliados[i].hp`; o `int` devolvido continua
-    sendo só o dano que bateu no HERÓI — quem chama já soma isso em
-    `heroi.hp_atual`, contrato inalterado desde antes desta fase."""
-    eventos: list[str] = []
-    dano_heroi = 0
-    ordem = [idx for idx in c_state.ordem_iniciativa if idx >= 0] or list(range(len(c_state.inimigos)))
-    for turno_idx, idx in enumerate(ordem):
-        if idx >= len(c_state.inimigos):
-            continue
-        inimigo = c_state.inimigos[idx]
-        if inimigo.hp <= 0 or inimigo.afastado:
-            continue
-        if inimigo.efeitos.get("queimando", 0):
-            inimigo.hp = max(0, inimigo.hp - 2)
-            eventos.append(EventoRolagem(
-                f"🔥 {inimigo.nome} sofre 2 de queimadura.",
-                DadosRolagem(tipo="dano", quem="heroi", alvo=inimigo.nome, dano=2),
-            ))
-            if inimigo.hp <= 0 or inimigo.afastado:
-                eventos.append(EventoRolagem(
-                    f"💀 {inimigo.nome} cai.", EventoStatus(tipo="morte_inimigo", quem=inimigo.nome)
-                ))
-                continue
-        if inimigo.efeitos.get("atordoado", 0):
-            eventos.append(f"💫 {inimigo.nome} está atordoado e perde a ação.")
-            continue
-        if inimigo.intencao == "preparar golpe":
-            eventos.append(f"⚠️ {inimigo.nome} prepara um golpe pesado. Defenda-se ou interrompa!")
-            continue
-        if inimigo.intencao == "regenerar":
-            cura = min(5, inimigo.max_hp - inimigo.hp)
-            inimigo.hp += cura
-            eventos.append(f"💚 {inimigo.nome} regenera {cura} PV em vez de atacar.")
-            continue
-        c_state.turno_atual = turno_idx
-        outros_vivos = sum(1 for j, i in enumerate(c_state.inimigos) if j != idx and i.hp > 0 and not i.afastado)
-        pula, vantagem_comportamento = _comportamento_inimigo(inimigo, outros_vivos)
-        if pula:
-            # Recuar encerra a ameaça; não cria um inimigo imóvel que só
-            # pode ser perseguido e morto para liberar a cena.
-            inimigo.afastado = True
-            eventos.append(f"🏃 {inimigo.nome} recua e deixa de ameaçar o grupo.")
-            continue
-
-        tipo_alvo, idx_aliado = _escolher_alvo(c_state, rng)
-        if tipo_alvo == "aliado":
-            assert idx_aliado is not None  # garantido por _escolher_alvo: só "aliado" com índice junto
-            aliado = c_state.aliados[idx_aliado]
-            nome_alvo, ca_alvo = aliado.nome, aliado.ca
-            vantagem_efetiva = vantagem_comportamento  # táticas do herói (Fase 1) só o protegem a ele
-            linha = (
-                f"🎲 {inimigo.nome} ataca {aliado.nome} com {inimigo.nome_ataque}: "
-            )
-        else:
-            nome_alvo, ca_alvo = "heroi", ca_heroi
-            vantagem_efetiva = _combinar_vantagem(vantagem, vantagem_comportamento)
-            linha = f"🎲 {inimigo.nome} ataca com {inimigo.nome_ataque}: "
-
-        bonus_intencao = 2 if inimigo.intencao == "ataque preciso" else 0
-        resultado = motor.resolver_ataque(
-            inimigo.bonus_ataque + bonus_intencao, ca_alvo, rng, vantagem=vantagem_efetiva
-        )
-        linha += f"d20({resultado.rolagem})+{resultado.bonus}={resultado.total} vs CA {ca_alvo} → "
-        dados = DadosRolagem(
-            tipo="ataque", quem=inimigo.nome, alvo=nome_alvo, d20=resultado.rolagem, bonus=resultado.bonus,
-            total=resultado.total, ca=ca_alvo, sucesso=resultado.acerto, critico=resultado.critico,
-            falha_critica=resultado.falha_critica,
-            d20_extra=resultado.d20_extra, vantagem=resultado.vantagem,
-        )
-        if not resultado.acerto:
-            eventos.append(EventoRolagem(linha + "ERROU.", dados))
-            continue
-
-        dano = motor.calcular_dano(inimigo.dano_dado, resultado.critico, rng)
-        if inimigo.intencao == "golpe pesado":
-            dano += 3
-        if inimigo.efeitos.get("enfraquecido", 0):
-            dano = max(0, dano - 3)
-        if tipo_alvo == "heroi" and (
-            c_state.efeitos_heroi.get("furia", 0) or c_state.efeitos_heroi.get("protecao", 0)
-        ):
-            dano = max(0, dano - 2)
-        dados.dano = dano
-        texto = linha + f"ACERTO{' CRÍTICO' if resultado.critico else ''}! {dano} de dano."
-        eventos.append(EventoRolagem(texto, dados))
-        if tipo_alvo == "aliado":
-            aliado.hp = max(0, aliado.hp - dano)
-            if aliado.hp == 0:
-                eventos.append(
-                    EventoRolagem(f"💀 {aliado.nome} cai.", EventoStatus(tipo="morte_aliado", quem=aliado.nome))
-                )
-        else:
-            dano_heroi += dano
-    c_state.turno_atual = 0  # a rodada de inimigos acabou; a próxima começa no herói de novo
-    finalizar_rodada(c_state)
-    return eventos, dano_heroi
 
 
 def turno_morte(c_state: CombatState, rng: random.Random | None = None) -> tuple[list[str], int]:
@@ -539,41 +389,3 @@ def turno_morte(c_state: CombatState, rng: random.Random | None = None) -> tuple
 
     return eventos, 0
 
-
-def resolver_turno(
-    c_state: CombatState,
-    hp_atual: int,
-    ca_heroi: int,
-    atributos_heroi: dict,
-    inventario: list[str],
-    comando: dict,
-    rng: random.Random | None = None,
-    nivel: int = 1,
-) -> tuple[int, list[str]]:
-    """O ponto de entrada usado por routers/game.py durante um combate já
-    ativo. Muta `c_state` in place; devolve (novo hp do herói, eventos)."""
-    if hp_atual <= 0:
-        eventos_morte, hp_morte = turno_morte(c_state, rng)
-        return hp_morte, eventos_morte
-
-    eventos: list[str] = []
-    if comando.get("tipo") == "atacar":
-        eventos += turno_jogador(
-            c_state, atributos_heroi, inventario, comando.get("arma"), comando.get("alvo"), rng, nivel
-        )
-    else:
-        eventos.append("Você hesita e não ataca desta vez.")
-
-    if all(i.hp <= 0 or i.afastado for i in c_state.inimigos):
-        c_state.ativo = False
-        c_state.resultado = "vitoria"
-        eventos.append("🏆 Combate vencido!")
-        return hp_atual, eventos
-
-    eventos_inimigos, dano = turno_inimigos(c_state, ca_heroi, rng)
-    eventos += eventos_inimigos
-    hp_novo = max(0, hp_atual - dano)
-    if hp_novo == 0 and hp_atual > 0:
-        eventos.append("🩸 Você caiu! Nos próximos turnos, role para não morrer.")
-
-    return hp_novo, eventos

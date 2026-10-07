@@ -93,15 +93,17 @@ def test_rodar_cenario_sem_tool_call_devolve_narrativa_direta():
 def test_rodar_cenario_com_ferramenta_disparada():
     fake = _LLMFalso(
         [
-            _MensagemFalsa(tool_calls=[_ToolCallFalso("t1", "atacar", '{"alvo": "Goblin"}')]),
-            _MensagemFalsa(content="A cimitarra desce num arco certeiro."),
+            _MensagemFalsa(tool_calls=[_ToolCallFalso("t1", "iniciar_combate", '{"inimigos": ["Goblin"]}')]),
+            _MensagemFalsa(content="O goblin salta das sombras, cimitarra em punho."),
         ]
     )
-    resultado = rodar_cenario(_cenario_combate(), chamar_fn=fake)
+    # "ataco" é o que põe `iniciar_combate` entre as ferramentas do turno (tools.tools_para)
+    cenario = _cenario_sem_combate().model_copy(update={"acao_jogador": "Um goblin salta das sombras e eu ataco!"})
+    resultado = rodar_cenario(cenario, chamar_fn=fake)
 
     assert resultado.erro is None
     assert len(resultado.chamadas) == 1
-    assert resultado.chamadas[0].nome == "atacar"
+    assert resultado.chamadas[0].nome == "iniciar_combate"
     assert resultado.chamadas[0].sucesso is True
     assert len(resultado.chamadas_llm) == 2  # 1 chamada de ferramenta + 1 narrativa final
 

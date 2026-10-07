@@ -65,7 +65,7 @@ def test_empate_de_iniciativa_favorece_o_heroi():
 def test_inimigo_mais_rapido_age_antes_do_heroi():
     c = _luta("Orc", iniciativas=[20, 1])
     alvo = _alvo()
-    eventos = turnos.avancar_fila(c, alvo, RngFixo([15, 4]))  # acerta; dano com dado 4
+    eventos = turnos.avancar_fila(c, alvo, RngFixo([15, 15, 4]))  # chega e ataca (dois d20: desvantagem); dano 4
     assert turnos.da_vez(c) == HEROI and c.rodada == 1
     assert alvo.hp < 40 and c.inimigos[0].distancia == "perto"
     assert any("avança até você" in str(e) for e in eventos)
@@ -82,7 +82,7 @@ def test_rodada_sobe_quando_a_fila_da_a_volta():
     c = _luta("Orc", iniciativas=[1, 20])
     alvo = _alvo()
     turnos.avancar_fila(c, alvo, RngFixo([]))
-    turnos.avancar_fila(c, alvo, RngFixo([2]))  # o Orc erra
+    turnos.avancar_fila(c, alvo, RngFixo([2, 2]))  # o Orc avança e erra
     assert c.rodada == 2 and turnos.da_vez(c) == HEROI
 
 
@@ -124,7 +124,7 @@ def test_cada_inimigo_so_reage_uma_vez_por_rodada_e_recupera_na_propria_vez():
     turnos.recuar(c, alvo, RngFixo([2]))
     c.inimigos[0].distancia = "perto"
     assert _dados(turnos.recuar(c, alvo, RngFixo([])), "ataque") == []  # já reagiu
-    turnos.vez_inimigo(c, c.inimigos[0], alvo, RngFixo([2]))
+    turnos.vez_inimigo(c, c.inimigos[0], alvo, RngFixo([2, 2]))  # volta a avançar e erra
     assert c.inimigos[0].reacao_usada is False
 
 
@@ -226,9 +226,9 @@ def test_sopro_avisa_uma_vez_antes_e_depois_recarrega():
     dragao, alvo = c.inimigos[0], _alvo(hp=500)
     primeira = turnos.vez_inimigo(c, dragao, alvo, RngFixo([2]))  # ataque comum, erra
     assert _dados(primeira, "resistencia") == [] and dragao.intencao == "sopro"
-    sopro = turnos.vez_inimigo(c, dragao, alvo, RngFixo([3, 6, 6, 6, 6]))  # resistência 3 falha; 4d6
+    sopro = turnos.vez_inimigo(c, dragao, alvo, RngFixo([3, 6, 6, 6]))  # resistência 3 falha; 3d6
     res = _dados(sopro, "resistencia")[0]
-    assert res.sucesso is False and res.dano == 24 and alvo.hp == 500 - 24
+    assert res.sucesso is False and res.dano == 18 and alvo.hp == 500 - 18
     assert dragao.recarga == 3
     for _ in range(2):
         assert _dados(turnos.vez_inimigo(c, dragao, alvo, RngFixo([2])), "resistencia") == []
@@ -239,8 +239,8 @@ def test_resistir_ao_sopro_corta_o_dano_pela_metade():
     c = _luta("Dragão Jovem", perto=True)
     dragao, alvo = c.inimigos[0], _alvo(hp=500)
     dragao.recarga = 1
-    turnos.vez_inimigo(c, dragao, alvo, RngFixo([20, 6, 6, 6, 6]))
-    assert alvo.hp == 500 - 12
+    turnos.vez_inimigo(c, dragao, alvo, RngFixo([20, 6, 6, 6]))
+    assert alvo.hp == 500 - 9
 
 
 def test_heroi_caido_no_chao_leva_ataque_com_vantagem_de_quem_esta_perto():

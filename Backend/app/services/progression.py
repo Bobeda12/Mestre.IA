@@ -52,28 +52,34 @@ def painel_progressao(heroi, c_state, w_state=None) -> dict:
     perfil = perfil_classe(heroi.classe)
     habilidades = []
     for habilidade in perfil["habilidades"]:
-        publica = {k: habilidade[k] for k in ("id", "nome", "descricao", "nivel", "custo", "alvo")}
+        publica = {k: habilidade[k] for k in ("id", "nome", "descricao", "nivel", "custo", "alvo", "acao", "alcance")}
         publica["disponivel"] = bool(
             c_state.ativo and heroi.hp_atual > 0 and nivel >= habilidade["nivel"]
             and c_state.foco >= habilidade["custo"]
         )
         habilidades.append(publica)
     marcos = {
-        1: "Sua primeira técnica. Ataque básico recupera 1 Foco; defender recupera 2.",
+        1: "Sua primeira técnica. O Foco só volta descansando; defender recupera 1.",
         2: "Maestria I: +1 dano em ataques e técnicas.",
         3: f"Nova técnica: {perfil['habilidades'][1]['nome']}.",
-        4: "4 Foco máximo e maestria II (+2 dano).",
+        4: "+1 de Foco máximo e maestria II (+2 dano).",
         5: "Ataques básicos recebem +1d6 e proficiência sobe para +3.",
         6: "Maestria III: +3 dano em ataques e técnicas.",
         7: f"Técnica suprema: {perfil['habilidades'][2]['nome']}.",
-        8: "5 Foco máximo e maestria IV (+4 dano).",
+        8: "+1 de Foco máximo e maestria IV (+4 dano).",
         9: "Proficiência sobe para +4: mais precisão em ataques.",
         10: "Lenda: ataques básicos recebem +2d6 e maestria V (+5 dano).",
     }
     return {
         "nivel_maximo": NIVEL_MAXIMO, "estilo": perfil["estilo"],
-        "recurso": {"nome": "Foco", "atual": c_state.foco, "maximo": limite_foco(nivel)},
+        "recurso": {
+            "nome": "Foco", "maximo": limite_foco(nivel, heroi.classe),
+            # Sem nenhuma luta no motor novo ainda, o herói está descansado.
+            "atual": c_state.foco if (c_state.versao >= 2 or c_state.ativo) else limite_foco(nivel, heroi.classe),
+        },
         "habilidades": habilidades,
+        # O traço que faz a classe jogar diferente (ADR-0042), para a ficha.
+        "passiva": perfil["passiva"],
         "niveis": [{"nivel": n, "xp": xp, "descricao": marcos[n]} for n, xp in XP_POR_NIVEL.items()],
         # Fase 3 (ADR-0034)
         "pendencias": pendencias,

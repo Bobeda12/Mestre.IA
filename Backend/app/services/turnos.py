@@ -1,7 +1,7 @@
 """Combate v2 — fila de turnos com iniciativa real, distância e condições.
 
-No motor antigo (`combat.turno_inimigos`) um clique era a ação do herói mais a
-rodada inteira dos inimigos, sempre com o herói primeiro. Aqui cada
+Até a Fase 5 do plano, um clique era a ação do herói mais a rodada inteira
+dos inimigos, sempre com o herói primeiro (ADR-0040). Aqui cada
 participante tem a sua vez, na ordem rolada: o herói, cada inimigo e cada
 aliado. A distância é uma etiqueta por inimigo ("perto" ou "longe" do herói),
 sem mapa. Tudo determinístico com `rng` injetado, sem LLM (ADR-0006)."""
@@ -36,6 +36,7 @@ class Alvo:
     ca: int
     atributos: dict
     nivel: int = 1
+    bonus_resistencia: int = 0  # traço de classe (ex.: Paladino)
 
 
 # -- preparação ---------------------------------------------------------------
@@ -173,7 +174,7 @@ def _resistencia_do_heroi(c_state: CombatState, alvo: Alvo, inimigo: Inimigo, ha
                           rng: random.Random | None) -> tuple[bool, DadosRolagem]:
     tipo = hab.get("resistencia", "vigor")
     atributo = ATRIBUTO_RESISTENCIA[tipo]
-    mod = motor.calcular_modificador(alvo.atributos.get(atributo, 10))
+    mod = motor.calcular_modificador(alvo.atributos.get(atributo, 10)) + alvo.bonus_resistencia
     r = motor.resolver_teste_atributo(mod, int(hab.get("cd", 12)), rng)
     dados = DadosRolagem(
         tipo="resistencia", quem=HEROI, ator=inimigo.id, d20=r.rolagem, bonus=mod, total=r.total, cd=r.cd,
@@ -314,6 +315,9 @@ def vez_inimigo(c_state: CombatState, inimigo: Inimigo, alvo: Alvo, rng: random.
         if inimigo.alcance == "corpo" and inimigo.distancia == "longe":
             inimigo.distancia = "perto"
             eventos.append(f"👣 {inimigo.nome} avança até você.")
+            # Quem atravessa a cena chega sem firmeza: é o que dá valor à
+            # distância para quem luta de longe.
+            vantagem = combat._combinar_vantagem(vantagem, False)
         hab = inimigo.habilidade
         if hab and hab.get("gatilho") == "acao" and inimigo.recarga == 0:
             eventos += _usar_habilidade(c_state, inimigo, alvo, rng)

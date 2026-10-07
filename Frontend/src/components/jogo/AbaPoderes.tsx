@@ -1,4 +1,4 @@
-import type { Progressao } from '../../lib/gameplay';
+import type { AcaoDireta, Progressao } from '../../lib/gameplay';
 import PixelIcon from '../PixelIcon';
 
 // Item 10 da rodada de melhorias pós-Fase-6 — antes, "técnicas" (habilidades)
@@ -7,9 +7,16 @@ import PixelIcon from '../PixelIcon';
 // exibidos em lugar nenhum depois de escolhidos. A trilha de níveis 1–N, que
 // morava na aba JORNADA, muda pra cá — é sobre a build do personagem, não
 // sobre a missão em andamento.
+export interface Aprendizado { id: string; nome: string; descricao: string; atributo: string; ativo: boolean }
+
 interface Props {
   progressao: Progressao | null;
   nivel: number;
+  // O que a jornada ensinou (sistema de aprendizados): morava num painel da
+  // aba Jornada que saiu da tela; a escolha é do jogador e fica aqui.
+  aprendizados?: Aprendizado[];
+  bloqueado?: boolean;
+  aoAgir?: (acao: AcaoDireta, rotulo: string) => void;
 }
 
 function Secao({ titulo, icone, children }: { titulo: string; icone: Parameters<typeof PixelIcon>[0]['name']; children: React.ReactNode }) {
@@ -31,6 +38,15 @@ export default function AbaPoderes(p: Props) {
     <div className="animate-fade-in space-y-5">
       {!p.progressao && <p className="text-sm text-gray-400 font-rpg text-center py-4">Progressão indisponível.</p>}
 
+      {p.progressao?.passiva && (
+        <Secao titulo="Traço da classe" icone="estrela">
+          <div className="border-2 border-rpg-gold/50 bg-black/40 p-2 space-y-0.5">
+            <p className="font-rpg text-sm text-rpg-gold">{p.progressao.passiva.nome}</p>
+            <p className="text-[11px] text-gray-300 leading-snug">{p.progressao.passiva.descricao}</p>
+          </div>
+        </Secao>
+      )}
+
       {habilidades.length > 0 && (
         <Secao titulo="Técnicas" icone="pocao-azul">
           <div className="space-y-1.5">
@@ -40,13 +56,35 @@ export default function AbaPoderes(p: Props) {
                 <div key={h.id} className={`border-2 p-2 space-y-0.5 ${trancada ? 'border-gray-800 bg-black/20 opacity-60' : 'border-gray-700 bg-black/40'}`}>
                   <p className="flex items-center justify-between gap-2 font-rpg text-sm text-gray-100">
                     <strong>{h.nome}</strong>
-                    <span className="text-[11px] text-sky-300 shrink-0">{h.custo} {foco?.nome ?? 'Foco'}</span>
+                    <span className="text-[11px] text-sky-300 shrink-0">{h.acao === 'bonus' ? 'Ação bônus · ' : ''}{h.custo} {foco?.nome ?? 'Foco'}</span>
                   </p>
                   <p className="text-[11px] text-gray-300 leading-snug">{h.descricao}</p>
                   {trancada && <p className="text-[10px] text-gray-500 font-rpg">Desbloqueia no nível {h.nivel}</p>}
                 </div>
               );
             })}
+          </div>
+        </Secao>
+      )}
+
+      {!!p.aprendizados?.length && (
+        <Secao titulo="O que a jornada ensinou" icone="pergaminho">
+          <div className="space-y-1.5">
+            {p.aprendizados.map(a => (
+              <div key={a.id} className="border-2 border-gray-700 bg-black/40 p-2 space-y-1">
+                <p className="font-rpg text-sm text-rpg-gold">{a.nome}</p>
+                <p className="text-[11px] text-gray-300 leading-snug">{a.descricao}</p>
+                {a.ativo
+                  ? <p className="text-[10px] text-emerald-300 font-rpg">Aprendido: +1 em {a.atributo} nessa situação.</p>
+                  : (
+                    <button type="button" disabled={p.bloqueado || !p.aoAgir}
+                      className="px-2.5 py-1.5 border-2 border-rpg-gold/70 bg-black/40 text-xs font-rpg text-rpg-gold hover:border-rpg-gold disabled:opacity-45 disabled:cursor-not-allowed"
+                      onClick={() => p.aoAgir?.({ acao: 'escolher_aprendizado', alvo: a.id }, `Aprender: ${a.nome}`.slice(0, 80))}>
+                      Desenvolver este aprendizado
+                    </button>
+                  )}
+              </div>
+            ))}
           </div>
         </Secao>
       )}

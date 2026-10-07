@@ -1,5 +1,7 @@
 # Projetos livres — primeiro ciclo
 
+> **Sem painel desde 07/10/2026** (ADR-0039). A aba Jornada virou a trilha do capítulo e este sistema saiu da tela. Ele continua funcionando no servidor e no contexto do narrador; o jogador mexe nele conversando com o mestre. As menções a botões e seções da Jornada abaixo descrevem a tela antiga.
+
 Na Jornada, o jogador escolhe uma ambição em texto livre. Há um projeto ativo por vez e até 30 registros por campanha. Iniciar, concluir e abandonar são decisões exclusivas do jogador, bloqueadas em combate ou inconsciência. Não gastam recursos nem concedem recompensas automáticas.
 
 O narrador carrega o grupo `projetos` por demanda. `planejar_projeto` define de uma a cinco condições de resultado em alvos presentes. Não há catálogo de ambições, ordem de etapas nem meios obrigatórios. O plano é preservado após registrado; o jogador pode superar uma exigência por um caminho alternativo.

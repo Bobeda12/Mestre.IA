@@ -36,5 +36,9 @@ export function useAuth() {
 
 export function useInvalidarAuth() {
   const queryClient = useQueryClient();
-  return () => queryClient.invalidateQueries({ queryKey: ['auth'] });
+  // `refetchType: 'all'`: a tela de entrada não observa esta query, e o
+  // padrão ('active') só marcaria o dado como velho sem buscar de novo — a
+  // promessa resolvia na hora e quem navegasse em seguida ainda era visto
+  // como "não logado" pela rota protegida.
+  return () => queryClient.invalidateQueries({ queryKey: ['auth'], refetchType: 'all' });
 }

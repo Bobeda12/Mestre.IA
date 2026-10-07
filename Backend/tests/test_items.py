@@ -144,20 +144,6 @@ class TestUsarItem:
         r = ex.usar_item("Frasco de Óleo")
         assert r["dano_total"] == 12 and r["resultado"] == "vitoria" and c.ativo is False
 
-    def test_oleo_de_lamina_soma_dois_no_ataque(self):
-        heroi = _heroi(inventario=["Óleo de Lâmina", "Espada Longa"], classe="Guerreiro")
-        heroi.equipamento = {"arma": "Espada Longa"}
-        goblin = Inimigo(nome="Goblin", hp=20, max_hp=20, ca=10, bonus_ataque=4, dano_dado="1d6+2")
-        c = CombatState(ativo=True, inimigos=[goblin])
-        ex = _executor(heroi=heroi, c_state=c, rng=RngFixo([15, 4, 5]))
-        ex.usar_item("Óleo de Lâmina")
-        assert c.efeitos_heroi.get("lamina") == 2  # 3 rodadas, uma já passou (reação inimiga)
-        ex2 = _executor(heroi=heroi, c_state=c, rng=RngFixo([15, 4, 5, 5]))
-        ex2.atacar("Goblin")
-        # d8=4 + FOR(+2) + lâmina 2 = 8 de dano
-        assert c.inimigos[0].hp == 12
-
-
 class TestLoot:
     def _goblin(self):
         return Inimigo(

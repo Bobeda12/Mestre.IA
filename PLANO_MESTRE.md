@@ -318,6 +318,8 @@ backend/
 
 **Escopo do 5e** (decisão §9.2) — implementa só o subconjunto que os seus JSONs já descrevem. Fica **fora**, e precisa estar escrito no README para não parecer omissão: magias com slots, multiclasse, façanhas, grid tático com deslocamento, e a maior parte das condições. O combate é theater-of-the-mind com resolução determinística. **Um herói contra N inimigos** — sem abstração de mesa multi-jogador (decisão §9.3).
 
+> **Revisto em 07/10/2026** (ADR-0040 a ADR-0042): o combate ganhou fila de turnos, ação bônus, distância perto/longe, resistências e condições. Grid com deslocamento em metros, slots de magia, multiclasse e façanhas continuam fora.
+
 **Tecnologia nova:** injeção de aleatoriedade para testar sistemas estocásticos, máquinas de estado, `pytest.mark.parametrize`, testes baseados em propriedades (`hypothesis`, opcional)
 
 **Documentos:**
@@ -578,6 +580,8 @@ O motor segue 5e, implementando **só o subconjunto necessário** — o que já 
 Por que 5e ganha: seus dados já são 5e (`"Cimitarra (+4 para acertar, 1d6+2 dano)"`), o jogador já sabe jogar, e — o argumento decisivo — o golden dataset da Etapa 6 ganha uma **referência externa de correção**. Com sistema próprio, "o resultado está certo?" vira opinião sua; com 5e, é verificável contra a regra publicada.
 
 O que fica explicitamente **fora** do 5e implementado, e precisa estar escrito no README para não parecer omissão: magias com slots, multiclasse, façanhas, grid tático com deslocamento em metros, e a maior parte das condições. O combate é theater-of-the-mind com resolução determinística.
+
+> **Revisto em 07/10/2026** (ADR-0040 a ADR-0042): o combate ganhou fila de turnos, ação bônus, distância perto/longe, resistências e condições. Grid com deslocamento em metros, slots de magia, multiclasse e façanhas continuam fora.
 
 ### 9.3 Single-player ✅
 

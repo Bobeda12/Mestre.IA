@@ -356,8 +356,6 @@ def _testar(
 def _finalizar(executor: "ToolExecutor", resultado: dict, significativo: bool = False) -> dict:
     if significativo:
         registrar_fato(executor, resultado["descricao"])
-    if executor.c_state.ativo:
-        resultado.update(executor._resolver_reacao_inimiga())
     return resultado
 
 

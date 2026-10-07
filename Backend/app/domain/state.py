@@ -74,11 +74,6 @@ class CombatState(BaseModel):
     foco_max: int = 3
     rodada: int = 1
     efeitos_heroi: dict[str, int] = {}
-    # Fase 2 do plano "jogo completo" — aliados que já atacaram nesta rodada.
-    # Era um `set` por request no ToolExecutor; via /game/action cada clique é
-    # um request novo, então um aliado atacaria sem limite. Zerado em
-    # `combat.finalizar_rodada`.
-    aliados_agiram: list[str] = []
     # Fase 4/5 — este combate é o do chefe do arco (marcado em iniciar_combate).
     chefe_do_arco: bool = False
     acao_resolvida: bool = False
@@ -87,34 +82,25 @@ class CombatState(BaseModel):
     objetivo_concluido: bool = False
     interacoes_usadas: list[str] = []
     inimigos: list[Inimigo] = []
-    # Fase 2 — ver `Aliado`. `combat.turno_inimigos` escolhe entre o herói
-    # e os aliados vivos como alvo de cada ataque inimigo; ADR-0027 revisa
-    # a decisão de escopo §9.3 (PLANO_MESTRE.md) que isto altera.
+    # Ver `Aliado`. Cada inimigo escolhe entre o herói e os aliados de pé
+    # como alvo do ataque (`combat._escolher_alvo`, ADR-0027).
     aliados: list[Aliado] = []
     # Testes de morte (herói a 0 PV) — ver services/combat.py:turno_morte.
     sucessos_morte: int = 0
     falhas_morte: int = 0
     resultado: Literal["vitoria", "morte", "estabilizado"] | None = None
-    # Ordem de iniciativa (Etapa 7) — índices em `inimigos`, com -1
-    # representando o herói, ordenados do maior pro menor resultado de
-    # `rules_engine.rolar_iniciativa`. Calculada uma vez em
-    # `combat.iniciar_combate`; `combat.turno_inimigos` ataca nessa ordem
-    # em vez de todos de uma vez. `turno_atual` é o índice dentro desta
-    # lista — HUD do frontend usa pra destacar de quem é a vez; não trava a
-    # resolução (o backend ainda resolve o herói e depois a rodada de
-    # inimigos inteira numa única chamada, um turno = uma mensagem).
+    # Só existe em saves anteriores à fila de turnos: índices em `inimigos`
+    # (-1 = herói) na ordem antiga. `turnos.migrar_combate` lê isto uma vez
+    # para montar `fila`; lutas novas não o preenchem.
     ordem_iniciativa: list[int] = []
-    turno_atual: int = 0
-    # Fase 1 da revisão de gameplay (Etapa 12/13) — efeitos das ações
-    # estruturadas (esquivar/defender/investir/esconder_se) sobre a PRÓXIMA
-    # rodada de inimigos. `services/tools.py:_resolver_reacao_inimiga`
-    # consome e reseta os três depois de cada rodada — "até seu próximo
-    # turno" dura exatamente uma rodada, nunca mais.
+    # O que o herói armou no próprio turno (esquivar, defender, investir,
+    # esconder-se) e vale contra os inimigos até o turno seguinte dele,
+    # quando `turnos.iniciar_vez_heroi` zera os três.
     heroi_vantagem_inimiga: bool | None = None  # True=investir (vantagem p/ inimigo), False=esquivar (desvantagem)
     heroi_bonus_ca: int = 0  # defender: +2 na CA do herói contra a próxima rodada
     heroi_escondido: bool = False  # esconder_se bem-sucedido: inimigos não acham o herói nesta rodada
-    # Combate v2 (services/turnos.py). `versao` 1 = luta do motor antigo,
-    # migrada por `turnos.migrar_combate`. `fila` são ids ("heroi", "i1",
+    # Fila de turnos (services/turnos.py). `versao` 1 = luta de save antigo,
+    # convertida por `turnos.migrar_combate`. `fila` são ids ("heroi", "i1",
     # "a1") na ordem da iniciativa; `vez` é o índice de quem age agora.
     versao: int = 1
     fila: list[str] = []
@@ -157,7 +143,14 @@ class WorldState(BaseModel):
     versao_progressao: int = 0
     objetivos_concluidos: list[str] = []
     clima: str = ""
+    # Tempo de jogo: sobe quando o herói gasta um turno de verdade (uma ação
+    # fora de combate, o fim do turno dele em combate, um turno narrado).
     turno: int = 1
+    # Quantas vezes este save foi alterado. É o que o clique compara antes de
+    # gravar (um clique repetido nunca resolve duas vezes). Antes o próprio
+    # `turno` fazia os dois papéis, e cada clique de painel, de ação bônus ou
+    # de movimento adiantava o relógio do mundo.
+    revisao: int = 1
     # Fase 5 — locais que `mover()` registrou porque o narrador propôs uma
     # descrição pra um destino fora do catálogo. `services/tools.py:mover`
     # consulta isto ANTES do catálogo global — é o que faz o motor nunca
@@ -185,6 +178,8 @@ class WorldState(BaseModel):
     # sucedido; -999 nunca aconteceu. `descansar` usa isso pra impedir
     # descanso longo em sequência sem tempo narrativo passar entre eles.
     ultimo_descanso_longo: int = -999
+    # Descansos curtos feitos desde o último longo (ADR-0042: no máximo dois).
+    descansos_curtos: int = 0
     # Pendência do remaster UX (PLANO_REMASTER_UX.md, item 2) — hora do dia
     # (0-23), começa às 8h. Avança por AÇÃO lógica em services/tools.py
     # (mover = poucas horas, descanso longo = uma noite inteira), nunca por

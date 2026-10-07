@@ -1,5 +1,7 @@
 # Descoberta, convivência e identidade
 
+> **Sem painel desde 07/10/2026** (ADR-0039). A aba Jornada virou a trilha do capítulo e marcas e momentos saíram da tela (os sinais da cena continuam). O sistema continua funcionando no servidor e no contexto do narrador; o jogador mexe nele conversando com o mestre. As menções a botões e seções da Jornada abaixo descrevem a tela antiga.
+
 O conteúdo continua sendo criado pela IA a partir da campanha. Não há catálogo de cenas pessoais, apelidos ou soluções de enigmas.
 
 - Particularidades aceitam até quatro pistas alternativas em fontes presentes. A regra e as pistas ficam fixadas no registro; a interface só recebe pistas descobertas. `resolver_intencao` usa o efeito `pista` com o ID da particularidade em `alvo` e o ID da pista em `texto`. Uma dedução coerente pode usar `revelar` sem completar uma sequência.

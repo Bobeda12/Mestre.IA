@@ -32,20 +32,9 @@ class Cenario:
 
 
 CENARIOS = [
-    Cenario(
-        nome="ataque_com_arma_nomeada",
-        sistema='[COMBATE ATIVO] Inimigos vivos: [{"nome": "Goblin", "hp": 7}]. Inventário: ["Cimitarra"].',
-        acao="Eu ataco o goblin com minha cimitarra!",
-        ferramenta_esperada="atacar",
-        args_esperados={"alvo": "goblin", "arma": "cimitarra"},
-    ),
-    Cenario(
-        nome="ataque_sem_citar_arma",
-        sistema='[COMBATE ATIVO] Inimigos vivos: [{"nome": "Esqueleto", "hp": 13}]. Inventário: ["Espada Curta"].',
-        acao="Eu tento acertar o esqueleto com tudo que tenho!",
-        ferramenta_esperada="atacar",
-        args_esperados={"alvo": "esqueleto"},
-    ),
+    # Os dois cenários de "atacar" com combate ativo saíram em 07/10/2026: desde
+    # o combate por turnos (ADR-0040/0041) o narrador não recebe mais ações de
+    # combate, então não há o que medir aqui. Abrir a luta continua medido abaixo.
     Cenario(
         nome="spawn_combate_lobo",
         sistema="[CENA] Floresta das Sombras. Um lobo emerge da neblina, rosnando, pronto para atacar.",

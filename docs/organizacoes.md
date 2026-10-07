@@ -1,5 +1,7 @@
 # Organizações e iniciativas coletivas
 
+> **Sem painel desde 07/10/2026** (ADR-0039). A aba Jornada virou a trilha do capítulo e este sistema saiu da tela. Ele continua funcionando no servidor e no contexto do narrador; o jogador mexe nele conversando com o mestre. As menções a botões e seções da Jornada abaixo descrevem a tela antiga.
+
 Grupos são criados pela IA para a campanha, com nome, propósito, princípio público e até cinco NPCs registrados e presentes. Não há facções de catálogo nem filiação automática do jogador. A identidade registrada é preservada. Saves antigos recebem uma coleção vazia.
 
 `mobilizar_organizacao` vincula um acontecimento real a um representante que o conhece. Uma reação por acontecimento e organização, um conflito ativo por representante e no máximo duas iniciativas simultâneas por organização. Existem até vinte organizações e quarenta conflitos por campanha.

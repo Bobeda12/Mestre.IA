@@ -173,7 +173,7 @@ def test_efeitos_aplicam_os_numeros_do_servidor():
     assert turnos.da_vez(c) == "heroi" and c.rodada == 2  # o Orc, atordoado, perdeu a vez
 
     heroi, c, w = _luta("Orc")
-    _, _, ex = _improvisar(heroi, c, w, RngFixo([20, 2]), "empurrar")
+    _, _, ex = _improvisar(heroi, c, w, RngFixo([20, 2, 2]), "empurrar")
     assert "Orc é afastado de você" in _textos(ex) and "Orc avança até você" in _textos(ex)  # e ele volta na vez dele
 
     heroi, c, w = _luta("Orc")
@@ -242,9 +242,9 @@ def _clique(sid, acao, esperado, **extra):
 def test_api_narra_a_rodada_com_os_fatos_do_servidor_e_grava(monkeypatch):
     sid = _partida(monkeypatch)
     carga = client.post("/load_game", json={"session_id": sid}).json()
-    recuo = _clique(sid, "recuar", carga["turno_mundo"]).json()
+    recuo = _clique(sid, "recuar", carga["revisao"]).json()
     assert recuo["narravel"] is False  # o turno ainda está aberto
-    fim = _clique(sid, "encerrar_turno", recuo["turno_mundo"]).json()
+    fim = _clique(sid, "encerrar_turno", recuo["revisao"]).json()
     assert fim["narravel"] is True
     indice = fim["turno_index"]
 
@@ -269,16 +269,16 @@ def test_api_narra_a_rodada_com_os_fatos_do_servidor_e_grava(monkeypatch):
 def test_api_sem_ia_devolve_aviso_e_a_luta_segue(monkeypatch):
     sid = _partida(monkeypatch)  # `_partida` zera os provedores
     carga = client.post("/load_game", json={"session_id": sid}).json()
-    fim = _clique(sid, "encerrar_turno", carga["turno_mundo"]).json()
+    fim = _clique(sid, "encerrar_turno", carga["revisao"]).json()
     r = client.post("/game/narrar_rodada", json={"session_id": sid, "turno_index": fim["turno_index"]})
     assert r.status_code == 200 and r.json()["prosa"] is None and "sem voz" in r.json()["aviso"]
-    assert _clique(sid, "encerrar_turno", fim["turno_mundo"]).status_code == 200
+    assert _clique(sid, "encerrar_turno", fim["revisao"]).status_code == 200
 
 
 def test_api_recusa_narrar_o_que_nao_fechou_rodada(monkeypatch):
     sid = _partida(monkeypatch)
     carga = client.post("/load_game", json={"session_id": sid}).json()
-    recuo = _clique(sid, "recuar", carga["turno_mundo"]).json()
+    recuo = _clique(sid, "recuar", carga["revisao"]).json()
     r = client.post("/game/narrar_rodada", json={"session_id": sid, "turno_index": recuo["turno_index"]})
     assert r.status_code == 400
     assert client.post("/game/narrar_rodada", json={"session_id": sid, "turno_index": 9999}).status_code == 400
@@ -291,12 +291,12 @@ def test_api_acima_do_teto_nao_chama_a_ia(monkeypatch):
     monkeypatch.setattr(combate_ia.llm_client, "chamar_com_fallback",
                         lambda *a, **k: (_ for _ in ()).throw(AssertionError("não devia chamar a IA")))
     carga = client.post("/load_game", json={"session_id": sid}).json()
-    improviso = _clique(sid, "improvisar", carga["turno_mundo"], proposta="Empurro a sentinela da ponte", alvo="i1")
+    improviso = _clique(sid, "improvisar", carga["revisao"], proposta="Empurro a sentinela da ponte", alvo="i1")
     assert improviso.status_code == 200, improviso.text  # julgado pelo servidor, sem erro
     assert "Improviso (forca)" in improviso.json()["narrativa"]
     fim = improviso.json()
     if not fim["narravel"]:
-        fim = _clique(sid, "encerrar_turno", fim["turno_mundo"]).json()
+        fim = _clique(sid, "encerrar_turno", fim["revisao"]).json()
     r = client.post("/game/narrar_rodada", json={"session_id": sid, "turno_index": fim["turno_index"]})
     assert r.json()["prosa"] is None
 
@@ -307,7 +307,7 @@ def test_api_improvisar_usa_o_julgamento_da_ia_e_o_servidor_rola(monkeypatch):
     monkeypatch.setattr(combate_ia.llm_client, "clients", {"gemini": object()})
     monkeypatch.setattr(combate_ia.llm_client, "chamar_com_fallback", lambda msgs, **k: ia(msgs, **k))
     carga = client.post("/load_game", json={"session_id": sid}).json()
-    r = _clique(sid, "improvisar", carga["turno_mundo"], proposta="Rosno e bato a espada no escudo",
+    r = _clique(sid, "improvisar", carga["revisao"], proposta="Rosno e bato a espada no escudo",
                 rotulo="Improvisar: rosno e bato a espada no escudo")
     assert r.status_code == 200, r.text
     corpo = r.json()
@@ -320,9 +320,9 @@ def test_api_improvisar_usa_o_julgamento_da_ia_e_o_servidor_rola(monkeypatch):
 def test_api_improvisar_fora_de_combate_ou_sem_texto_e_recusado(monkeypatch):
     sid = _partida(monkeypatch)
     carga = client.post("/load_game", json={"session_id": sid}).json()
-    assert _clique(sid, "improvisar", carga["turno_mundo"], proposta="  ").status_code == 400
+    assert _clique(sid, "improvisar", carga["revisao"], proposta="  ").status_code == 400
     with SessionLocal() as db:
         heroi = db.query(Personagem).filter_by(session_id=sid).one()
         heroi.combat_state = {**heroi.combat_state, "ativo": False}
         db.commit()
-    assert _clique(sid, "improvisar", carga["turno_mundo"], proposta="Derrubo o lustre").status_code == 400
+    assert _clique(sid, "improvisar", carga["revisao"], proposta="Derrubo o lustre").status_code == 400

@@ -155,12 +155,12 @@ def test_clique_resolve_persiste_e_repeticao_nao_gasta_rodada(monkeypatch):
     resposta = client.post("/game/action", json=payload)
     assert resposta.status_code == 200, resposta.text
     estado = resposta.json()
-    assert estado["turno_mundo"] == 2
+    assert estado["revisao"] == 2
     assert estado["narrativa"]
     assert estado["progressao"]["nivel_maximo"] == 10
     assert client.post("/game/action", json=payload).status_code == 409
     salvo = client.post("/load_game", json={"session_id": sid}).json()
-    assert salvo["turno_mundo"] == 2
+    assert salvo["revisao"] == 2
     assert salvo["hp_atual"] == estado["hp_atual"]
     assert salvo["inimigos"] == estado["inimigos"]
     assert salvo["historico_chat"][-1]["content"] == estado["narrativa"]
@@ -183,7 +183,7 @@ def test_alvo_invalido_nao_consume_acao(monkeypatch):
         "session_id": sid, "acao": "atacar", "alvo": "Fantasma inventado", "turno_esperado": 1,
     })
     assert resposta.status_code == 400
-    assert client.post("/load_game", json={"session_id": sid}).json()["turno_mundo"] == 1
+    assert client.post("/load_game", json={"session_id": sid}).json()["revisao"] == 1
 
 
 def test_abrir_o_jogo_devolve_as_opcoes_gravadas_com_a_ultima_narracao(monkeypatch):
@@ -228,11 +228,21 @@ def test_resgate_vence_sem_matar_e_so_recompensa_uma_vez(monkeypatch):
         # Maior que a CD mesmo com d20=1: testa o contrato do objetivo, não sorte.
         heroi.atributos = {"forca": 50, "destreza": 14}
         db.commit()
-    for turno in (1, 2, 3):
+    esperado = 1
+    for _ in range(3):
         resposta = client.post("/game/action", json={
-            "session_id": sid, "acao": "interagir", "interacao": "objetivo", "turno_esperado": turno,
+            "session_id": sid, "acao": "interagir", "interacao": "objetivo", "turno_esperado": esperado,
         })
         assert resposta.status_code == 200, resposta.text
+        esperado = resposta.json()["revisao"]
+        turno = resposta.json()["turno_combate"]
+        if turno and turno["acao_usada"]:
+            # Combate v2: com técnica de ação bônus disponível o turno fica aberto; o jogador encerra.
+            fim = client.post("/game/action", json={
+                "session_id": sid, "acao": "encerrar_turno", "turno_esperado": esperado,
+            })
+            assert fim.status_code == 200, fim.text
+            esperado = fim.json()["revisao"]
     estado = resposta.json()
     assert not estado["combat_active"]
     assert estado["resultado_combate"] == "vitoria"
@@ -241,7 +251,7 @@ def test_resgate_vence_sem_matar_e_so_recompensa_uma_vez(monkeypatch):
     assert any("Libertou" in m for m in estado["marcos"])
     assert estado["xp"] > 0
     repetido = client.post("/game/action", json={
-        "session_id": sid, "acao": "interagir", "interacao": "objetivo", "turno_esperado": 4,
+        "session_id": sid, "acao": "interagir", "interacao": "objetivo", "turno_esperado": estado["revisao"],
     })
     assert repetido.status_code == 400
     salvo = client.post("/load_game", json={"session_id": sid}).json()
@@ -310,11 +320,11 @@ def test_clique_comandar_aliado_e_acao_bonus_uma_vez_por_turno(monkeypatch):
     assert r.status_code == 200, r.text
     turno = r.json()["turno_combate"]
     assert turno["bonus_usada"] is True and turno["acao_usada"] is False and turno["alvo_marcado"] == "i1"
-    assert "aponta Sentinela para Bob" in r.json()["narrativa"]
-    r2 = client.post("/game/action", json={**payload, "turno_esperado": r.json()["turno_mundo"]})
+    assert "manda Bob mirar em Sentinela" in r.json()["narrativa"]
+    r2 = client.post("/game/action", json={**payload, "turno_esperado": r.json()["revisao"]})
     assert r2.status_code == 400 and "ação bônus" in r2.json()["detail"]
     r3 = client.post("/game/action", json={"session_id": sid, "acao": "atacar_com_aliado", "aliado": "Ninguém",
-                                             "alvo": "Sentinela", "turno_esperado": r.json()["turno_mundo"]})
+                                             "alvo": "Sentinela", "turno_esperado": r.json()["revisao"]})
     assert r3.status_code == 400
 
 
@@ -361,8 +371,8 @@ def test_clique_encerrar_arco_gera_desfecho_e_memoria(monkeypatch):
         db.commit()
     carga = client.post("/load_game", json={"session_id": sid}).json()
     assert carga["arco"]["pode_encerrar"] is True
-    r = client.post("/game/action", json={"session_id": sid, "acao": "encerrar_arco", "turno_esperado": 12,
-                                          "rotulo": "Encerrar arco"})
+    r = client.post("/game/action", json={"session_id": sid, "acao": "encerrar_arco",
+                                          "turno_esperado": carga["revisao"], "rotulo": "Encerrar arco"})
     assert r.status_code == 200, r.text
     d = r.json()
     assert d["arco"]["ativo"] is False and d["arco_encerrado"]["id"] == "arco_1"

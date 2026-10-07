@@ -60,9 +60,9 @@ export default function Login() {
       const rota = modo === 'entrar' ? '/auth/login' : '/auth/registrar';
       await api.post(rota, { email, senha });
     },
-    onSuccess: () => {
+    onSuccess: async () => {
       if (modo === 'entrar') {
-        invalidarAuth();
+        await invalidarAuth();
         navigate('/', { replace: true });
         return;
       }
@@ -98,8 +98,11 @@ export default function Login() {
   // do primeiro turno, não mostrar uma lista de heróis vazia.
   const jogarComoConvidado = useMutation({
     mutationFn: async () => { await api.post('/auth/convidado'); },
-    onSuccess: () => {
-      invalidarAuth();
+    // Espera a sessão ser relida antes de navegar: sem o `await`, a rota
+    // protegida ainda via "não logado" (o dado antigo) e devolvia o
+    // convidado para esta tela.
+    onSuccess: async () => {
+      await invalidarAuth();
       navigate('/criar', { replace: true });
     },
   });

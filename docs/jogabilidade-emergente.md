@@ -1,5 +1,7 @@
 # Jogabilidade emergente
 
+> **Sem painel desde 07/10/2026** (ADR-0039). A aba Jornada virou a trilha do capítulo e este sistema saiu da tela. Ele continua funcionando no servidor e no contexto do narrador; o jogador mexe nele conversando com o mestre. A escolha de aprendizados ficou na aba Poderes. As menções a botões e seções da Jornada abaixo descrevem a tela antiga.
+
 A IA interpreta a intenção e cria conteúdo contextual; o motor resolve o teste,
 aplica apenas o ramo correspondente e persiste suas consequências. Não há catálogo
 de missões novas nem soluções obrigatórias.

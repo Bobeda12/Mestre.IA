@@ -139,30 +139,6 @@ class TestAtacar:
         resultado = _executor(c_state=CombatState(ativo=False)).atacar("Goblin", "Cimitarra")
         assert "erro" in resultado
 
-    def test_ataque_certeiro_reduz_hp_e_libera_contra_ataque(self):
-        c_state = CombatState(ativo=True, inimigos=[self._goblin()])
-        executor = _executor(c_state=c_state, rng=RngFixo([15, 4, 1]))
-        # bônus herói: proficiência 2 + força(+2) = 4. d20=15 -> 19 >= CA 15 -> acerta, dano 1d6=4+2=6.
-        # goblin sobrevive (7-6=1) e contra-ataca: d20=1 -> erra.
-        resultado = executor.atacar("Goblin", "Cimitarra")
-        assert c_state.inimigos[0].hp == 1
-        assert resultado["dano_recebido"] == 0
-        assert any("ACERTO" in e for e in executor.eventos)
-
-    def test_dados_estruturados_mostram_arma_e_atributo_do_ataque(self):
-        # Etapa 11 (B-8): Cimitarra é "Sutil" — força(+2) vence destreza(+1)
-        # nesta ficha, então o card precisa apontar força, não destreza.
-        c_state = CombatState(ativo=True, inimigos=[self._goblin()])
-        executor = _executor(c_state=c_state, rng=RngFixo([15, 4, 1]))
-        executor.atacar("Goblin", "Cimitarra")
-        [evento_ataque, _contra_ataque] = executor.eventos
-        assert evento_ataque.dados.arma == "Cimitarra"
-        assert evento_ataque.dados.atributo == "forca"
-        assert evento_ataque.dados.partes_bonus == [
-            {"rotulo": "Força", "valor": 2},
-            {"rotulo": "Proficiência", "valor": 2},
-        ]
-
     def test_vitoria_encerra_o_combate(self):
         c_state = CombatState(ativo=True, inimigos=[self._goblin(hp=1)])
         executor = _executor(c_state=c_state, rng=RngFixo([15, 4]))
@@ -208,19 +184,6 @@ class TestEsquivar:
         resultado = _executor(c_state=CombatState(ativo=False)).esquivar()
         assert "erro" in resultado
 
-    def test_impoe_desvantagem_ao_ataque_inimigo_e_reseta_depois(self):
-        c_state = CombatState(ativo=True, inimigos=[self._goblin()])
-        # desvantagem: dois d20 (9,3) -> fica com o menor, 3; total 3+4=7 < CA 15 -> erra.
-        executor = _executor(c_state=c_state, rng=RngFixo([9, 3]))
-        resultado = executor.esquivar()
-        assert any("esquiva" in e for e in executor.eventos)
-        evento_ataque = next(e for e in executor.eventos if getattr(e, "dados", None) and e.dados.tipo == "ataque")
-        assert evento_ataque.dados.vantagem is False
-        assert evento_ataque.dados.d20 == 3
-        assert c_state.heroi_vantagem_inimiga is None  # o efeito não sobrevive além desta rodada
-        assert resultado["hp_atual"] == 10
-
-
 class TestDefender:
     def _goblin(self, hp=7) -> Inimigo:
         return Inimigo(
@@ -230,17 +193,6 @@ class TestDefender:
     def test_sem_combate_ativo_e_rejeitado(self):
         resultado = _executor(c_state=CombatState(ativo=False)).defender()
         assert "erro" in resultado
-
-    def test_bonus_de_ca_evita_o_acerto_e_reseta_depois(self):
-        # Sem o bônus, d20=11+4=15 acertaria a CA 15 do herói. Com +2 (CA
-        # efetiva 17), o mesmo ataque erra.
-        c_state = CombatState(ativo=True, inimigos=[self._goblin()])
-        executor = _executor(c_state=c_state, rng=RngFixo([11]))
-        resultado = executor.defender()
-        assert any("defensiva" in e for e in executor.eventos)
-        assert c_state.heroi_bonus_ca == 0
-        assert resultado["hp_atual"] == 10
-
 
 class TestInvestir:
     def _goblin(self, hp=7) -> Inimigo:
@@ -263,18 +215,6 @@ class TestInvestir:
         evento_ataque = next(e for e in executor.eventos if getattr(e, "dados", None) and e.dados.tipo == "ataque")
         assert {"rotulo": "Investida", "valor": -2} in evento_ataque.dados.partes_bonus
 
-    def test_nao_letal_expoe_o_heroi_a_vantagem_no_contra_ataque(self):
-        # dano: 1d6(=1)+força(2)=3, x1.5=4 -> Goblin sobrevive (7-4=3).
-        # Contra-ataque com vantagem: d20(2,9) -> fica com 9; 9+4=13 < CA
-        # 15 do herói -> erra.
-        c_state = CombatState(ativo=True, inimigos=[self._goblin(hp=7)])
-        executor = _executor(c_state=c_state, rng=RngFixo([15, 1, 2, 9]))
-        executor.investir("Goblin", "Cimitarra")
-        evento_contra = executor.eventos[-1]
-        assert evento_contra.dados.vantagem is True
-        assert c_state.heroi_vantagem_inimiga is None
-
-
 class TestEsconderSe:
     def _goblin(self, hp=7) -> Inimigo:
         return Inimigo(
@@ -284,24 +224,6 @@ class TestEsconderSe:
     def test_sem_combate_ativo_e_rejeitado(self):
         resultado = _executor(c_state=CombatState(ativo=False)).esconder_se()
         assert "erro" in resultado
-
-    def test_sucesso_esconde_o_heroi_e_inimigo_nao_ataca(self):
-        # teste de Destreza (mod +1): d20=15 -> total 16 >= CD 12 -> sucesso.
-        c_state = CombatState(ativo=True, inimigos=[self._goblin()])
-        executor = _executor(c_state=c_state, rng=RngFixo([15]))
-        resultado = executor.esconder_se()
-        assert resultado["escondido"] is True
-        assert resultado["dano_recebido"] == 0
-        assert c_state.heroi_escondido is False  # consumido na mesma rodada
-
-    def test_falha_ao_esconder_inimigo_ataca_normalmente(self):
-        # teste: d20=5+1=6 < CD 12 -> falha. Contra-ataque normal: d20=1 -> erra.
-        c_state = CombatState(ativo=True, inimigos=[self._goblin()])
-        executor = _executor(c_state=c_state, rng=RngFixo([5, 1]))
-        resultado = executor.esconder_se()
-        assert resultado["escondido"] is False
-        assert resultado["dano_recebido"] == 0
-
 
 class TestFugir:
     def _goblin(self, hp=7) -> Inimigo:
@@ -383,18 +305,6 @@ class TestAplicarDano:
         assert resultado["resultado"] == "vitoria"
         assert c_state.ativo is False
         assert heroi.xp == 50
-
-    def test_dano_ambiental_em_inimigo_consome_a_acao_do_turno(self):
-        goblin = Inimigo(
-            nome="Goblin", hp=7, max_hp=7, ca=15, bonus_ataque=4, dano_dado="1d6+2", nome_ataque="Cimitarra"
-        )
-        c_state = CombatState(ativo=True, inimigos=[goblin])
-        executor = _executor(c_state=c_state, rng=RngFixo([2, 2]))
-        _, ok = executor.executar("aplicar_dano", '{"alvo": "Goblin", "dado_dano": "1d6", "motivo": "fogo"}')
-        assert ok is True
-        resultado, ok = executor.executar("atacar", '{"alvo": "Goblin"}')
-        assert ok is False and "já foi resolvida" in resultado["erro"]
-
 
 class TestMover:
     def test_destino_valido_atualiza_local(self):
@@ -495,7 +405,7 @@ class TestDescansar:
         heroi = _heroi(hp_atual=5, hp_max=20)
         executor = _executor(heroi=heroi, rng=RngFixo([7]))
         resultado = executor.descansar("curto")
-        assert resultado == {"tipo": "curto", "cura": 8, "hp_atual": 13}
+        assert resultado == {"tipo": "curto", "cura": 8, "hp_atual": 13, "foco": 3}
         assert heroi.hp_atual == 13
 
     def test_descanso_curto_nao_passa_do_hp_maximo(self):
@@ -541,9 +451,9 @@ class TestDescansar:
 
 class TestConsultarRegra:
     def test_encontra_trecho_na_biblia(self):
-        resultado = _executor().consultar_regra("ação ardilosa")
+        resultado = _executor().consultar_regra("matilha")
         assert resultado["encontrado"] is True
-        assert any("Ardilosa" in t for t in resultado["trechos"])
+        assert any("matilha" in t for t in resultado["trechos"])
 
     def test_termo_ausente_nao_encontra(self):
         resultado = _executor().consultar_regra("xenomorfo intergalático")
@@ -655,7 +565,7 @@ class TestIniciarCombate:
         # Combate v2: a ordem rolada vale. Esqueleto com d20 = 20 age antes
         # do herói (d20 = 1), avança e ataca; depois a vez é do herói.
         c_state = CombatState()
-        executor = _executor(c_state=c_state, rng=RngFixo([20, 1, 2]))  # iniciativas; o ataque dele erra
+        executor = _executor(c_state=c_state, rng=RngFixo([20, 1, 2, 2]))  # iniciativas; chega e erra (dois d20)
         resultado = executor.iniciar_combate(["Esqueleto"])
         assert c_state.versao == 2 and c_state.fila == ["i1", "heroi"]
         assert c_state.fila[c_state.vez] == "heroi" and c_state.rodada == 1
@@ -743,14 +653,6 @@ class TestAtacarComAliado:
         resultado = _executor(c_state=c_state).atacar_com_aliado("Bob", "Goblin")
         assert "erro" in resultado
 
-    def test_resolve_o_ataque_pelo_motor_generalizado(self):
-        c_state = CombatState(ativo=True, inimigos=[self._goblin()], aliados=[self._aliado()])
-        executor = _executor(c_state=c_state, rng=RngFixo([15, 4]))
-        resultado = executor.atacar_com_aliado("Bob", "Goblin")
-        assert c_state.inimigos[0].hp == 3
-        assert resultado == {"aliado": "Bob", "alvo": "Goblin"}
-        assert any("Bob" in e for e in executor.eventos)
-
     def test_nao_aciona_reacao_dos_inimigos_sozinho(self):
         # Simplificação deliberada (ADR-0027): o ataque do aliado não fecha
         # a rodada — só a ação do próprio herói faz isso. Sem uma segunda
@@ -759,16 +661,6 @@ class TestAtacarComAliado:
         c_state = CombatState(ativo=True, inimigos=[self._goblin()], aliados=[self._aliado()])
         executor = _executor(c_state=c_state, rng=RngFixo([15, 4]))
         executor.atacar_com_aliado("Bob", "Goblin")  # não levanta StopIteration
-
-    def test_vitoria_concede_xp_como_um_ataque_normal(self):
-        c_state = CombatState(ativo=True, inimigos=[self._goblin(hp=1)], aliados=[self._aliado()])
-        heroi = _heroi(xp=0, nivel=1, aliados=[])
-        executor = _executor(heroi=heroi, c_state=c_state, rng=RngFixo([15, 4]))
-        resultado = executor.atacar_com_aliado("Bob", "Goblin")
-        assert resultado["resultado"] == "vitoria"
-        assert resultado["xp_ganho"] == 50
-        assert heroi.xp == 50
-
 
 class TestSincronizarAliados:
     def test_sem_aliados_em_combate_nao_faz_nada(self):
@@ -820,19 +712,13 @@ class TestDefinirObjetivo:
         assert resultado["objetivo"] == "Abrir uma taverna"
 
 
-class TestConcluirObjetivo:
-    def test_concede_xp_fixo_sem_combate(self):
-        heroi = _heroi(xp=0, nivel=1)
-        executor = _executor(heroi=heroi)
-        resultado = executor.concluir_objetivo("Convenceu o guarda a abrir o portão")
-        assert resultado["xp_ganho"] == 50
-        assert heroi.xp == 50
-        assert resultado["objetivo"] == "Convenceu o guarda a abrir o portão"
-
+class TestXpForaDeCombate:
+    # O XP de progresso vem dos passos da trilha (services/capitulo.py), pelo
+    # mesmo `_aplicar_xp` da vitória em combate.
     def test_xp_suficiente_sobe_de_nivel(self):
         heroi = _heroi(xp=50, nivel=1, hp_max=10, hp_atual=10, classe="Guerreiro")
         executor = _executor(heroi=heroi, rng=RngFixo([7]))
-        resultado = executor.concluir_objetivo("Resolveu o enigma da esfinge")
+        resultado = executor._aplicar_xp(50)
         assert resultado["xp_total"] == 100  # 50 + 50 = XP_POR_NIVEL[2] (ADR-0026)
         assert resultado["nivel"] == 2
         assert heroi.nivel == 2
@@ -867,10 +753,17 @@ class TestToolsPorEstado:
         from app.services.tools import tools_para
         return {t["function"]["name"] for t in tools_para(c_state)}
 
+    def test_narrador_nunca_recebe_acao_de_combate(self):
+        # Combate por turnos (ADR-0040/0041): a jogada é do clique, não do narrador.
+        from app.services.tools import ACOES_DE_COMBATE, TOOLS_SCHEMA
+
+        for ativo in (True, False):
+            assert not ACOES_DE_COMBATE & self._nomes(CombatState(ativo=ativo))
+        assert not ACOES_DE_COMBATE & {t["function"]["name"] for t in TOOLS_SCHEMA}  # nem o schema existe mais
+        assert {"atacar", "usar_habilidade", "interagir", "fugir"} <= ACOES_DE_COMBATE
+
     def test_em_combate_nao_ve_mover_nem_registrar_cena(self):
         nomes = self._nomes(CombatState(ativo=True))
-        assert "atacar" in nomes and "fugir" in nomes and "usar_item" in nomes and "aplicar_dano" in nomes
-        assert "agir_no_mundo" in nomes  # negociar no meio da luta continua possível
         assert not {"mover", "descansar", "registrar_cena", "iniciar_combate"} & nomes
 
     def test_fora_de_combate_nao_ve_atacar(self):
@@ -916,29 +809,6 @@ class TestAliadoUmaVezPorRodada:
             aliados=[Aliado(nome="Bob", hp=10, max_hp=10, ca=12, bonus_ataque=3, dano_dado="1d6")],
         )
         return heroi, c_state
-
-    def test_segundo_executor_na_mesma_rodada_e_recusado(self):
-        heroi, c_state = self._cenario()
-        _, ok = _executor(heroi=heroi, c_state=c_state, rng=RngFixo([15, 3])).executar(
-            "atacar_com_aliado", '{"aliado": "Bob", "alvo": "Goblin"}'
-        )
-        assert ok and c_state.aliados_agiram == ["Bob"]
-        resultado, ok = _executor(heroi=heroi, c_state=c_state, rng=RngFixo([15, 3])).executar(
-            "atacar_com_aliado", '{"aliado": "Bob", "alvo": "Goblin"}'
-        )
-        assert ok is False and "já agiu" in resultado["erro"]
-
-    def test_finalizar_rodada_libera_o_aliado(self):
-        from app.services import combat
-
-        heroi, c_state = self._cenario()
-        c_state.aliados_agiram = ["Bob"]
-        combat.finalizar_rodada(c_state)
-        assert c_state.aliados_agiram == []
-        _, ok = _executor(heroi=heroi, c_state=c_state, rng=RngFixo([15, 3])).executar(
-            "atacar_com_aliado", '{"aliado": "Bob", "alvo": "Goblin"}'
-        )
-        assert ok
 
     def test_recrutar_guarda_raca_valida(self):
         heroi = _heroi(aliados=[])

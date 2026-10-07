@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import type { AcaoDireta, AliadoVisual, Cena, EntidadeMundo, InimigoVisual, PessoaMundo, Selecao } from '../../lib/gameplay';
-import { SAIDA_LIVRE, alvoValido, spriteInimigo } from '../../lib/gameplay';
+import type { AcaoDireta, AliadoVisual, Cena, EntidadeMundo, InimigoVisual, PessoaMundo, Selecao, TurnoCombate } from '../../lib/gameplay';
+import { CONDICOES, SAIDA_LIVRE, alvoValido, spriteInimigo } from '../../lib/gameplay';
 import { iconeEntidade } from '../../lib/verbos';
 import { getLocalImage } from '../../lib/utils';
 import PixelIcon from '../PixelIcon';
@@ -37,12 +37,17 @@ interface Props {
   aoAgir: (acao: AcaoDireta, rotulo: string) => void;
   aoInspecionarHeroi: () => void;
   aoRecolher: () => void;
+  /** Combate v2 (ADR-0040): de quem é a vez, o alvo marcado e as condições do herói. */
+  turno?: TurnoCombate | null;
 }
 
 const DURACAO_RESULTADO_MS = 4000;
 
 export default function Palco(p: Props) {
   const caido = p.hp <= 0;
+  const turno = p.combate ? p.turno ?? null : null;
+  const condicoes = Object.entries(turno?.efeitos_heroi ?? {}).filter(([, duracao]) => duracao > 0);
+  const marcado = turno?.alvo_marcado ? p.inimigos.find(i => i.id === turno.alvo_marcado && i.hp > 0 && !i.afastado) : undefined;
   const bloqueado = p.ocupado;
   const alvo = p.combate ? alvoValido(p.selecao?.tipo === 'inimigo' ? p.selecao.id : null, p.inimigos) : undefined;
   const tema = /floresta|bosque|estrada|lobo/i.test(`${p.local} ${p.cena?.nome}`) ? 'bosque'
@@ -107,12 +112,13 @@ export default function Palco(p: Props) {
             <span className="adventure-actor__name font-rpg">{p.nome || 'Herói'}</span>
             <span className="adventure-actor__life font-rpg">{p.hp}/{p.hpMax} PV</span>
             <PixelBar value={p.hp} max={p.hpMax} segments={8} colorClass="bg-emerald-500" />
+            {condicoes.map(([efeito, duracao]) => <span className="adventure-actor__effect font-rpg" key={efeito}>{CONDICOES[efeito] ?? efeito} · {duracao}</span>)}
           </button>
 
           {p.aliados.map(aliado => (
             <div key={`aliado:${aliado.nome}`} className={`adventure-actor adventure-actor--ally ${aliado.hp <= 0 ? 'adventure-actor--dead' : ''}`}
               aria-label={`${aliado.nome}, aliado, ${aliado.hp}/${aliado.hp_max} PV`}>
-              <span className="adventure-actor__tag font-rpg uppercase tracking-wide">{aliado.hp <= 0 ? 'CAIDO' : p.combate ? (aliado.ja_agiu ? 'JA AGIU' : 'PRONTO') : 'ALIADO'}</span>
+              <span className="adventure-actor__tag font-rpg uppercase tracking-wide">{aliado.hp <= 0 ? 'CAIDO' : turno ? (marcado ? `MIRA ${marcado.nome}` : 'LUTA SOZINHO') : 'ALIADO'}</span>
               <img className="adventure-actor__sprite" src={getLocalImage('races', aliado.raca || 'Humano')} alt="" draggable={false} />
               <span className="adventure-actor__shadow" aria-hidden="true" />
               <span className="adventure-actor__name font-rpg">{aliado.nome}</span>
@@ -120,10 +126,12 @@ export default function Palco(p: Props) {
               <PixelBar value={aliado.hp} max={aliado.hp_max} segments={8} colorClass="bg-sky-500" />
               {p.combate && aliado.hp > 0 && (
                 <button type="button" className="adventure-actor__ally-attack font-pixel-title"
-                  disabled={bloqueado || aliado.ja_agiu || !alvo}
-                  title={!alvo ? 'Escolha um inimigo primeiro' : aliado.ja_agiu ? 'Já atacou nesta rodada' : `${aliado.nome} ataca ${alvo}`}
-                  onClick={() => alvo && p.aoAgir({ acao: 'atacar_com_aliado', aliado: aliado.nome, alvo }, `${aliado.nome} ataca ${alvo}`)}>
-                  ATACAR
+                  disabled={bloqueado || !alvo || !!turno?.bonus_usada}
+                  title={!alvo ? 'Escolha um inimigo primeiro'
+                    : turno?.bonus_usada ? 'Você já usou sua ação bônus neste turno'
+                    : `Ação bônus: ${aliado.nome} mira ${alvo}, com vantagem no primeiro golpe`}
+                  onClick={() => alvo && p.aoAgir({ acao: 'atacar_com_aliado', aliado: aliado.nome, alvo }, `Comandar ${aliado.nome}: ${alvo}`)}>
+                  COMANDAR
                 </button>
               )}
             </div>
@@ -149,12 +157,12 @@ export default function Palco(p: Props) {
 
         <div className="adventure-world__opponents">
           {p.inimigos.map((inimigo, indice) => (
-            <button type="button" key={inimigo.nome}
-              className={`adventure-actor ${alvo === inimigo.nome && p.combate ? 'adventure-actor--selected' : ''} ${inimigo.hp <= 0 ? 'adventure-actor--dead' : ''}`}
+            <button type="button" key={inimigo.id ?? inimigo.nome}
+              className={`adventure-actor ${alvo === inimigo.nome && p.combate ? 'adventure-actor--selected' : ''} ${inimigo.hp <= 0 ? 'adventure-actor--dead' : ''} ${turno?.vez === inimigo.id ? 'adventure-actor--vez' : ''}`}
               disabled={inimigo.hp <= 0 || inimigo.afastado || bloqueado || !p.combate}
               onClick={() => p.aoSelecionar({ tipo: 'inimigo', id: inimigo.nome })}
               aria-pressed={alvo === inimigo.nome && p.combate}
-              aria-label={`Selecionar ${inimigo.nome}, ${inimigo.hp}/${inimigo.max_hp} PV${inimigo.intencao ? `, intenção: ${inimigo.intencao}` : ''}`}>
+              aria-label={`Selecionar ${inimigo.nome}, ${inimigo.hp}/${inimigo.max_hp} PV${turno && inimigo.distancia ? `, ${inimigo.distancia}` : ''}${inimigo.intencao ? `, intenção: ${inimigo.intencao}` : ''}`}>
               <span className="adventure-actor__tag font-rpg uppercase tracking-wide">{inimigo.afastado ? 'AFASTADO' : inimigo.hp <= 0 ? 'DERROTADO' : inimigo.intencao || 'OBSERVANDO'}</span>
               <FloatingCombatText itens={p.danos.filter(dano => dano.idx === indice).map(dano => ({ id: dano.id, texto: `−${dano.valor}`, cor: 'text-red-300' }))} />
               <img className="adventure-actor__sprite" src={spriteInimigo(inimigo)} alt="" draggable={false} />
@@ -162,6 +170,9 @@ export default function Palco(p: Props) {
               <span className="adventure-actor__name font-rpg">{inimigo.nome}</span>
               <span className="adventure-actor__life font-rpg">{inimigo.hp}/{inimigo.max_hp} PV · DEF {inimigo.ca}</span>
               <PixelBar value={inimigo.hp} max={inimigo.max_hp} segments={8} colorClass="bg-red-500" />
+              {turno && inimigo.distancia && inimigo.hp > 0 && !inimigo.afastado && (
+                <span className={`adventure-actor__range font-pixel-title adventure-actor__range--${inimigo.distancia}`}>{inimigo.distancia === 'perto' ? 'PERTO' : 'LONGE'}</span>
+              )}
               {Object.entries(inimigo.efeitos ?? {}).filter(([, duracao]) => duracao > 0).map(([efeito, duracao]) => <span className="adventure-actor__effect font-rpg" key={efeito}>{efeito.replaceAll('_', ' ')} · {duracao}</span>)}
             </button>
           ))}

@@ -81,53 +81,16 @@ class TestMontarContexto:
         prompt = montar_contexto(_heroi(), w_state, c_state, q_state, reputacoes={"Ferreiro": -20})
         assert "Ferreiro: -20" in prompt
 
-    def test_sem_efeito_ativo_nenhuma_secao_de_estado_aparece(self):
-        # Rodada de melhorias pós-Fase-6 — "a progressão está muito boba,
-        # só ganha mais dados": técnicas de classe (Fúria primordial, Bomba
-        # de fumaça...) armam efeitos com duração (CombatState.efeitos_heroi,
-        # ver tools.py:usar_habilidade), mas o narrador nunca sabia disso —
-        # só o lado do inimigo chegava ao prompt. Sem nenhum efeito ativo,
-        # a seção nova não aparece (mesmo padrão condicional das outras).
+    def test_prompt_nao_carrega_mais_o_combate_ativo(self):
+        # Combate por turnos (ADR-0040/0041): em luta o chat fica fechado e
+        # quem resolve é `/game/action`. O prompt do narrador só fala de
+        # combate para dizer como abrir um (`iniciar_combate`).
         c_state, w_state, q_state = _contexto_base()
-        c_state.ativo = True
-        prompt = montar_contexto(_heroi(), w_state, c_state, q_state)
-        assert "[ESTADO DO HERÓI]" not in prompt
-
-    def test_furia_ativa_aparece_no_prompt_traduzida(self):
-        c_state, w_state, q_state = _contexto_base()
-        c_state.ativo = True
         c_state.efeitos_heroi = {"furia": 2}
         prompt = montar_contexto(_heroi(), w_state, c_state, q_state)
-        assert "[ESTADO DO HERÓI]" in prompt
-        assert "fúria de combate" in prompt
-
-    def test_efeito_expirado_nao_aparece(self):
-        c_state, w_state, q_state = _contexto_base()
-        c_state.ativo = True
-        c_state.efeitos_heroi = {"furia": 0}
-        prompt = montar_contexto(_heroi(), w_state, c_state, q_state)
-        assert "[ESTADO DO HERÓI]" not in prompt
-
-    def test_escondido_e_flags_taticas_aparecem_no_prompt(self):
-        c_state, w_state, q_state = _contexto_base()
-        c_state.ativo = True
-        c_state.heroi_escondido = True
-        c_state.heroi_bonus_ca = 2
-        c_state.heroi_vantagem_inimiga = False
-        prompt = montar_contexto(_heroi(), w_state, c_state, q_state)
-        assert "[ESTADO DO HERÓI]" in prompt
-        assert "escondido" in prompt
-        assert "postura defensiva" in prompt
-        assert "esquivando" in prompt
-
-    def test_fora_de_combate_secao_de_estado_nao_e_avaliada(self):
-        # efeitos_heroi só existe dentro de combate — fora dele nem a
-        # ferramenta de estado é chamada (ver montar_contexto: o ramo
-        # `else` do combate nem referencia _secao_estado_heroi).
-        c_state, w_state, q_state = _contexto_base()
-        c_state.efeitos_heroi = {"furia": 2}  # não deveria acontecer fora de combate, mas por garantia
-        prompt = montar_contexto(_heroi(), w_state, c_state, q_state)
-        assert "[ESTADO DO HERÓI]" not in prompt
+        for trecho in ("[COMBATE ATIVO]", "[ESTADO DO HERÓI]", "[TÉCNICAS DA CLASSE]", "[CENÁRIO INTERATIVO]"):
+            assert trecho not in prompt
+        assert "iniciar_combate" in prompt and "[DESAFIO SUGERIDO]" in prompt
 
     def test_regras_relevantes_substitui_a_biblia_inteira(self):
         c_state, w_state, q_state = _contexto_base()

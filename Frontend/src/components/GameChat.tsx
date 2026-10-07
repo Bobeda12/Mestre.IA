@@ -38,10 +38,11 @@ import HudBarra from './jogo/HudBarra';
 import DockAcoes from './jogo/DockAcoes';
 import SinaisDaCena from './jogo/SinaisDaCena';
 import AbaJornada from './jogo/AbaJornada';
+import FilaTurnos from './jogo/FilaTurnos';
 import AbaPoderes from './jogo/AbaPoderes';
 import AbaRelacoes from './jogo/AbaRelacoes';
 import BalcaoMercador from './jogo/BalcaoMercador';
-import type { AliadoVisual, ArcoEncerrado, AcaoDireta, Capitulo, Cena, InimigoVisual, Progressao, MundoPersistente, Equipamento, ItemInfo, Selecao } from '../lib/gameplay';
+import type { AliadoVisual, ArcoEncerrado, AcaoDireta, Capitulo, TurnoCombate, Cena, InimigoVisual, Progressao, MundoPersistente, Equipamento, ItemInfo, Selecao } from '../lib/gameplay';
 import { alvoValido, periodoDoDia } from '../lib/gameplay';
 
 // Etapa 14 (revisão) — a ficha virou menu de abas estilo JRPG. Antes tudo
@@ -107,8 +108,6 @@ interface EstadoJogo {
   nivel?: number;
   xp?: number;
   xp_proximo_nivel?: number | null;
-  ordem_iniciativa?: number[];
-  turno_atual?: number;
   // Fase 1 (revisão de gameplay) — testes de morte visíveis. Antes disto o
   // front não sabia diferenciar "caído, em teste de morte" de "morto de
   // verdade" — os dois eram só `hp_atual <= 0`.
@@ -132,6 +131,7 @@ interface EstadoJogo {
   inimigos?: InimigoVisual[];
   aliados?: AliadoVisual[];
   capitulo?: Capitulo;
+  turno_combate?: TurnoCombate | null;
   arco_encerrado?: ArcoEncerrado | null;
   missao?: unknown;
   // Sistema de progressão/encontros táticos (AdventureStage.tsx) — o
@@ -146,6 +146,7 @@ interface EstadoJogo {
   // rodada de combate (`turno_atual`, que reseta a cada luta): é o que a
   // tela de morte usa pra mostrar "quantos turnos você viveu".
   turno_mundo?: number;
+  revisao?: number;
   // Pendência do remaster UX (PLANO_REMASTER_UX.md) — antes só chegavam no
   // carregamento (`CargaJogo`); agora o backend manda em todo frame
   // `state` (routers/game.py:_resposta), então local/clima já não ficam
@@ -179,7 +180,7 @@ interface CargaJogo extends EstadoJogo {
   background?: string | null;
   objetivo?: string | null;
   historia_texto?: string | null;
-  historico_chat?: { role: string; content: string; aviso?: boolean }[];
+  historico_chat?: { role: string; content: string; aviso?: boolean; prosa?: string }[];
   // Rodada de conserto (Parte 2, item G) — "Anteriormente…": recap curto
   // do resumo rolante, `null` quando não há nada resumido ainda.
   anteriormente?: string | null;
@@ -286,6 +287,9 @@ export default function GameChat() {
     });
   }, [enemies]);
   const [turnoMundo, setTurnoMundo] = useState(0);
+  // Versão do save: é o que cada clique manda em `turno_esperado`, para o
+  // servidor recusar um clique repetido. `turnoMundo` é só o tempo de jogo.
+  const [revisao, setRevisao] = useState(1);
   const [gameOver, setGameOver] = useState(false);
   // Ações táticas (AdventureStage.tsx → POST /game/action) — caminho
   // determinístico, separado de `loading` (que é especificamente "o
@@ -301,6 +305,9 @@ export default function GameChat() {
   // Fase 4 (ADR-0035) — arco atual e o desfecho a mostrar uma vez (o id visto
   // na carga inicial não reabre o overlay).
   const [capitulo, setCapitulo] = useState<Capitulo | null>(null);
+  // Combate v2 (ADR-0040): fila de turnos e o que o herói já gastou neste turno.
+  const [turnoCombate, setTurnoCombate] = useState<TurnoCombate | null>(null);
+  const avisouSemVoz = useRef(false);
   const [arcoEncerrado, setArcoEncerrado] = useState<ArcoEncerrado | null>(null);
   const [arcoVisto, setArcoVisto] = useState<string | null>(null);
   // Fase 6 (ADR-0036) — id do NPC cujo balcão está aberto; fecha se ele some.
@@ -555,6 +562,7 @@ export default function GameChat() {
     if (d.equipamento !== undefined) setEquipamento(d.equipamento);
     if (d.aliados !== undefined) setAliados(d.aliados);
     if (d.capitulo !== undefined) setCapitulo(d.capitulo);
+    if (d.turno_combate !== undefined) setTurnoCombate(d.turno_combate);
     if (d.arco_encerrado !== undefined) {
       if (inicial) setArcoVisto(d.arco_encerrado?.id ?? null);
       setArcoEncerrado(d.arco_encerrado ?? null);
@@ -582,6 +590,7 @@ export default function GameChat() {
     if (d.reputacao_npcs) setReputacoes(d.reputacao_npcs);
     setOpcoes(d.opcoes || []);
     if (d.turno_mundo !== undefined) setTurnoMundo(d.turno_mundo);
+    if (d.revisao !== undefined) setRevisao(d.revisao);
     if (d.missao) setQuest(d.missao);
     if (d.local !== undefined) setLocalAtual(d.local);
     if (d.clima !== undefined) setClimaAtual(d.clima ?? '');
@@ -698,6 +707,8 @@ export default function GameChat() {
           kind: 'texto', id: proximoIdMsg(), role, content: m.content,
           turnoIndex: role === 'assistant' ? offsetNoHistorico + i : undefined,
         });
+        // A prosa da rodada de combate, gravada junto com a jogada que a fechou.
+        if (m.prosa) bolhas.push({ kind: 'texto', id: proximoIdMsg(), role: 'assistant', content: m.prosa });
       });
       setMessages(bolhas);
     }
@@ -905,12 +916,12 @@ export default function GameChat() {
     // texto livre de `sendAction` entra), antes do resultado do juiz.
     if (rotulo) setMessages(prev => [...prev, { kind: 'texto', id: proximoIdMsg(), role: 'user', content: rotulo }]);
     try {
-      const resposta = await api.post<EstadoJogo & { narrativa: string; eventos_estruturados: DadosRolagem[] }>(
+      const resposta = await api.post<EstadoJogo & { narrativa: string; eventos_estruturados: DadosRolagem[]; narravel?: boolean; turno_index?: number }>(
         '/game/action',
         {
           session_id: sessionId,
           acao: acao.acao,
-          turno_esperado: turnoMundo,
+          turno_esperado: revisao,
           alvo: acao.alvo,
           habilidade: acao.habilidade,
           interacao: acao.interacao,
@@ -939,15 +950,22 @@ export default function GameChat() {
           ...d.eventos_estruturados.map(dados => ({ kind: 'rolagem' as const, id: proximoIdMsg(), dados })),
         ]);
       }
+      // Em combate, cada rolagem já virou um card acima: do texto do juiz
+      // ficam só as linhas que não são rolagem (avanços, condições, saque).
+      const emLuta = combatActive || !!d.turno_combate;
+      const textoDoJuiz = emLuta
+        ? d.narrativa.split('\n').filter(linha => !linha.startsWith('🎲')).join('\n')
+        : d.narrativa;
       if (d.narrativa) {
         setResultadoAcao(d.narrativa);
         // Equipar/guardar é só um aviso do juiz — chip discreto, não fala do Mestre.
         const soAviso = acao.acao === 'equipar' || acao.acao === 'desequipar';
-        setMessages(prev => [...prev, soAviso
+        if (soAviso || textoDoJuiz.trim()) setMessages(prev => [...prev, soAviso
           ? { kind: 'texto', id: proximoIdMsg(), role: 'system', semIcone: true, content: d.narrativa }
-          : { kind: 'texto', id: proximoIdMsg(), role: 'assistant', content: limparMarkdownLeve(esconderTagOpcoes(d.narrativa)) },
+          : { kind: 'texto', id: proximoIdMsg(), role: 'assistant', content: limparMarkdownLeve(esconderTagOpcoes(textoDoJuiz)) },
         ]);
       }
+      if (d.narravel && d.turno_index !== undefined) void narrarRodada(d.turno_index);
     } catch (err) {
       const ehErroAxios = isAxiosError<{ detail?: string }>(err);
       const status = ehErroAxios ? err.response?.status : undefined;
@@ -965,7 +983,37 @@ export default function GameChat() {
     }
   };
 
-  const handleSendMessage = () => { if (!input.trim() || !sessionId || gameOver || loading || acaoTaticaEmCurso) return; sendAction(input); setInput(""); };
+  // Combate v2 (ADR-0041): a rodada já foi resolvida e está na tela; a prosa
+  // do Mestre chega depois, sem travar nada. Sem IA, um aviso discreto, uma
+  // vez por sessão — a luta segue com o texto do juiz.
+  const narrarRodada = async (turnoIndex: number) => {
+    try {
+      const { data } = await api.post<{ prosa: string | null; aviso?: string }>(
+        '/game/narrar_rodada', { session_id: sessionId, turno_index: turnoIndex },
+      );
+      if (data.prosa) {
+        setMessages(prev => [...prev, { kind: 'texto', id: proximoIdMsg(), role: 'assistant', content: data.prosa as string }]);
+      } else if (data.aviso && !avisouSemVoz.current) {
+        avisouSemVoz.current = true;
+        setMessages(prev => [...prev, { kind: 'texto', id: proximoIdMsg(), role: 'system', semIcone: true, content: data.aviso as string }]);
+      }
+    } catch {
+      // Narração é enfeite: uma falha de rede aqui não merece erro na tela.
+    }
+  };
+
+  // Em combate o texto livre é um improviso (ação do turno), julgado pelo
+  // Mestre numa lista fechada e rolado pelo servidor — não vai para o chat.
+  const handleSendMessage = () => {
+    if (!input.trim() || !sessionId || gameOver || loading || acaoTaticaEmCurso) return;
+    if (combatActive && turnoCombate) {
+      const ideia = input.trim();
+      void aoAgir({ acao: 'improvisar', proposta: ideia, alvo: alvoCombate }, `Improvisar: ${ideia}`.slice(0, 80));
+    } else {
+      sendAction(input);
+    }
+    setInput("");
+  };
   const handleKeyDown = (e: React.KeyboardEvent) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendMessage(); } };
 
   if (notFound) {
@@ -1339,7 +1387,9 @@ export default function GameChat() {
               )}
 
               {abaAtiva === 'poderes' && (
-                <AbaPoderes progressao={progressao} nivel={nivel} />
+                <AbaPoderes progressao={progressao} nivel={nivel}
+                  aprendizados={mundoPersistente?.emergencia?.aprendizados ?? []}
+                  bloqueado={loading || acaoTaticaEmCurso || gameOver || combatActive} aoAgir={aoAgir} />
               )}
 
               {/* Fase 2 do remaster UX — cards de NPC ganham "juice" de
@@ -1495,8 +1545,9 @@ export default function GameChat() {
         {/* Convite pra reivindicar (Etapa 10, A-1) — aparece só pro
             convidado, depois do primeiro momento bom. Fica embaixo, longe
             do HUD de combate lá em cima, e some sozinho se o jogador
-            dispensar (não volta na mesma aba). */}
-        {mostrarConviteReivindicar && !modalReivindicarAberto && (
+            dispensar (não volta na mesma aba). Não aparece no meio de uma
+            luta: no celular ele ficava em cima dos botões de combate. */}
+        {mostrarConviteReivindicar && !modalReivindicarAberto && !combatActive && (
             <div className="absolute bottom-24 left-1/2 -translate-x-1/2 z-40 w-[calc(100%-2rem)] max-w-md animate-fade-in">
                 <PanelFrame borderWidth={6} className="bg-gray-900/95 p-3 flex items-center gap-3 shadow-xl backdrop-blur-sm">
                     <PixelIcon name="coroa" size={20} className="shrink-0" />
@@ -1683,6 +1734,7 @@ export default function GameChat() {
                 aoAgir={aoAgir}
                 aoInspecionarHeroi={() => setFichaModalAberta(true)}
                 aoRecolher={() => setPalcoExpandido(false)}
+                turno={turnoCombate}
             />
         ) : (
             <PalcoRecolhido
@@ -1767,6 +1819,12 @@ export default function GameChat() {
             aoAgir={aoAgir}
             onAbrirBalcao={setBalcaoAberto}
             onLimparSelecao={() => setSelecao(null)}
+            turno={turnoCombate}
+            fila={turnoCombate && (
+              <FilaTurnos fila={turnoCombate.fila} vez={turnoCombate.vez} heroi={charName} inimigos={enemies} aliados={aliados} />
+            )}
+            alvoLonge={enemies.find(i => i.nome === alvoCombate)?.distancia === 'longe'}
+            haInimigoPerto={enemies.some(i => i.hp > 0 && !i.afastado && i.distancia === 'perto')}
         />
       </div>
     </div>

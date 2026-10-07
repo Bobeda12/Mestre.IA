@@ -39,7 +39,7 @@ from app.services.living_world import condicoes_arco, fatos_do_arco, migrar_mund
 from app.services.memory import contexto_recente
 from app.services.narrator import gerar_desfecho_arco, gerar_epitafio, montar_contexto
 from app.services.progression import migrar_equipamento, migrar_progressao, painel_progressao
-from app.services.tools import ToolExecutor, sincronizar_aliados, tools_para
+from app.services.tools import ToolExecutor, alcance_do_ataque, sincronizar_aliados, tools_para
 
 router = APIRouter(tags=["game"])
 
@@ -143,11 +143,27 @@ def _catalogo_itens(heroi: Personagem, mundo: WorldState) -> dict:
     return saida
 
 
+def _mundo_da_tela(painel: dict) -> dict:
+    """Só o que a tela desenha do Mundo Vivo: a cena do local (palco), as
+    pessoas (palco e aba Relações), as oportunidades (sinais da cena) e os
+    aprendizados (aba Poderes). Projetos, organizações, remessas, conflitos
+    e o resto seguem no servidor e no prompt do narrador, mas saíram da tela
+    com a trilha do capítulo (ADR-0039) e não viajam mais a cada resposta."""
+    return {
+        "local": painel.get("local", ""),
+        "descricao": painel.get("descricao", ""),
+        "entidades": painel.get("entidades", []),
+        "pessoas": painel.get("pessoas", []),
+        "emergencia": {"aprendizados": (painel.get("emergencia") or {}).get("aprendizados", [])},
+        "imersao": {"oportunidades": (painel.get("imersao") or {}).get("oportunidades", [])},
+    }
+
+
 def _resposta(heroi: Personagem, c_state: CombatState, q_state: QuestLog, **extra: object) -> dict:
     mundo = WorldState.model_validate(heroi.world_state or {})
     return {
         "progressao": painel_progressao(heroi, c_state, mundo),
-        "mundo": painel_mundo(mundo, heroi.classe),
+        "mundo": _mundo_da_tela(painel_mundo(mundo, heroi.classe)),
         "cena": painel_cena(c_state, mundo),
         "marcos": mundo.marcos,
         # Fase 4 (ADR-0035) — o arco atual (condições para encerrar) e o
@@ -165,6 +181,8 @@ def _resposta(heroi: Personagem, c_state: CombatState, q_state: QuestLog, **extr
         "local": mundo.local,
         "clima": mundo.clima,
         "turno_mundo": mundo.turno,
+        # O que o próximo clique deve mandar em `turno_esperado`.
+        "revisao": mundo.revisao,
         "hora_do_dia": mundo.hora_do_dia,
         "hp_atual": heroi.hp_atual,
         "hp_max": heroi.hp_max,
@@ -187,7 +205,7 @@ def _resposta(heroi: Personagem, c_state: CombatState, q_state: QuestLog, **extr
         # Fase 2 do plano "jogo completo" — o palco desenha os companheiros:
         # raça (retrato) e se já atacou nesta rodada (botão travado).
         "aliados": [
-            {**a, "raca": a.get("raca", "Humano"), "ja_agiu": a["nome"] in c_state.aliados_agiram}
+            {**a, "raca": a.get("raca", "Humano")}
             for a in (heroi.aliados or [])
         ],
         # Fase 8 da revisão de gameplay (Etapa 12/13) — a ferramenta
@@ -203,9 +221,8 @@ def _resposta(heroi: Personagem, c_state: CombatState, q_state: QuestLog, **extr
             "acao_usada": c_state.acao_usada, "bonus_usada": c_state.bonus_usada,
             "movimento_usado": c_state.movimento_usado, "efeitos_heroi": c_state.efeitos_heroi,
             "alvo_marcado": c_state.alvo_marcado,
+            "alcance_ataque": alcance_do_ataque(heroi),
         } if c_state.ativo else None,
-        "ordem_iniciativa": c_state.ordem_iniciativa,
-        "turno_atual": c_state.turno_atual,
         # Fase 1 da revisão de gameplay — o momento mais tenso do jogo
         # (herói a 0 PV, três falhas = morte) era calculado e nunca saía do
         # backend; o HUD desenha as caveiras/escudos a partir daqui.
@@ -371,6 +388,18 @@ def _opcoes_ao_carregar(heroi: Personagem, c_state: CombatState) -> list[str]:
     return opcoes_padrao(heroi, c_state)
 
 
+def _recusar_chat_em_combate(c_state: CombatState) -> None:
+    """Em luta, o narrador não resolve nada (ADR-0041): as jogadas vão por
+    `/game/action` e o texto livre vira a ação `improvisar`. A tela já não
+    manda chat em combate; isto fecha a porta para quem chamar a rota direto."""
+    if c_state.ativo:
+        raise HTTPException(
+            status_code=409,
+            detail={"codigo": "em_combate",
+                    "mensagem": "Você está em combate: use os botões da luta ou improvise pelo campo de texto."},
+        )
+
+
 def _cota_de_combate(db: Session, usuario: Usuario, chave: ChaveUsuario) -> bool:
     """Há cota para mais uma chamada pequena de combate? Quem traz a própria
     chave não gasta a do servidor."""
@@ -468,7 +497,7 @@ def game_action(
     w_state = WorldState.model_validate(heroi.world_state or {})
     c_state = CombatState.model_validate(heroi.combat_state or {})
     q_state = QuestLog.model_validate(heroi.quest_log or {})
-    if action.turno_esperado != w_state.turno:
+    if action.turno_esperado != w_state.revisao:
         raise HTTPException(status_code=409, detail="A rodada mudou. Atualize a partida antes de agir novamente.")
     if c_state.resultado == "morte":
         raise HTTPException(status_code=409, detail="Esta jornada terminou.")
@@ -560,9 +589,14 @@ def game_action(
         if not executor.eventos and resultado.get("descricao"):
             executor.eventos.append(str(resultado["descricao"]))
 
-    w_state.turno += 1
     narrativa = "\n".join(str(e) for e in executor.eventos)
     fim_de_turno = em_combate and (executor.turno_passou or not c_state.ativo)
+    w_state.revisao += 1
+    # O relógio do mundo só anda quando o herói gastou um turno: fechou o
+    # turno em combate, resistiu caído, ou fez algo que consome ação fora
+    # dele. Equipar, mudar de rumo, beber poção ou se mover não contam.
+    if fim_de_turno or action.acao == "resistir" or (not em_combate and executor._acao_gasta):
+        w_state.turno += 1
     if action.rotulo and action.rotulo.strip():
         texto_acao = action.rotulo.strip()
     else:
@@ -597,7 +631,7 @@ def game_action(
         confirmado = db.execute(
             update(Personagem).where(
                 Personagem.id == heroi.id,
-                func.coalesce(Personagem.world_state["turno"].as_integer(), 1) == action.turno_esperado,
+                func.coalesce(Personagem.world_state["revisao"].as_integer(), 1) == action.turno_esperado,
             ).values(world_state=w_state.model_dump()).execution_options(synchronize_session=False)
         )
         if confirmado.rowcount != 1:  # type: ignore[attr-defined]
@@ -640,6 +674,7 @@ async def chat_endpoint(
     w_state = WorldState.model_validate(heroi.world_state or {})
     c_state = CombatState.model_validate(heroi.combat_state or {})
     turnos.migrar_combate(c_state)
+    _recusar_chat_em_combate(c_state)
     q_state = QuestLog.model_validate(heroi.quest_log or {})
 
     # Guardado antes de incrementar: `w_state` só é persistido perto do fim
@@ -654,6 +689,7 @@ async def chat_endpoint(
     migrar_capitulo(w_state, heroi)
     migrar_equipamento(heroi)
     w_state.turno += 1
+    w_state.revisao += 1
     hist = contexto_recente(list(heroi.historico_chat), n=3)
 
     # Teste de morte é consequência automática de HP 0, não uma decisão do
@@ -837,6 +873,7 @@ def chat_stream_endpoint(
     w_state = WorldState.model_validate(heroi.world_state or {})
     c_state = CombatState.model_validate(heroi.combat_state or {})
     turnos.migrar_combate(c_state)
+    _recusar_chat_em_combate(c_state)
     q_state = QuestLog.model_validate(heroi.quest_log or {})
 
     # Ver a mesma nota em `chat_endpoint` — o incremento só é persistido
@@ -847,6 +884,7 @@ def chat_stream_endpoint(
     migrar_capitulo(w_state, heroi)
     migrar_equipamento(heroi)
     w_state.turno += 1
+    w_state.revisao += 1
     hist = contexto_recente(list(heroi.historico_chat), n=3)
 
     # Etapa 10 (A-6) — preenchido dentro de `gerar()`, lido por

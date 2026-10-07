@@ -1,52 +1,58 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
 
-// Smoke e2e (Etapa 7) — "criar personagem → jogar um turno → ver
-// resposta", o critério de "pronto" da própria etapa (PLANO_MESTRE.md).
-// Criação de personagem sobe o backend de verdade (POST /create_character);
-// o turno de chat intercepta `/chat/stream` via page.route, pelo mesmo
-// motivo que tests/test_smoke.py no backend zera `narrator.client`: não
-// depender de rede nem de GROQ_API_KEY pra um teste que precisa ser rápido
-// e determinístico.
-test('criar personagem, jogar um turno e ver a resposta com card de rolagem', async ({ page }) => {
+// Smoke e2e — "entrar → ter um herói → jogar um turno → ver a resposta".
+//
+// O que é real: a entrada como convidado pela tela, a criação do personagem
+// no backend e o carregamento do jogo. O que é interceptado: o turno de chat
+// (`/chat/stream`), para o teste não depender da IA nem de cota.
+//
+// O personagem é criado pela API, com a sessão do próprio navegador, e não
+// clicando pelo assistente de criação: o assistente mudou de 5 para 6 passos
+// desde a primeira versão deste teste e o deixou quebrado por meses. O que
+// este smoke protege é o caminho até o primeiro turno, não o assistente.
+const API = 'http://localhost:8000';
+
+// Criar o personagem chama a IA de verdade para escrever o prólogo; em dia
+// de provedor lento isso passa dos 30 s padrão do Playwright.
+test.describe.configure({ timeout: 120_000 });
+
+async function entrarComoConvidado(page: Page) {
   await page.goto('/');
   await page.getByRole('button', { name: /novo jogo/i }).click();
+  // Sem sessão, "Novo jogo" leva à tela de entrada; "Jogar agora" cria a
+  // conta de convidado e segue para a criação.
+  await page.getByRole('button', { name: /jogar agora/i }).click();
+  await expect(page).toHaveURL(/\/criar$/);
+}
 
-  // Passo 1 — Raça. Humano não tem bônus de "livre_escolha" (ver
-  // tests/test_smoke.py no backend), o que simplifica o Passo 4 abaixo.
-  await page.getByRole('button', { name: 'Humano' }).click();
-  await page.getByRole('button', { name: /próximo/i }).click();
+async function criarHeroi(page: Page, nome: string): Promise<string> {
+  const resposta = await page.request.post(`${API}/create_character`, {
+    data: {
+      nome, raca: 'Humano', classe: 'Guerreiro', alinhamento: 'Neutro', background: 'Andarilho',
+      objetivo: 'Provar que o sistema roda',
+      atributos: { forca: 15, destreza: 14, constituicao: 13, inteligencia: 12, sabedoria: 10, carisma: 8 },
+    },
+  });
+  expect(resposta.status(), await resposta.text()).toBe(200);
+  return (await resposta.json()).session_id;
+}
 
-  // Passo 2 — Classe.
-  await page.getByRole('button', { name: 'Guerreiro' }).click();
-  await page.getByRole('button', { name: /próximo/i }).click();
+async function abrirJogo(page: Page, sessionId: string, nome: string) {
+  await page.goto(`/jogar/${sessionId}`);
+  // Herói novo abre na tela de prólogo; "Começar" entra no jogo.
+  await page.getByRole('button', { name: /come[cç]ar/i }).click();
+  await expect(page.getByText(nome).first()).toBeVisible();
+}
 
-  // Passo 3 — Identidade.
-  const nomeHeroi = `TesteE2E_${Date.now()}`;
-  await page.getByPlaceholder('Ex: Vorag').fill(nomeHeroi);
-  await page.getByRole('button', { name: 'Masculino' }).click();
-  await page.getByPlaceholder('Ex: Soldado, Eremita, Nobre...').fill('Andarilho');
-  await page.getByPlaceholder('Ex: Vingar meu clã...').fill('Provar que o sistema roda');
-  await page.getByRole('button', { name: /próximo/i }).click();
+function sse(evento: string, dados: unknown): string {
+  return `event: ${evento}\ndata: ${JSON.stringify(dados)}\n\n`;
+}
 
-  // Passo 4 — Atributos: gasta os 27 pontos levando FOR/DES/CON de 8 a 15
-  // (custo 9 cada, 9×3=27) — o botão "Próximo" só libera com o total
-  // zerado.
-  // `div.space-y-6 > div.space-y-2 > div`, não só `div.space-y-2 > div`: o
-  // painel de rolagem do próprio passo 4 (o scroll da esquerda) também
-  // carrega a classe `space-y-2` entre outras, e um seletor mais solto
-  // pega os dois containers, desalinhando os índices das linhas.
-  const linhasDeAtributo = page.locator('div.space-y-6 > div.space-y-2 > div');
-  for (const indice of [0, 1, 2]) {
-    const botaoMais = linhasDeAtributo.nth(indice).getByRole('button').nth(1);
-    for (let clique = 0; clique < 7; clique++) {
-      await botaoMais.click();
-    }
-  }
-  await expect(page.getByText('0/27')).toBeVisible();
-  await page.getByRole('button', { name: /próximo/i }).click();
+test('entrar como convidado, jogar um turno e ver a resposta com card de rolagem', async ({ page }) => {
+  await entrarComoConvidado(page);
+  const nome = `TesteE2E${Date.now() % 100000}`;
+  const sessionId = await criarHeroi(page, nome);
 
-  // Passo 5 — Resumo. A partir daqui o próximo turno de chat vai ser
-  // interceptado: a criação do personagem em si ainda é real.
   await page.route('**/chat/stream', async (route) => {
     const frames = [
       sse('token', { texto: 'Você ' }),
@@ -58,27 +64,34 @@ test('criar personagem, jogar um turno e ver a resposta com card de rolagem', as
       }),
       sse('state', {
         hp_atual: 10, hp_max: 10, defesa: 11, nivel: 1, xp: 0, xp_proximo_nivel: 300,
-        inventory: [], combat_active: false, ordem_iniciativa: [], turno_atual: 0, inimigos: [], missao: {},
+        inventory: [], combat_active: false, turno_combate: null, inimigos: [], missao: {},
         narrativa: 'Você avista um goblin espreitando nas sombras.',
       }),
     ].join('');
     await route.fulfill({ status: 200, contentType: 'text/event-stream', body: frames });
   });
 
-  await page.getByRole('button', { name: /jogar agora/i }).click();
-
-  // Chegou no jogo — a ficha carregou de verdade (GET real a /load_game).
-  await expect(page.getByText(nomeHeroi)).toBeVisible();
-
+  await abrirJogo(page, sessionId, nome);
   await page.getByPlaceholder('Sua ação...').fill('Eu observo a sala com cuidado.');
   await page.getByRole('button', { name: /enviar ação/i }).click();
 
-  // A narração (via SSE mockado) e o card de rolagem aparecem.
+  // A narração (via SSE interceptado) e o card de rolagem aparecem.
   await expect(page.getByText('Você avista um goblin espreitando nas sombras.')).toBeVisible();
   await expect(page.getByText(/d20\(15\)/)).toBeVisible();
   await expect(page.getByText('SUCESSO')).toBeVisible();
 });
 
-function sse(evento: string, dados: unknown): string {
-  return `event: ${evento}\ndata: ${JSON.stringify(dados)}\n\n`;
-}
+test('a aba Jornada mostra a trilha do capítulo de um herói novo', async ({ page }) => {
+  await entrarComoConvidado(page);
+  const nome = `TrilhaE2E${Date.now() % 100000}`;
+  const sessionId = await criarHeroi(page, nome);
+  await abrirJogo(page, sessionId, nome);
+
+  await page.getByRole('tab', { name: /jornada/i }).click();
+  await expect(page.getByRole('heading', { name: /seu objetivo agora/i })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /capítulo 1 ·/i })).toBeVisible();
+  const passos = page.getByRole('list', { name: /passos do capítulo/i }).getByRole('listitem');
+  await expect(passos).toHaveCount(2);  // o passo de agora e o "???"
+  await expect(passos.nth(0)).toHaveAttribute('aria-current', 'step');
+  await expect(passos.nth(1)).toContainText('???');
+});

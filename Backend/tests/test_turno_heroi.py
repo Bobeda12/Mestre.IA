@@ -39,6 +39,7 @@ def _luta(*arquetipos: str, perto: bool = True, heroi: Personagem | None = None,
     c = CombatState(ativo=True, cenario_id="duelo", inimigos=inimigos)
     turnos.preparar(c, heroi.atributos, RngFixo([1] * len(inimigos) + [20]), perto=perto)
     c.vez, c.rodada = 0, 1
+    c.foco = 0  # sem Foco, nenhuma técnica de ação bônus segura o turno: cada teste liga o que quer medir
     return heroi, c, WorldState(local="Arena", versao_progressao=1, versao_mundo=2)
 
 
@@ -74,7 +75,7 @@ def test_sem_movimento_o_alvo_longe_fica_fora_do_alcance_e_a_acao_nao_e_gasta():
 def test_arco_atira_de_longe_e_sofre_desvantagem_com_inimigo_colado():
     arqueira = _heroi(inventario=["Arco Longo"], equipamento={"arma": "Arco Longo"})
     heroi, c, w = _luta("Orc", perto=False, heroi=arqueira)
-    r, ok, ex = _jogar(heroi, c, w, "atacar", RngFixo([15, 5, 2]), alvo="Orc")
+    r, ok, ex = _jogar(heroi, c, w, "atacar", RngFixo([15, 5, 2, 2]), alvo="Orc")  # depois o Orc avança e erra
     assert ok and c.inimigos[0].distancia in ("longe", "perto")
     assert ex.eventos_estruturados[0]["vantagem"] is None
     heroi, c, w = _luta("Orc", perto=True, heroi=_heroi(inventario=["Arco Longo"], equipamento={"arma": "Arco Longo"}))
@@ -197,9 +198,11 @@ def test_encerrar_sem_agir_passa_a_vez():
 
 def test_defender_vale_contra_a_fila_e_expira_no_turno_seguinte():
     heroi, c, w = _luta("Orc")
-    r, ok, ex = _jogar(heroi, c, w, "defender", RngFixo([11]))  # Orc: 11 + bônus não passa de CA 16 + 2?
+    r, ok, _ = _jogar(heroi, c, w, "defender")
+    assert ok and c.foco == 1 and "fim_de_turno" not in r  # defender devolve 1 de Foco, e o turno segue aberto
+    _, _, ex = _jogar(heroi, c, w, "encerrar_turno", RngFixo([11]))
     ataque = next(d for d in ex.eventos_estruturados if d.get("tipo") == "ataque")
-    assert ok and ataque["ca"] == 18
+    assert ataque["ca"] == 18
     assert c.heroi_bonus_ca == 0  # já expirou: é o turno do herói de novo
 
 
@@ -234,14 +237,53 @@ def test_heroi_caido_a_zero_so_pode_resistir():
         assert not ok and "inconsciente" in r["erro"]
 
 
-def test_luta_do_motor_antigo_continua_com_as_regras_antigas():
-    # Estado montado à mão (versao 1) não passa pela fila: é o que mantém a
-    # suíte antiga válida até a limpeza final. Em produção toda luta é v2.
-    heroi = _heroi()
-    c = CombatState(ativo=True, inimigos=[Inimigo(nome="Orc", arquetipo="Orc", hp=200, max_hp=200, ca=13,
-                                                  bonus_ataque=5, dano_dado="1d12+3", nome_ataque="Machado")])
-    r, ok, _ = _jogar(heroi, c, WorldState(local="Arena"), "atacar", RngFixo([15, 5, 2]), alvo="Orc")
-    assert ok and "fim_de_turno" not in r and "dano_recebido" in r
+# -- o que os testes do motor antigo cobriam, agora na fila de turnos ----------
+
+def test_card_do_ataque_diz_a_arma_o_atributo_e_de_onde_vem_o_bonus():
+    heroi, c, w = _luta("Orc")
+    _, _, ex = _jogar(heroi, c, w, "atacar", RngFixo([15, 5, 2]), alvo="Orc")
+    ataque = ex.eventos_estruturados[0]
+    assert ataque["arma"] == "Espada Longa" and ataque["atributo"] == "forca"
+    assert ataque["partes_bonus"] == [{"rotulo": "Força", "valor": 3}, {"rotulo": "Proficiência", "valor": 2}]
+
+
+def test_investir_bate_mais_forte_e_o_inimigo_revida_com_vantagem():
+    heroi, c, w = _luta("Orc")
+    _jogar(heroi, c, w, "atacar", RngFixo([15, 5, 2]), alvo="Orc")
+    normal = 200 - c.inimigos[0].hp
+    heroi, c, w = _luta("Orc")
+    _, ok, ex = _jogar(heroi, c, w, "investir", RngFixo([15, 5, 3, 4]), alvo="Orc")
+    ataques = [d for d in ex.eventos_estruturados if d.get("tipo") == "ataque"]
+    assert ok and 200 - c.inimigos[0].hp == normal * 3 // 2
+    assert ataques[1]["quem"] == "Orc" and ataques[1]["vantagem"] is True
+    assert c.heroi_vantagem_inimiga is None  # a exposição dura só até o turno seguinte do herói
+
+
+def test_esconder_se_faz_o_inimigo_perder_a_vez_procurando():
+    heroi, c, w = _luta("Orc")
+    r, ok, ex = _jogar(heroi, c, w, "esconder_se", RngFixo([19]))
+    assert ok and r["escondido"] is True and "vasculha" in _textos(ex) and heroi.hp_atual == 30
+    assert c.heroi_escondido is False  # já é o turno seguinte
+
+
+def test_dano_do_cenario_num_inimigo_gasta_a_acao():
+    # ferido e com poção: o turno não fecha sozinho depois da ação
+    heroi, c, w = _luta("Orc", heroi=_heroi(hp_atual=10, inventario=["Espada Longa", POCAO]))
+    r, ok, _ = _jogar(heroi, c, w, "aplicar_dano", RngFixo([4]), alvo="Orc", dado_dano="1d6", motivo="fogo")
+    assert ok and c.acao_usada and c.inimigos[0].hp == 196
+    r, ok, _ = _jogar(heroi, c, w, "atacar", alvo="Orc")
+    assert not ok and "sua ação" in r["erro"]
+
+
+def test_oleo_de_lamina_e_acao_bonus_e_soma_dois_no_golpe():
+    heroi, c, w = _luta("Orc")
+    _jogar(heroi, c, w, "atacar", RngFixo([15, 5, 2]), alvo="Orc")
+    normal = 200 - c.inimigos[0].hp
+    heroi, c, w = _luta("Orc", heroi=_heroi(inventario=["Espada Longa", "Óleo de Lâmina"]))
+    r, ok, _ = _jogar(heroi, c, w, "usar_item", item="Óleo de Lâmina")
+    assert ok and c.bonus_usada and not c.acao_usada and c.efeitos_heroi.get("lamina")
+    _jogar(heroi, c, w, "atacar", RngFixo([15, 5, 2]), alvo="Orc")
+    assert 200 - c.inimigos[0].hp == normal + 2
 
 
 # -- caminho real: /game/action -----------------------------------------------
@@ -251,17 +293,18 @@ def test_cliques_de_movimento_e_fim_de_turno_pela_api(monkeypatch):
     carga = client.post("/load_game", json={"session_id": sid}).json()
     turno = carga["turno_combate"]
     assert turno["fila"] == ["heroi", "i1"] and turno["vez"] == "heroi"
+    assert turno["alcance_ataque"] == "corpo"  # Espada Longa: a tela trava Atacar para alvo longe sem movimento
     assert carga["inimigos"][0]["id"] == "i1" and carga["inimigos"][0]["distancia"] == "perto"
 
     def clique(acao: str, esperado: int, **extra):
         return client.post("/game/action", json={"session_id": sid, "acao": acao, "turno_esperado": esperado, **extra})
 
-    recuo = clique("recuar", carga["turno_mundo"])
+    recuo = clique("recuar", carga["revisao"])
     assert recuo.status_code == 200, recuo.text
     corpo = recuo.json()
     assert corpo["inimigos"][0]["distancia"] == "longe" and corpo["turno_combate"]["movimento_usado"] is True
-    assert clique("aproximar", corpo["turno_mundo"], alvo="i1").status_code == 400  # movimento já gasto
-    fim = clique("encerrar_turno", corpo["turno_mundo"])
+    assert clique("aproximar", corpo["revisao"], alvo="i1").status_code == 400  # movimento já gasto
+    fim = clique("encerrar_turno", corpo["revisao"])
     assert fim.status_code == 200, fim.text
     depois = fim.json()
     assert depois["turno_combate"]["rodada"] == 2 and depois["turno_combate"]["movimento_usado"] is False
@@ -279,8 +322,25 @@ def test_resistir_caido_faz_a_fila_andar(monkeypatch):
         db.commit()
     carga = client.post("/load_game", json={"session_id": sid}).json()
     r = client.post("/game/action", json={"session_id": sid, "acao": "resistir",
-                                          "turno_esperado": carga["turno_mundo"]})
+                                          "turno_esperado": carga["revisao"]})
     assert r.status_code == 200, r.text
     corpo = r.json()
     if corpo["combat_active"]:
         assert corpo["turno_combate"]["rodada"] == 2 and corpo["turno_combate"]["vez"] == "heroi"
+
+
+def test_relogio_do_mundo_so_anda_quando_o_heroi_gasta_um_turno(monkeypatch):
+    # `revisao` sobe a cada clique (é o que barra o clique repetido); `turno_mundo`
+    # é tempo de jogo e não anda com movimento, ação bônus nem clique de painel.
+    sid = _partida(monkeypatch)
+    carga = client.post("/load_game", json={"session_id": sid}).json()
+    turno, revisao = carga["turno_mundo"], carga["revisao"]
+
+    def clique(acao: str, esperado: int, **extra):
+        return client.post("/game/action", json={"session_id": sid, "acao": acao, "turno_esperado": esperado, **extra})
+
+    recuo = clique("recuar", revisao).json()
+    assert (recuo["turno_mundo"], recuo["revisao"]) == (turno, revisao + 1)
+    assert clique("recuar", revisao).status_code == 409  # clique repetido com a revisão velha
+    fim = clique("encerrar_turno", recuo["revisao"]).json()
+    assert (fim["turno_mundo"], fim["revisao"]) == (turno + 1, revisao + 2)
