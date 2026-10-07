@@ -2,7 +2,7 @@
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class Registro(BaseModel):
@@ -60,12 +60,22 @@ class Intencao(BaseModel):
     alvo: str = Field(min_length=1, max_length=100)
     abordagem: str = Field(min_length=1, max_length=500)
     atributo: Literal["forca", "destreza", "constituicao", "inteligencia", "sabedoria", "carisma"]
-    dificuldade: Literal["simples", "arriscada", "dificil"] = "arriscada"
+    dificuldade: Literal["simples", "arriscada", "dificil", "extrema", "impossivel"] = "arriscada"
     fundamento: str = Field(min_length=1, max_length=500)
     meio: str = Field(default="", max_length=100)
     particularidades: list[str] = Field(default_factory=list, max_length=4)
-    sucesso: list[Efeito] = Field(min_length=1, max_length=3)
-    falha: list[Efeito] = Field(min_length=1, max_length=2)
+    # "extrema" é muito difícil (CD alta, ainda possível). "impossivel" é o
+    # que a ficção não permite (fogo no fundo do mar): não rola, não muda o
+    # mundo, só vira uma tentativa narrada que não deu certo. Por isso os
+    # efeitos só são obrigatórios nas outras dificuldades.
+    sucesso: list[Efeito] = Field(default_factory=list, max_length=3)
+    falha: list[Efeito] = Field(default_factory=list, max_length=2)
+
+    @model_validator(mode="after")
+    def _efeitos_obrigatorios(self) -> "Intencao":
+        if self.dificuldade != "impossivel" and (not self.sucesso or not self.falha):
+            raise ValueError("declare ao menos um efeito de sucesso e um de falha")
+        return self
 
 
 class Aprendizado(Registro):

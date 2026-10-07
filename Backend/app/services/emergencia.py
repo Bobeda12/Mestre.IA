@@ -69,8 +69,13 @@ def registrar_particularidade(executor: "ToolExecutor", particularidade: dict) -
 def resolver_intencao(executor: "ToolExecutor", proposta: dict) -> dict:
     p = Intencao.model_validate(proposta)
     estado = executor.w_state.mundo
+    if p.dificuldade == "impossivel":
+        # Sem rolagem e sem punição: o que a ficção não permite só não acontece.
+        descricao = f"{p.intencao}: impossível; o herói tenta e não consegue."
+        executor.eventos.append(descricao)
+        return {"sucesso": False, "impossivel": True, "descricao": descricao}
     if not _presente(executor, p.alvo):
-        return {"erro": "Alvo ausente. Use IDs do mundo, heroi ou o nome do local atual."}
+        return {"erro": "Alvo não registrado na cena. Se for plausível aqui, registre-o com registrar_cena e repita resolver_intencao agora; se não existir, narre a tentativa e o mundo reagindo, sem recusar."}
     if p.meio and p.meio not in (executor.heroi.inventario or []) and not _presente(executor, p.meio):
         return {"erro": "O meio precisa existir no inventário ou na cena."}
     for referencia in p.particularidades:
@@ -131,7 +136,7 @@ def resolver_intencao(executor: "ToolExecutor", proposta: dict) -> dict:
     ))
     sucesso = mundo._testar(
         executor, "improvisar", p.alvo, p.atributo,
-        {"simples": 10, "arriscada": 15, "dificil": 20}[p.dificuldade], assinatura, bonus + int(preparada),
+        {"simples": 10, "arriscada": 15, "dificil": 20, "extrema": 24}[p.dificuldade], assinatura, bonus + int(preparada),
     )
     if sucesso is None:
         return {"erro": "Esta tentativa já falhou. Mude o meio, as condições ou o efeito pretendido."}

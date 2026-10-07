@@ -45,6 +45,7 @@ Template: [`0000-template.md`](0000-template.md) · Sistema completo: [`../READM
 | [0041](0041-ia-pequena-no-combate-narrar-e-julgar-improviso.md) | No combate a IA faz duas chamadas pequenas e sem ferramentas: narra a rodada a partir de fatos sem número montados pelo servidor, e julga o improviso escolhendo atributo, dificuldade e efeito em listas fechadas; sem IA, a luta segue | Plano "Trilha + Combate v2" (Fase 6) | ✅ aceito | 06/10/2026 |
 | [0042](0042-identidade-de-classe-e-foco-como-recurso-da-jornada.md) | Identidade de classe: um traço sempre ligado e, para dez classes, uma técnica de ação bônus; técnicas com alcance e resistência; Foco que não reinicia a cada luta; chefe do capítulo por degrau de nível | Plano "Trilha + Combate v2" (Fase 8) | ✅ aceito | 07/10/2026 |
 | [0043](0043-pessoa-morta-e-agressao-detectada-pelo-servidor.md) | Pessoa do mundo pode estar morta (`morto`); o servidor detecta a agressão no texto livre, libera o combate e, na vitória, mata a pessoa ligada ao inimigo | Plano "Texto livre e progressão" (Fase 1) | ✅ aceito | 07/10/2026 |
+| [0044](0044-liberdade-no-texto-livre-extrema-e-impossivel.md) | Liberdade no texto livre: o desvio do rumo é aceito, dificuldade "extrema" (CD 24) e "impossível" (sem rolagem nem punição), erros que orientam, Lei da Verossimilhança sempre no prompt | Plano "Texto livre e progressão" (Fase 2) | ✅ aceito | 07/10/2026 |
 
 **Legenda:** 🕓 previsto · ✅ aceito · ⛔ substituído
 

@@ -216,3 +216,38 @@ def test_inimigo_real_pode_ser_alvo_de_intencao(executor):
         alvo="Sentinela", sucesso=[{"tipo": "condicao", "alvo": "Sentinela", "texto": "Coberto de fuligem"}],
     ))
     assert valido and resposta["sucesso"]
+
+
+def test_impossivel_nao_rola_nao_pune_e_nao_muda_o_mundo(executor):
+    executor.rng = RngFixo([])  # qualquer rolagem estouraria: não pode haver nenhuma
+    pv, condicoes = executor.heroi.hp_atual, dict(executor.w_state.mundo.condicoes)
+    resposta, valido = chamar(
+        executor, "resolver_intencao",
+        proposta={"intencao": "Acender uma fogueira no fundo do mar", "alvo": "sino", "abordagem": "Faíscas",
+                  "atributo": "destreza", "fundamento": "Nenhum", "dificuldade": "impossivel"},
+    )
+    assert valido and resposta["sucesso"] is False and resposta["impossivel"] is True
+    assert executor.heroi.hp_atual == pv and executor.w_state.mundo.condicoes == condicoes
+
+
+def test_dificuldade_comum_continua_exigindo_efeitos(executor):
+    sem_efeitos = proposta()
+    sem_efeitos["falha"] = []
+    _, valido = chamar(executor, "resolver_intencao", proposta=sem_efeitos)
+    assert not valido
+
+
+def test_extrema_e_possivel_mas_bem_mais_dificil(executor):
+    executor.rng = RngFixo([20])
+    executor.heroi.atributos["carisma"] = 20
+    resposta, valido = chamar(executor, "resolver_intencao", proposta=proposta(dificuldade="extrema"))
+    assert valido and resposta["sucesso"] is True
+    ex2 = proximo(executor, dado=8)
+    resposta, valido = chamar(ex2, "resolver_intencao", proposta=proposta(dificuldade="extrema", meio="sino"))
+    assert valido and resposta["sucesso"] is False  # 8 + bônus não alcança CD 24
+
+
+def test_alvo_nao_registrado_orienta_em_vez_de_recusar(executor):
+    resposta, valido = chamar(executor, "agir_no_mundo", acao="examinar", alvo="estatua_do_rei")
+    assert not valido
+    assert "registrar_cena" in resposta["erro"] and "sem recusar" in resposta["erro"]
