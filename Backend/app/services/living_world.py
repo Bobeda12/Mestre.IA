@@ -2,6 +2,7 @@
 
 import json
 import random
+import re
 from typing import TYPE_CHECKING
 
 from pydantic import ValidationError
@@ -521,7 +522,9 @@ def agir_no_mundo(executor: "ToolExecutor", acao: str, alvo: str, meio: str | No
 
 def _agir_pessoa(executor: "ToolExecutor", pessoa: PessoaMundo, acao: str, proposta: str, meio: str | None) -> dict:
     mundo = executor.w_state.mundo
-    if pessoa.local != executor.w_state.local or pessoa.disposicao == "ausente":
+    if pessoa.disposicao == "morto":
+        return {"erro": f"{pessoa.nome} está morto(a) e não pode falar nem agir."}
+    if pessoa.local != executor.w_state.local or pessoa.indisponivel:
         return {"erro": "Essa pessoa não está presente."}
     if acao == "examinar":
         return {"descricao": pessoa.descricao, "disposicao": pessoa.disposicao}
@@ -619,7 +622,7 @@ def _agir_pessoa(executor: "ToolExecutor", pessoa: PessoaMundo, acao: str, propo
 
 def registrar_vinculo(executor: "ToolExecutor", npc: str, natureza: str, texto: str) -> dict:
     pessoa = executor.w_state.mundo.pessoas.get(npc)
-    if not pessoa or pessoa.local != executor.w_state.local or pessoa.disposicao == "ausente":
+    if not pessoa or pessoa.local != executor.w_state.local or pessoa.indisponivel:
         return {"erro": "O interlocutor precisa estar presente."}
     if natureza not in {"promessa", "boato", "suspeita"} or not 1 <= len(texto.strip()) <= 500:
         return {"erro": "Registre promessa, boato ou suspeita em até 500 caracteres."}
@@ -898,6 +901,67 @@ def encerrar_arco(executor: "ToolExecutor", resumo_proposto: str = "", abandonar
     executor.q_state.objetivo_missao = "Escolha o que fazer depois de " + arco.titulo + "."
     resultado_xp = executor._aplicar_xp(recompensa["xp"]) if recompensa["xp"] else {}
     return {"encerrado": True, "arco": arco.id, "resultado": resultado, "recompensa": recompensa, **resultado_xp}
+
+
+def pessoa_do_local(mundo, local: str, nome: str):
+    """A PessoaMundo viva do local que o jogador chama por `nome` (id, nome
+    inteiro ou uma parte dele: "Ruan" acha "Rei Ruan"). Mortos e ausentes não
+    contam: não se luta de novo com quem já caiu."""
+    alvo = nome.strip().casefold()
+    if not alvo:
+        return None
+    candidatas = [p for p in mundo.pessoas.values() if p.local == local and not p.indisponivel]
+    for p in candidatas:
+        if alvo in (p.id.casefold(), p.nome.strip().casefold()):
+            return p
+    for p in candidatas:
+        n = p.nome.strip().casefold()
+        if len(alvo) >= 3 and (alvo in n or n in alvo):
+            return p
+    return None
+
+
+# Verbos de violência contra alguém. "mata" não entra: é mato/floresta.
+_AGRESSAO = re.compile(
+    r"\b(?:mat(?:ar|o|ei|aria|aremos)|assassin\w+|esfaque\w+|apunhal\w+|degol\w+|estrangul\w+|enforc\w+|"
+    r"execut(?:ar|o|ei)|atac(?:ar|o|ei)|agred\w+|esmag\w+|decap\w+|trucid\w+|elimin(?:ar|o|ei)|"
+    r"acab(?:ar|o|ei)\s+com|parto\s+pra\s+cima|ataco|golpe(?:io|ar)?|espanc\w+|"
+    r"disparo\s+(?:contra|em)|atiro\s+(?:em|contra|nel[ae]))\b"
+)
+
+
+def detectar_agressao(acao: str, w_state) -> tuple[bool, "PessoaMundo | None"]:
+    """O jogador quer ferir alguém? Devolve (agressão, pessoa do mundo visada).
+    É texto simples de propósito: o servidor precisa saber disso sem depender
+    de o modelo lembrar de abrir o combate."""
+    texto = acao.casefold()
+    if not _AGRESSAO.search(texto):
+        return False, None
+    alvo = None
+    for p in w_state.mundo.pessoas.values():
+        if p.local != w_state.local or p.indisponivel:
+            continue
+        palavras = [p.nome.casefold(), *[w for w in p.nome.casefold().split() if len(w) >= 3]]
+        if any(w and w in texto for w in palavras):
+            alvo = p
+            break
+    return True, alvo
+
+
+def registrar_mortes(c_state, w_state) -> list[str]:
+    """Na vitória, quem era uma pessoa do mundo e caiu passa a `morto`: some
+    do comércio, da conversa e dos passos da trilha. Quem só recuou continua
+    vivo — matar é decisão do combate, não da narração."""
+    eventos: list[str] = []
+    for inimigo in c_state.inimigos:
+        pessoa = w_state.mundo.pessoas.get(inimigo.pessoa_id) if inimigo.pessoa_id else None
+        if pessoa is None or inimigo.hp > 0 or pessoa.disposicao == "morto":
+            continue
+        pessoa.disposicao = "morto"
+        pessoa.mercadoria = []
+        pessoa.estoque = {}
+        eventos.append(f"☠️ {pessoa.nome} está morto(a).")
+    return eventos
 
 
 def marcar_chefe_enfrentado(w_state) -> None:

@@ -41,7 +41,7 @@ def despachar_remessa(executor, id: str, remetente: str, destinatario: str, pass
     origem, destino = m.pessoas.get(remetente), m.pessoas.get(destinatario)
     fato = next((a for a in m.acontecimentos if a.id == acontecimento), None)
     if (executor.c_state.ativo or not origem or not destino or origem.id == destino.id
-            or origem.local != w.local or origem.disposicao == "ausente" or not fato):
+            or origem.local != w.local or origem.indisponivel or not fato):
         return {"erro": "Vincule comerciantes existentes, remetente presente e um acontecimento real."}
     if fato.local != origem.local and not any(k.texto == fato.descricao for k in origem.conhecimentos):
         return {"erro": "O remetente ainda não conhece esse acontecimento."}
@@ -72,7 +72,7 @@ def avancar_remessas(executor) -> None:
         if r.estado == "entregue" or m.minutos < r.chegada_em:
             continue
         destino = m.pessoas.get(r.destinatario)
-        if (not destino or destino.local != r.destino or destino.disposicao == "ausente"
+        if (not destino or destino.local != r.destino or destino.indisponivel
                 or not _passagem(w, r.origem, r.passagem, r.destino)):
             r.estado = "retida"
             continue

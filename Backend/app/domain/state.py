@@ -30,6 +30,9 @@ class Inimigo(BaseModel):
     comportamento: str = ""
     arquetipo: str = ""
     afastado: bool = False
+    # Quando o inimigo é uma pessoa do mundo (PessoaMundo.id): a vitória sobre
+    # ele a marca como morta; sem isso o NPC "morria" só na prosa.
+    pessoa_id: str = ""
     xp: int = 0
     intencao: str = "atacar"
     efeitos: dict[str, int] = {}

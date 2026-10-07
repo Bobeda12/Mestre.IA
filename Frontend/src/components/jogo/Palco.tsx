@@ -138,21 +138,24 @@ export default function Palco(p: Props) {
           ))}
 
           {/* Pessoas do Mundo Vivo: em combate ficam em segundo plano. */}
-          {p.pessoas.map(npc => (
-            <button type="button" key={`npc:${npc.id}`}
-              className={`adventure-actor adventure-actor--npc ${selecionado('pessoa', npc.id) ? 'adventure-actor--selected' : ''} ${p.combate ? 'adventure-actor--bystander' : ''}`}
-              disabled={bloqueado || p.combate || caido}
-              aria-pressed={selecionado('pessoa', npc.id)}
-              aria-label={`Selecionar ${npc.nome}, ${npc.disposicao}, confiança ${npc.confianca}`}
-              title={npc.descricao}
-              onClick={() => alternar('pessoa', npc.id)}>
-              <span className="adventure-actor__tag font-rpg uppercase">{npc.disposicao}</span>
-              <img className="adventure-actor__sprite" src={getLocalImage('races', npc.raca || 'Humano')} alt="" draggable={false} />
-              <span className="adventure-actor__shadow" aria-hidden="true" />
-              <span className="adventure-actor__name font-rpg">{npc.nome}</span>
-              <span className="adventure-actor__life font-rpg">confiança {npc.confianca}</span>
-            </button>
-          ))}
+          {p.pessoas.map(npc => {
+            const morto = npc.disposicao === 'morto'
+            return (
+              <button type="button" key={`npc:${npc.id}`}
+                className={`adventure-actor adventure-actor--npc ${selecionado('pessoa', npc.id) ? 'adventure-actor--selected' : ''} ${p.combate ? 'adventure-actor--bystander' : ''} ${morto ? 'adventure-actor--dead' : ''}`}
+                disabled={bloqueado || p.combate || caido || morto}
+                aria-pressed={selecionado('pessoa', npc.id)}
+                aria-label={morto ? `${npc.nome}, morto` : `Selecionar ${npc.nome}, ${npc.disposicao}, confiança ${npc.confianca}`}
+                title={npc.descricao}
+                onClick={() => alternar('pessoa', npc.id)}>
+                <span className="adventure-actor__tag font-rpg uppercase">{npc.disposicao}</span>
+                <img className="adventure-actor__sprite" src={getLocalImage('races', npc.raca || 'Humano')} alt="" draggable={false} />
+                <span className="adventure-actor__shadow" aria-hidden="true" />
+                <span className="adventure-actor__name font-rpg">{npc.nome}</span>
+                <span className="adventure-actor__life font-rpg">{morto ? 'sem vida' : `confiança ${npc.confianca}`}</span>
+              </button>
+            )
+          })}
         </div>
 
         <div className="adventure-world__opponents">

@@ -20,7 +20,7 @@ def _presente(executor: "ToolExecutor", alvo: str) -> bool:
         return True
     pessoa = w.mundo.pessoas.get(alvo)
     if pessoa:
-        return pessoa.local == w.local and pessoa.disposicao != "ausente"
+        return pessoa.local == w.local and not pessoa.indisponivel
     cena = w.mundo.cenas.get(w.local)
     entidade = cena.entidades.get(alvo) if cena else None
     return bool(entidade and not entidade.recolhido and entidade.estado != "destruido")
@@ -182,7 +182,7 @@ def desenvolver_consequencia(executor: "ToolExecutor", consequencia: dict) -> di
         return {"existente": estado.consequencias[proposta.id].model_dump()}
     origem = next((a for a in estado.acontecimentos if a.id == proposta.origem), None)
     pessoa = estado.pessoas.get(proposta.agente)
-    if not origem or not pessoa or pessoa.local != proposta.local or pessoa.disposicao == "ausente":
+    if not origem or not pessoa or pessoa.local != proposta.local or pessoa.indisponivel:
         return {"erro": "Vincule um acontecimento real e um agente presente no local da iniciativa."}
     if origem.local != pessoa.local and not any(k.texto == origem.descricao for k in pessoa.conhecimentos):
         return {"erro": "O agente não conhece esse acontecimento distante; a notícia precisa chegar primeiro."}
@@ -257,7 +257,7 @@ def escolher_aprendizado(executor: "ToolExecutor", aprendizado: str) -> dict:
 def painel_emergente(w_state, privado: bool = False) -> dict:
     estado = w_state.mundo
     particularidades = [p for p in estado.particularidades.values() if p.local == w_state.local]
-    pessoas = {p.id for p in estado.pessoas.values() if p.local == w_state.local and p.disposicao != "ausente"}
+    pessoas = {p.id for p in estado.pessoas.values() if p.local == w_state.local and not p.indisponivel}
     prefixo = f"{w_state.local}:"
     return {
         "acontecimentos": [a.model_dump() for a in estado.acontecimentos[-8:]],

@@ -395,7 +395,7 @@ def _reparar_lacunas_mundo_inicial(mundo: dict, local: str) -> dict:
 # valores válidos) — espelha exatamente os `Literal[...]` de
 # domain/living_world.py; se o schema lá mudar, isto precisa acompanhar.
 _ENUM_PADRAO_E_VALIDOS: dict[str, tuple[str, tuple[str, ...]]] = {
-    "disposicao": ("reservado", ("reservado", "cooperativo", "hostil", "ausente")),
+    "disposicao": ("reservado", ("reservado", "cooperativo", "hostil", "ausente", "morto")),
     "tipo_entidade": ("objeto", ("objeto", "saida", "obstaculo", "animal")),
     "estado_entidade": ("intacto", ("intacto", "aberto", "bloqueado", "destruido", "movido", "aceso", "apagado")),
     "efeito_conflito": ("disputa", ("disputa", "bloquear", "partir")),
@@ -1124,6 +1124,17 @@ def montar_contexto(
     nomes dos monstros do bestiário que encaixam na cena (ex: ["Goblin"]).
     O servidor confirma que os nomes existem antes de criar o combate.
     [DESAFIO SUGERIDO] Para o nível do herói, prefira: {json.dumps(monstros_sugeridos, ensure_ascii=False)}."""
+    if acao and not c_state.ativo:
+        from app.services.living_world import detectar_agressao
+
+        agressao, vitima = detectar_agressao(acao, w_state)
+        if agressao:
+            alvo = f' contra "{vitima.nome}" (pessoa do mundo)' if vitima else ""
+            secao_combate += (
+                f"\n    [AGRESSÃO] O jogador parte para a violência{alvo}. Chame iniciar_combate AGORA"
+                f"{' com inimigos=[' + json.dumps(vitima.nome, ensure_ascii=False) + ']' if vitima else ''}"
+                " e narre só a intenção: não descreva a morte nem o resultado do golpe."
+            )
 
     # Remaster da criação de personagem (Fase 2/4) — antes disto, cortava
     # historia_texto nos primeiros 150 caracteres, no meio de uma frase
@@ -1245,6 +1256,11 @@ Acontecimentos registrados podem motivar desenvolver_consequencia: NPCs tentam p
 substitui permite replanejar após nova causa. Não crie crise em toda ação; preserve cenas de respiro.
 propor_aprendizado usa experiências reais; somente o jogador escolhe ativá-lo na Jornada.
 Encerrar arco, recrutar, comerciar e receber itens exigem confirmação da ferramenta correspondente.
+
+[PESSOAS MORTAS]
+Pessoa com disposicao "morto" não fala, não age e não vende; só o corpo e o que ela deixou existem.
+Matar alguém é combate: chame iniciar_combate com o nome da pessoa. Nunca narre a morte, nem o desfecho
+de uma agressão, antes de a ferramenta confirmar. O combate decide quem cai.
 
 [VOZ E RESPOSTA]
 Prosa breve e específica: uma imagem sensorial, reação coerente, espaço para o jogador. Varie ritmo e

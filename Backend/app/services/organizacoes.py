@@ -72,7 +72,7 @@ def iniciativa_viavel(mundo, conflito) -> bool:
     grupo = mundo.organizacoes.get(conflito.organizacao)
     npc = mundo.pessoas.get(conflito.agente)
     if (not grupo or conflito.agente not in grupo.membros or not npc
-            or npc.local != conflito.local or npc.disposicao == "ausente"):
+            or npc.local != conflito.local or npc.indisponivel):
         return False
     if conflito.efeito == "bloquear":
         cena = mundo.cenas.get(conflito.local)

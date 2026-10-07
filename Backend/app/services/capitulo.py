@@ -98,7 +98,7 @@ def _impossivel(passo: Passo, w_state, arco: Arco) -> bool:
     c, mundo = passo.condicao, w_state.mundo
     if c.tipo in ("falar_pessoa", "ganhar_confianca"):
         pessoa = mundo.pessoas.get(c.alvo)
-        return pessoa is None or pessoa.disposicao == "ausente"
+        return pessoa is None or pessoa.indisponivel
     if c.tipo in ("investigar", "obter_item"):
         return _entidade(w_state, c) is None
     if c.tipo == "intervir_conflito":
@@ -163,7 +163,7 @@ def candidatos_passo(w_state, heroi) -> list[Candidato]:
     conflito = mundo.conflitos.get(arco.conflito_central)
     aberto = conflito is not None and conflito.estado == "ativo"
     agente = mundo.pessoas.get(conflito.agente) if conflito else None
-    presentes = [p for p in mundo.pessoas.values() if p.local == local and p.disposicao != "ausente"]
+    presentes = [p for p in mundo.pessoas.values() if p.local == local and not p.indisponivel]
     if conflito is not None and aberto and conflito.local != local:
         propor("chegar_local", f"Vá até {conflito.local}.", conflito.local)
     if agente is not None and agente in presentes and not agente.ouvida:
