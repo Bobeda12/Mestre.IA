@@ -133,6 +133,7 @@ export interface MundoPersistente {
   // (sinais da cena) e os aprendizados (aba Poderes). Projetos, organizações,
   // remessas e conflitos seguem no servidor, sem painel (ADR-0039).
   local: string; descricao: string; entidades: EntidadeMundo[]; pessoas: PessoaMundo[];
+  lugares?: { nome: string; nivel: number; atual: boolean }[];
   imersao?: { oportunidades: { id: string; percepcao: string; risco: string; alvo: string }[] };
   emergencia?: {
     aprendizados: { id: string; nome: string; descricao: string; atributo: string; alvo: string; ativo: boolean }[];

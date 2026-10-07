@@ -1123,7 +1123,9 @@ def montar_contexto(
     # só propondo nomes dentro delas (ADR-0006: dificuldade não é
     # decisão do LLM). `iniciar_combate` também descarta nomes fora do
     # bestiário, então isto é orientação, não a única barreira.
-    bandas = motor.desafio_sugerido(heroi.nivel or 1)
+    from app.services.living_world import locais_conhecidos, nivel_do_local
+
+    bandas = motor.desafio_sugerido(nivel_do_local(w_state.local, heroi.nivel or 1))
     monstros_sugeridos = [n for banda in bandas for n in regras.get_monstros_por_banda(banda)]
     secao_combate = f"""Se a cena pedir um confronto, chame a ferramenta "iniciar_combate" com os
     nomes dos monstros do bestiário que encaixam na cena (ex: ["Goblin"]).
@@ -1300,6 +1302,7 @@ Grupos instalacoes/economia: melhorias exigem projeto concluído; estoque finito
 [INVENTÁRIO] {secao_inventario}{secao_aliados}
 [MISSÃO ATUAL] {q_state.nome_missao}: {q_state.objetivo_missao}
 [CENA] {w_state.local}, {w_state.clima}, {motor.periodo_do_dia(w_state.hora_do_dia)}{secao_progressao}{secao_arco}
+[LUGARES CONHECIDOS] {"; ".join(locais_conhecidos(w_state))}
 [MUNDO PERSISTENTE — PRIVADO]
 {secao_mundo}
 {secao_memoria}

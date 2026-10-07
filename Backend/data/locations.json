@@ -1,44 +1,194 @@
 {
   "Vila de Phandalin": {
     "descricao": "Uma vila mineradora poeirenta e rústica.",
-    "pontos_interesse": ["Taverna Rocha Colina", "Loja Escudo de Leão", "Prefeitura"],
-    "npcs": ["Toblen (Taverneiro)", "Halia (Mercadora)"],
-    "seguro": true
+    "pontos_interesse": [
+      "Taverna Rocha Colina",
+      "Loja Escudo de Leão",
+      "Prefeitura"
+    ],
+    "npcs": [
+      "Toblen (Taverneiro)",
+      "Halia (Mercadora)"
+    ],
+    "seguro": true,
+    "nivel": 0
   },
   "Masmorra Esquecida": {
     "descricao": "Ruínas de um antigo templo anão, cheiro de mofo e pedras úmidas.",
-    "perigos": ["Armadilhas de Fosso", "Goblins", "Aranhas Gigantes"],
-    "tesouros": ["Ouro antigo", "Estátuas de Jade"],
-    "seguro": false
+    "perigos": [
+      "Armadilhas de Fosso",
+      "Goblins",
+      "Aranhas Gigantes"
+    ],
+    "tesouros": [
+      "Ouro antigo",
+      "Estátuas de Jade"
+    ],
+    "seguro": false,
+    "nivel": 2
   },
   "Floresta das Sombras": {
     "descricao": "Árvores retorcidas que bloqueiam a luz do sol.",
-    "perigos": ["Lobos", "Corujas-Urso", "Bandidos"],
+    "perigos": [
+      "Lobos",
+      "Corujas-Urso",
+      "Bandidos"
+    ],
     "clima": "Sempre neblina e frio.",
-    "seguro": false
+    "seguro": false,
+    "nivel": 3
   },
   "Forte de Dunhollow": {
     "descricao": "Um forte de pedra escura, meio soterrado, tomado por goblins e kobolds desde que a guarnição real o abandonou.",
-    "perigos": ["Goblins", "Kobolds", "Armadilhas de Cerco Abandonadas"],
-    "tesouros": ["Armamento militar enferrujado", "Selo do antigo comandante"],
-    "seguro": false
+    "perigos": [
+      "Goblins",
+      "Kobolds",
+      "Armadilhas de Cerco Abandonadas"
+    ],
+    "tesouros": [
+      "Armamento militar enferrujado",
+      "Selo do antigo comandante"
+    ],
+    "seguro": false,
+    "nivel": 3
   },
   "Porto de Maré Negra": {
     "descricao": "Um porto de pescadores cercado por névoa constante, onde os barcos voltam com menos gente do que saíram.",
-    "pontos_interesse": ["Taverna O Polvo Encalhado", "Cais dos Contrabandistas", "Farol Apagado"],
-    "npcs": ["Rensa (Mestra de Portos)", "Vell (Contrabandista)"],
-    "seguro": true
+    "pontos_interesse": [
+      "Taverna O Polvo Encalhado",
+      "Cais dos Contrabandistas",
+      "Farol Apagado"
+    ],
+    "npcs": [
+      "Rensa (Mestra de Portos)",
+      "Vell (Contrabandista)"
+    ],
+    "seguro": true,
+    "nivel": 0
   },
   "Pântano Podre": {
     "descricao": "Água parada, cheiro de coisa morta e luzes que piscam entre as árvores retorcidas — ninguém que mora perto entra depois do anoitecer.",
-    "perigos": ["Vermes Gigantes", "Bandidos Emboscados", "Areia Movediça"],
+    "perigos": [
+      "Vermes Gigantes",
+      "Bandidos Emboscados",
+      "Areia Movediça"
+    ],
     "clima": "Úmido e abafado, com neblina baixa o dia inteiro.",
-    "seguro": false
+    "seguro": false,
+    "nivel": 4
   },
   "Criptas de Ashgrave": {
     "descricao": "Um cemitério antigo cujas tumbas foram abertas de dentro para fora — os mortos daqui não ficam deitados.",
-    "perigos": ["Esqueletos", "Armadilhas Funerárias", "Ar Viciado"],
-    "tesouros": ["Relicários selados", "Moedas de eras esquecidas"],
-    "seguro": false
+    "perigos": [
+      "Esqueletos",
+      "Armadilhas Funerárias",
+      "Ar Viciado"
+    ],
+    "tesouros": [
+      "Relicários selados",
+      "Moedas de eras esquecidas"
+    ],
+    "seguro": false,
+    "nivel": 5
+  },
+  "Cidade de Altaluz": {
+    "descricao": "Uma cidade murada de pedra clara, com mercados movimentados e guardas atentos; ponto de encontro de aventureiros que já têm nome.",
+    "pontos_interesse": [
+      "Mercado das Mil Barracas",
+      "Guilda dos Cartógrafos",
+      "Estalagem do Grifo"
+    ],
+    "npcs": [
+      "Mestra Ilvane (Cartógrafa)",
+      "Dorn (Armeiro)"
+    ],
+    "seguro": true,
+    "nivel": 0
+  },
+  "Minas de Cristal Sombrio": {
+    "descricao": "Galerias onde o cristal brilha de azul-escuro e algo escava de volta, do outro lado das paredes.",
+    "perigos": [
+      "Gnolls Mineradores",
+      "Desabamentos",
+      "Aranhas de Cristal"
+    ],
+    "tesouros": [
+      "Veios de cristal sombrio",
+      "Ferramentas anãs intactas"
+    ],
+    "seguro": false,
+    "nivel": 4
+  },
+  "Ruínas de Karth": {
+    "descricao": "Uma cidade-fortaleza tombada por uma guerra esquecida; bandeiras apodrecidas ainda balançam nas torres.",
+    "perigos": [
+      "Ogros",
+      "Espectros de soldados",
+      "Armadilhas de cerco"
+    ],
+    "tesouros": [
+      "Armaduras de guerra",
+      "Mapas de campanha selados"
+    ],
+    "seguro": false,
+    "nivel": 5
+  },
+  "Torre do Mago Louco": {
+    "descricao": "Uma torre que se inclina contra o vento, cheia de portas que levam para onde não deveriam.",
+    "perigos": [
+      "Constructos arcanos",
+      "Portais instáveis",
+      "Elementais soltos"
+    ],
+    "tesouros": [
+      "Grimórios rasgados",
+      "Focos arcanos"
+    ],
+    "seguro": false,
+    "nivel": 6
+  },
+  "Montanhas Geladas de Vael": {
+    "descricao": "Picos cobertos de gelo eterno, com vilarejos isolados e cavernas onde o vento parece sussurrar nomes.",
+    "perigos": [
+      "Trolls do gelo",
+      "Avalanches",
+      "Lobos invernais"
+    ],
+    "clima": "Nevasca constante e vento cortante.",
+    "tesouros": [
+      "Peles raras",
+      "Relíquias de gelo"
+    ],
+    "seguro": false,
+    "nivel": 7
+  },
+  "Vulcão de Cinzas": {
+    "descricao": "Um cone negro que ronca, com rios de lava e um culto que jura que algo dorme sob a cratera.",
+    "perigos": [
+      "Elementais de fogo",
+      "Gases venenosos",
+      "Cultistas das cinzas"
+    ],
+    "clima": "Calor sufocante e chuva de cinzas.",
+    "tesouros": [
+      "Vidro vulcânico",
+      "Armas forjadas na lava"
+    ],
+    "seguro": false,
+    "nivel": 8
+  },
+  "Cidadela Esquecida": {
+    "descricao": "A fortaleza de um lich antigo, cujo nome ninguém ousa dizer; as paredes lembram de quem passa.",
+    "perigos": [
+      "Mortos-vivos de elite",
+      "Armadilhas arcanas",
+      "O próprio lich"
+    ],
+    "tesouros": [
+      "Filactérios vazios",
+      "Coroas de eras mortas"
+    ],
+    "seguro": false,
+    "nivel": 9
   }
 }

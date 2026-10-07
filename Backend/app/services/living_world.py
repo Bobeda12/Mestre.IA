@@ -768,6 +768,10 @@ def painel_mundo(w_state, classe: str, privado: bool = False) -> dict:
         "especializacoes": mundo.especializacoes,
         "aptidao": {"nome": aptidao[0], "acoes": aptidao[1], "bonus": 2},
         "minutos": mundo.minutos,
+        "lugares": [
+            {"nome": n, "nivel": int((regras.get_location(n) or {}).get("nivel", 0) or 0), "atual": n == w_state.local}
+            for n in locais_conhecidos(w_state)
+        ],
     }
 
 
@@ -887,6 +891,9 @@ def encerrar_arco(executor: "ToolExecutor", resumo_proposto: str = "", abandonar
             executor.eventos.append(f"💰 Recompensa do arco: {saque.ouro} de ouro. Total: {executor.heroi.ouro}.")
         recompensa = {"xp": xp, "ouro": saque.ouro, "itens": saque.itens}
     arco.recompensa = recompensa
+    if resultado != "abandono":
+        for novo in revelar_locais(w, executor.heroi.nivel or 1, quantidade=2):
+            executor.eventos.append(f"🗺️ Novo lugar conhecido: {novo}.")
     rotulo = {"acordo": "um acordo", "consequencia": "consequências", "vitoria_chefe": "a queda do chefe",
               "abandono": "abandono"}[resultado]
     w.marcos = [*w.marcos, f"Arco encerrado: {arco.titulo} ({rotulo})."][-LIMITE_MARCOS:]
@@ -946,6 +953,36 @@ def detectar_agressao(acao: str, w_state) -> tuple[bool, "PessoaMundo | None"]:
             alvo = p
             break
     return True, alvo
+
+
+def nivel_do_local(local: str, nivel_heroi: int) -> int:
+    """Perigo de um lugar para este herói: nunca abaixo do nível dele (lugar
+    seguro ou fácil não fica trivial) e, em lugar mais difícil, sobe junto.
+    Quem viaja para longe do que aguenta não é impedido, é desafiado."""
+    nivel_local = int((regras.get_location(local) or {}).get("nivel", 0) or 0)
+    return max(1, min(motor.NIVEL_MAXIMO, max(nivel_heroi, nivel_local)))
+
+
+def locais_conhecidos(w_state) -> list[str]:
+    """Visitados, descobertos, revelados por arco e o local de agora, na ordem
+    do catálogo (depois os inventados pelo narrador)."""
+    conhecidos = {w_state.local, *w_state.mundo.cenas, *w_state.locais_conhecidos, *w_state.locais_descobertos}
+    catalogo = [n for n in regras.get_locations_list() if n in conhecidos]
+    return catalogo + sorted(n for n in conhecidos if n not in catalogo)
+
+
+def revelar_locais(w_state, nivel_heroi: int, quantidade: int = 1) -> list[str]:
+    """Um arco fechado abre o mapa: os lugares do catálogo ainda desconhecidos
+    mais próximos do nível do herói (até 3 níveis acima) passam a ser
+    conhecidos. Sem sorteio: o mundo cresce na ordem de dificuldade."""
+    conhecidos = set(locais_conhecidos(w_state))
+    candidatos = sorted(
+        (int((regras.get_location(n) or {}).get("nivel", 0) or 0), n)
+        for n in regras.get_locations_list() if n not in conhecidos
+    )
+    novos = [n for nivel, n in candidatos if nivel <= nivel_heroi + 3][:quantidade]
+    w_state.locais_conhecidos = [*w_state.locais_conhecidos, *novos]
+    return novos
 
 
 def registrar_mortes(c_state, w_state) -> list[str]:

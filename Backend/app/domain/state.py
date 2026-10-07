@@ -161,6 +161,10 @@ class WorldState(BaseModel):
     # da validação estrita antiga, só que o registro agora pode acontecer
     # em tempo de jogo, não só nos arquivos JSON).
     locais_descobertos: dict[str, LocalDescoberto] = {}
+    # Lugares do catálogo (`data/locations.json`) que o herói já ouviu falar,
+    # além dos que visitou. Viajar a um lugar desconhecido continua livre; isto
+    # só decide o que o jogo oferece e mostra (ADR-0045).
+    locais_conhecidos: list[str] = []
     # Fase 1 (ADR-0033) — itens que o narrador criou por `dar_item` fora do
     # catálogo: só nome, descrição e tags fechadas; nunca números.
     itens_inventados: dict[str, ItemInventado] = {}

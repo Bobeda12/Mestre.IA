@@ -547,6 +547,15 @@ class ToolExecutor:
         self.w_state.hora_do_dia = (self.w_state.hora_do_dia + 2) % 24
         self.eventos.append(f"🧭 Vocês seguem para {destino}.")
         resultado = {"local": destino, "descricao": dados.get("descricao", "")}
+        # O mundo é livre para ir a qualquer lugar; o perigo é que escala.
+        from app.services.living_world import nivel_do_local
+
+        if regras.get_location(destino) and destino not in self.w_state.locais_conhecidos:
+            self.w_state.locais_conhecidos = [*self.w_state.locais_conhecidos, destino]
+        perigo = nivel_do_local(destino, self._nivel())
+        resultado["perigo_nivel"] = perigo
+        if perigo > self._nivel():
+            self.eventos.append(f"⚠️ Lugar perigoso: criaturas de nível {perigo}.")
         # Fase 6 da revisão de gameplay — encontro aleatório de viagem: 1
         # em 20 é emboscada, 20 em 20 é achado. O servidor só gera o
         # evento; a IA reage a ele (narra e chama iniciar_combate/dar_item
@@ -856,8 +865,11 @@ class ToolExecutor:
 
         arco = arco_ativo(self.w_state.mundo)
         reservado = arco.chefe if (chefe and arco is not None and arco.chefe and not arco.chefe_enfrentado) else None
+        from app.services.living_world import nivel_do_local
+
         novo, eventos, dano_surpresa = combat.iniciar_combate(
-            inimigos, self.heroi.atributos, self.heroi.defesa, self.rng, nivel_heroi=self._nivel(),
+            inimigos, self.heroi.atributos, self.heroi.defesa, self.rng,
+            nivel_heroi=nivel_do_local(self.w_state.local, self._nivel()),
             chefe_reservado=reservado,
         )
         novo.chefe_do_arco = reservado is not None

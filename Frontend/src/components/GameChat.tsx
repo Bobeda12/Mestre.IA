@@ -1383,6 +1383,7 @@ export default function GameChat() {
                   combate={combatActive}
                   erro={erroAcao}
                   aoAgir={aoAgir}
+                  lugares={mundoPersistente?.lugares}
                 />
               )}
 

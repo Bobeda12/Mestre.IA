@@ -14,6 +14,8 @@ interface Props {
   combate: boolean;
   erro: string | null;
   aoAgir: (acao: AcaoDireta, rotulo: string) => void;
+  /** Lugares que o herói conhece (visitados ou revelados por um capítulo). */
+  lugares?: { nome: string; nivel: number; atual: boolean }[];
 }
 
 const RESULTADO: Record<string, string> = {
@@ -112,6 +114,19 @@ export default function AbaJornada(p: Props) {
         </section>
       ) : c && (
         <p className="text-xs text-gray-400 font-rpg leading-relaxed">Nenhum capítulo aberto. O mundo segue; um novo começa quando algo pedir peso de história.</p>
+      )}
+
+      {(p.lugares?.length ?? 0) > 0 && (
+        <section className="space-y-2">
+          <h3 className={`${TITULO} text-gray-400`}><PixelIcon name="pergaminho" size={12} /> Lugares conhecidos</h3>
+          <ul className="space-y-1" aria-label="Lugares conhecidos">
+            {p.lugares!.map(l => (
+              <li key={l.nome} className={`text-[11px] font-rpg leading-snug border-l-2 pl-2 ${l.atual ? 'text-rpg-gold border-rpg-gold/70' : 'text-gray-300 border-gray-700'}`}>
+                {l.nome}{l.atual ? ' · você está aqui' : ''}{l.nivel > 0 ? ` · perigo nível ${l.nivel}` : ' · seguro'}
+              </li>
+            ))}
+          </ul>
+        </section>
       )}
 
       {(passado.length > 0 || anteriores.length > 0) && (

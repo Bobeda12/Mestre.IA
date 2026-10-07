@@ -154,6 +154,7 @@ def _mundo_da_tela(painel: dict) -> dict:
         "descricao": painel.get("descricao", ""),
         "entidades": painel.get("entidades", []),
         "pessoas": painel.get("pessoas", []),
+        "lugares": painel.get("lugares", []),
         "emergencia": {"aprendizados": (painel.get("emergencia") or {}).get("aprendizados", [])},
         "imersao": {"oportunidades": (painel.get("imersao") or {}).get("oportunidades", [])},
     }
