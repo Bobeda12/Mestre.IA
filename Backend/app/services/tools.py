@@ -858,7 +858,9 @@ class ToolExecutor:
         self.eventos.append(f"🤝 Reputação com {npc}: {atual:+d} → {novo:+d} ({motivo or 'sem motivo informado'}).")
         return {"npc": npc, "reputacao": novo}
 
-    def iniciar_combate(self, inimigos: list[str], cenario: str | None = None, chefe: bool = False) -> dict:
+    def iniciar_combate(
+        self, inimigos: list[str], cenario: str | None = None, chefe: bool = False, perfis: list[dict] | None = None
+    ) -> dict:
         if self.c_state.ativo:
             return {"erro": "já há um combate ativo"}
         from app.services.living_world import arco_ativo
@@ -870,6 +872,10 @@ class ToolExecutor:
         novo, eventos, dano_surpresa = combat.iniciar_combate(
             inimigos, self.heroi.atributos, self.heroi.defesa, self.rng,
             nivel_heroi=nivel_do_local(self.w_state.local, self._nivel()),
+            perfis={
+                str(p.get("nome", "")).strip().casefold(): p
+                for p in (perfis or []) if isinstance(p, dict)
+            },
             chefe_reservado=reservado,
         )
         novo.chefe_do_arco = reservado is not None
@@ -1694,6 +1700,19 @@ TOOLS_SCHEMA: list[dict] = [*WORLD_TOOLS,
                             "Nomes dos inimigos: exatos do bestiário ('Goblin') ou narrativos ('Lobo Alfa de Vharn')" 
                             "— a ficha vem de um arquétipo real do nível certo."
                         ),
+                    },
+                    "perfis": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "nome": {"type": "string"},
+                                "papel": {"type": "string", "description": "rei, guarda, ladrão, mago, assassino, bruto, general, sacerdote"},
+                                "temperamento": {"type": "string", "description": "medroso, orgulhoso, fanático, astuto, cruel, honrado"},
+                            },
+                            "required": ["nome"],
+                        },
+                        "description": "Quem cada inimigo narrativo é: o servidor escolhe a ficha do nível que combina.",
                     },
                     "cenario": {
                         "type": "string", "enum": ["duelo", "emboscada", "ritual", "resgate", "cerco", "cacada"],

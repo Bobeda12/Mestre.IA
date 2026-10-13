@@ -33,6 +33,11 @@ class Inimigo(BaseModel):
     # Quando o inimigo é uma pessoa do mundo (PessoaMundo.id): a vitória sobre
     # ele a marca como morta; sem isso o NPC "morria" só na prosa.
     pessoa_id: str = ""
+    # Banco de arquétipos de papel (ADR-0046): quem é e como se comporta.
+    papel: str = ""
+    temperamento: str = ""
+    persona: str = ""
+    sprite: str = ""  # arte emprestada de uma criatura do bestiário
     xp: int = 0
     intencao: str = "atacar"
     efeitos: dict[str, int] = {}

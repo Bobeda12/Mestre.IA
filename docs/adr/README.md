@@ -47,6 +47,7 @@ Template: [`0000-template.md`](0000-template.md) · Sistema completo: [`../READM
 | [0043](0043-pessoa-morta-e-agressao-detectada-pelo-servidor.md) | Pessoa do mundo pode estar morta (`morto`); o servidor detecta a agressão no texto livre, libera o combate e, na vitória, mata a pessoa ligada ao inimigo | Plano "Texto livre e progressão" (Fase 1) | ✅ aceito | 07/10/2026 |
 | [0044](0044-liberdade-no-texto-livre-extrema-e-impossivel.md) | Liberdade no texto livre: o desvio do rumo é aceito, dificuldade "extrema" (CD 24) e "impossível" (sem rolagem nem punição), erros que orientam, Lei da Verossimilhança sempre no prompt | Plano "Texto livre e progressão" (Fase 2) | ✅ aceito | 07/10/2026 |
 | [0045](0045-mundo-que-cresce-perigo-por-lugar-e-mapa-revelado.md) | Mundo que cresce: cada lugar tem nível de perigo (o combate usa o maior entre herói e lugar), 14 lugares, mapa revelado por capítulo fechado, viagem continua livre | Plano "Texto livre e progressão" (Fase 3) | ✅ aceito | 07/10/2026 |
+| [0046](0046-banco-de-arquetipos-de-papel-com-personalidade.md) | Banco de 19 arquétipos de papel (rei medroso, assassino sádico…) com persona; o narrador diz papel e temperamento e o servidor escolhe a ficha do nível; a personalidade chega às IAs de combate | Plano "Texto livre e progressão" (Fase 3.5) | ✅ aceito | 07/10/2026 |
 
 **Legenda:** 🕓 previsto · ✅ aceito · ⛔ substituído
 

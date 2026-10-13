@@ -13,6 +13,7 @@ import random
 from app.domain.eventos import DadosRolagem, EventoRolagem, EventoStatus
 from app.domain.state import Aliado, CombatState, Inimigo
 from app.infra.data_manager import regras
+from app.services import arquetipos
 from app.services import rules_engine as motor
 from app.services.class_abilities import CONJURADORES, dado_do_pulso, limite_foco, perfil_classe
 
@@ -77,6 +78,10 @@ def _criar_inimigo(nome: str, nome_exibicao: str | None = None) -> Inimigo | Non
         dano_dado=dano_dado,
         nome_ataque=nome_ataque,
         comportamento=dados.get("comportamento", ""),
+        papel=dados.get("papel", ""),
+        temperamento=dados.get("temperamento", ""),
+        persona=dados.get("persona", ""),
+        sprite=dados.get("sprite", ""),
     )
 
 
@@ -87,6 +92,7 @@ def iniciar_combate(
     rng: random.Random | None = None,
     nivel_heroi: int = 1,
     chefe_reservado: str | None = None,
+    perfis: dict[str, dict] | None = None,
 ) -> tuple[CombatState, list[str], int]:
     """Cria o combate a partir do bestiário real.
 
@@ -129,14 +135,21 @@ def iniciar_combate(
         nome_proposto = str(nome_proposto).strip()[:80]
         if not nome_proposto:
             continue
-        if regras.get_monster(nome_proposto) and nome_proposto in candidatos:
+        if regras.get_monster(nome_proposto) and (
+            nome_proposto in candidatos or nome_proposto in arquetipos.arquetipos_do_nivel(nivel_heroi)
+        ):
             inimigo = _criar_inimigo(nome_proposto)
             if inimigo:
                 pares.append((inimigo, nome_proposto))
             continue
-        if not candidatos:
+        # O narrador descreve quem é o inimigo (papel e temperamento); o
+        # servidor acha a ficha de papel do nível que combina. Sem afinidade,
+        # o sorteio da banda, como sempre foi.
+        perfil = (perfis or {}).get(nome_proposto.casefold()) or {}
+        escolhido = arquetipos.escolher(perfil.get("papel", ""), perfil.get("temperamento", ""), nivel_heroi, dado)
+        if escolhido is None and not candidatos:
             continue
-        arquetipo = dado.choice(candidatos)
+        arquetipo = escolhido or dado.choice(candidatos)
         inimigo = _criar_inimigo(arquetipo, nome_exibicao=nome_proposto)
         if inimigo:
             pares.append((inimigo, arquetipo))
