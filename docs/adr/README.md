@@ -49,6 +49,7 @@ Template: [`0000-template.md`](0000-template.md) · Sistema completo: [`../READM
 | [0045](0045-mundo-que-cresce-perigo-por-lugar-e-mapa-revelado.md) | Mundo que cresce: cada lugar tem nível de perigo (o combate usa o maior entre herói e lugar), 14 lugares, mapa revelado por capítulo fechado, viagem continua livre | Plano "Texto livre e progressão" (Fase 3) | ✅ aceito | 07/10/2026 |
 | [0046](0046-banco-de-arquetipos-de-papel-com-personalidade.md) | Banco de 19 arquétipos de papel (rei medroso, assassino sádico…) com persona; o narrador diz papel e temperamento e o servidor escolhe a ficha do nível; a personalidade chega às IAs de combate | Plano "Texto livre e progressão" (Fase 3.5) | ✅ aceito | 07/10/2026 |
 | [0047](0047-curva-de-xp-itens-encantados-e-final-de-campanha.md) | Curva de XP refeita (3 a 7 encontros por nível), XP de passo/arco proporcional ao nível, itens encantados (+1 a +3) no saque e como compra, final de campanha ao vencer chefe de elite com herói nível 8+ | Plano "Texto livre e progressão" (Fase 4) | ✅ aceito | 07/10/2026 |
+| [0048](0048-tempo-da-narracao-e-gatilhos-de-combate-do-teste-ao-vivo.md) | Achados do teste ao vivo: gatilhos de combate mais amplos, turno de narração gasta 10 min, papel de pessoa sem ficha no nível cai em outra pessoa | Plano "Texto livre e progressão" (pós-Fase 4) | ✅ aceito | 13/10/2026 |
 
 **Legenda:** 🕓 previsto · ✅ aceito · ⛔ substituído
 

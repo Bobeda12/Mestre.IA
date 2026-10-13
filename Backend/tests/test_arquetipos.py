@@ -73,3 +73,12 @@ def test_persona_chega_ao_prompt_de_narracao_e_o_temperamento_ao_do_juiz():
     heroi = _heroi()
     assert "tremor" in combate_ia.prompt_narracao(heroi, estado, "Castelo", ["Você ataca."])
     assert "medroso" in combate_ia.prompt_improviso("assusto o rei", heroi, estado, "")
+
+
+def test_papel_de_pessoa_sem_ficha_no_nivel_vira_outra_pessoa_e_nao_criatura():
+    # Achado do teste ao vivo: "guarda" no nível 1 virava Esqueleto.
+    escolhido = arquetipos.escolher("guarda", "desconfiado", 1, random.Random(2))
+    assert escolhido in arquetipos.arquetipos_do_nivel(1)
+    assert regras.get_monster(escolhido).get("por_papel") is True
+    # Papel que não é de pessoa continua caindo no sorteio de criaturas.
+    assert arquetipos.escolher("dragão", "feroz", 1, random.Random(2)) is None

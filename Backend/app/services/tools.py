@@ -1872,7 +1872,7 @@ def tools_para(c_state: CombatState, acao: str | None = None, w_state: WorldStat
         "progressao": {"aprend", "capitulo", "missao", "objetivo", "arco"},
         "recompensas": {"recrut", "aliado", "receb", "recompensa"},
         "criacao": {"novo", "nova", "desconhecid"},
-        "combate": {"atac", "lutar", "combate", "agredir"},
+        "combate": {"atac", "lut", "combat", "agredir", "duel", "batalh", "enfrent", "brig"},
         "imersao": {"convers", "lembr", "pista", "apelido", "celebr", "conviv", "investig"},
     }
     for grupo, raizes in gatilhos.items():

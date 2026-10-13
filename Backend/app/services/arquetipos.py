@@ -78,6 +78,12 @@ def escolher(papel: str, temperamento: str, nivel: int, rng: random.Random | Non
         if pontos:
             pontuados.append((pontos, nome))
     if not pontuados:
+        # O narrador descreveu uma PESSOA (papel reconhecido) mas o nível não
+        # tem esse papel: melhor outra pessoa do nível que uma criatura
+        # sorteada (achado do teste ao vivo: um "guarda" virou Esqueleto).
+        todas = arquetipos_do_nivel(nivel)
+        if papel_c and todas:
+            return (rng or random).choice(todas)
         return None
     melhor = max(p for p, _ in pontuados)
     empatados = [n for p, n in pontuados if p == melhor]
