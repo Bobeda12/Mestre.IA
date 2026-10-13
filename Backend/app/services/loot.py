@@ -41,6 +41,11 @@ def gerar_loot(inimigos: list[Inimigo], rng: random.Random) -> Loot:
         saque.ouro += max(0, motor.calcular_dano(regra["ouro"], rng=rng))
         if regra.get("itens") and rng.randint(1, 100) <= regra.get("chance_item", 0):
             saque.itens.append(rng.choice(regra["itens"]))
+        # Itens encantados: uma rolagem à parte, só nas bandas que têm tabela
+        # de raros (ADR-0047). Chefe de elite sempre deixa um.
+        raros = regra.get("raros")
+        if raros and rng.randint(1, 100) <= raros.get("chance", 0):
+            saque.itens.append(rng.choice(raros["itens"]))
     return saque
 
 
@@ -50,4 +55,8 @@ def recompensa_arco(nivel: int, rng: random.Random) -> Loot:
     if chave is None:
         return Loot()
     regra = faixas[str(chave)]
-    return Loot(ouro=max(0, motor.calcular_dano(regra["ouro"], rng=rng)), itens=list(regra.get("itens", [])))
+    saque = Loot(ouro=max(0, motor.calcular_dano(regra["ouro"], rng=rng)), itens=list(regra.get("itens", [])))
+    raros = regra.get("raros")
+    if raros and rng.randint(1, 100) <= raros.get("chance", 0):
+        saque.itens.append(rng.choice(raros["itens"]))
+    return saque

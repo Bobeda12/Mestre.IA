@@ -138,5 +138,115 @@
       ],
       "preco": 25
     }
+  },
+  "Mágicas": {
+    "Espada Curta +1": {
+      "dano": "1d6",
+      "tipo": "Perfurante",
+      "propriedades": [
+        "Leve",
+        "Sutil"
+      ],
+      "preco": 150,
+      "bonus": 1,
+      "raridade": "incomum"
+    },
+    "Cimitarra +1": {
+      "dano": "1d6",
+      "tipo": "Cortante",
+      "propriedades": [
+        "Leve",
+        "Sutil"
+      ],
+      "preco": 150,
+      "bonus": 1,
+      "raridade": "incomum"
+    },
+    "Adaga +1": {
+      "dano": "1d4",
+      "tipo": "Perfurante",
+      "propriedades": [
+        "Leve",
+        "Arremesso"
+      ],
+      "preco": 120,
+      "bonus": 1,
+      "raridade": "incomum"
+    },
+    "Espada Longa +1": {
+      "dano": "1d8",
+      "tipo": "Cortante",
+      "propriedades": [
+        "Versátil (1d10)"
+      ],
+      "preco": 250,
+      "bonus": 1,
+      "raridade": "incomum"
+    },
+    "Arco Longo +1": {
+      "dano": "1d8",
+      "tipo": "Perfurante",
+      "propriedades": [
+        "Munição",
+        "Pesada",
+        "Duas Mãos"
+      ],
+      "preco": 250,
+      "bonus": 1,
+      "raridade": "incomum"
+    },
+    "Martelo de Guerra +2": {
+      "dano": "1d8",
+      "tipo": "Concussão",
+      "propriedades": [
+        "Versátil (1d10)"
+      ],
+      "preco": 800,
+      "bonus": 2,
+      "raridade": "raro"
+    },
+    "Machado Grande +2": {
+      "dano": "1d12",
+      "tipo": "Cortante",
+      "propriedades": [
+        "Pesada",
+        "Duas Mãos"
+      ],
+      "preco": 900,
+      "bonus": 2,
+      "raridade": "raro"
+    },
+    "Espada Longa +2, Lâmina da Aurora": {
+      "dano": "1d8",
+      "tipo": "Cortante",
+      "propriedades": [
+        "Versátil (1d10)"
+      ],
+      "preco": 1000,
+      "bonus": 2,
+      "raridade": "raro"
+    },
+    "Arco Longo +2, Arco do Falcão": {
+      "dano": "1d8",
+      "tipo": "Perfurante",
+      "propriedades": [
+        "Munição",
+        "Pesada",
+        "Duas Mãos"
+      ],
+      "preco": 950,
+      "bonus": 2,
+      "raridade": "raro"
+    },
+    "Espada Longa +3, Mata-Reis": {
+      "dano": "1d8",
+      "tipo": "Cortante",
+      "propriedades": [
+        "Versátil (1d10)"
+      ],
+      "preco": 5000,
+      "bonus": 3,
+      "raridade": "lendario"
+    }
   }
 }

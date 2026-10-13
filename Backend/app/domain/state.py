@@ -170,6 +170,9 @@ class WorldState(BaseModel):
     # além dos que visitou. Viajar a um lugar desconhecido continua livre; isto
     # só decide o que o jogo oferece e mostra (ADR-0045).
     locais_conhecidos: list[str] = []
+    # Final de campanha (ADR-0047): o chefe de elite do arco caiu com o herói
+    # já forte. O mundo segue (pós-jogo); só deixa de ser "o primeiro ciclo".
+    campanha_concluida: bool = False
     # Fase 1 (ADR-0033) — itens que o narrador criou por `dar_item` fora do
     # catálogo: só nome, descrição e tags fechadas; nunca números.
     itens_inventados: dict[str, ItemInventado] = {}

@@ -161,12 +161,12 @@ class TestAtacar:
 
     def test_xp_suficiente_sobe_de_nivel_e_aumenta_hp_max(self):
         c_state = CombatState(ativo=True, inimigos=[self._goblin(hp=1)])
-        heroi = _heroi(xp=50, nivel=1, hp_max=10, hp_atual=10, classe="Guerreiro")
+        heroi = _heroi(xp=100, nivel=1, hp_max=10, hp_atual=10, classe="Guerreiro")
         # ataque: d20=15, dano d6=4. Subida de nível: 1d10 (dado_vida do Guerreiro) = 7.
         # mod constituição 13 -> +1. hp_ganho = 7+1 = 8.
         executor = _executor(heroi=heroi, c_state=c_state, rng=RngFixo([15, 4, 7]))
         resultado = executor.atacar("Goblin", "Cimitarra")
-        assert resultado["xp_total"] == 100  # 50 + 50 do Goblin = XP_POR_NIVEL[2] (ADR-0026)
+        assert resultado["xp_total"] == 150  # 100 + 50 do Goblin = XP_POR_NIVEL[2] (ADR-0047)
         assert resultado["nivel"] == 2
         assert heroi.nivel == 2
         assert heroi.hp_max == 18
@@ -716,10 +716,10 @@ class TestXpForaDeCombate:
     # O XP de progresso vem dos passos da trilha (services/capitulo.py), pelo
     # mesmo `_aplicar_xp` da vitória em combate.
     def test_xp_suficiente_sobe_de_nivel(self):
-        heroi = _heroi(xp=50, nivel=1, hp_max=10, hp_atual=10, classe="Guerreiro")
+        heroi = _heroi(xp=100, nivel=1, hp_max=10, hp_atual=10, classe="Guerreiro")
         executor = _executor(heroi=heroi, rng=RngFixo([7]))
         resultado = executor._aplicar_xp(50)
-        assert resultado["xp_total"] == 100  # 50 + 50 = XP_POR_NIVEL[2] (ADR-0026)
+        assert resultado["xp_total"] == 150  # 100 + 50 = XP_POR_NIVEL[2] (ADR-0047)
         assert resultado["nivel"] == 2
         assert heroi.nivel == 2
 

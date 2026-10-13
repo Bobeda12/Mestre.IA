@@ -74,7 +74,10 @@ class PessoaMundo(BaseModel):
     necessidade: str = Field(default="", max_length=120)
     # Fase 1 (ADR-0033) — nomes do catálogo que esta pessoa vende; preços
     # são do servidor (services/items.py). Vazio = não é mercador.
-    mercadoria: list[str] = Field(default_factory=list, max_length=8)
+    mercadoria: list[str] = Field(
+        default_factory=list, max_length=8,
+        description="Nomes do catálogo à venda; cidades grandes podem vender encantados (ex.: 'Espada Longa +1', 250 po).",
+    )
     segredo: str = Field(default="", max_length=600)
     segredo_revelado: bool = False
     # O herói já conversou com esta pessoa (a trilha do capítulo confere isto).

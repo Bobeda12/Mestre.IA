@@ -13,7 +13,7 @@ def _executor_nivel(nivel=2, pendentes=(2,), talentos=(), **kw):
 
 
 def test_subir_de_nivel_deixa_escolha_pendente():
-    heroi = _heroi(xp=90, nivel=1, hp_max=10, hp_atual=10, classe="Guerreiro")
+    heroi = _heroi(xp=140, nivel=1, hp_max=10, hp_atual=10, classe="Guerreiro")  # 150 sobe ao nível 2
     w = WorldState(local="Vila de Phandalin")
     ex = _executor(heroi=heroi, w_state=w, rng=RngFixo([7]))
     ex._aplicar_xp(10)

@@ -232,7 +232,9 @@ def turno_jogador(
         vantagem = _combinar_vantagem(vantagem, True)
         c_state.efeitos_heroi.pop("precisao", None)
     prof = motor.bonus_proficiencia(nivel)
-    bonus_ataque = prof + mod_atributo + (-2 if investida else 0)
+    # Arma encantada (ADR-0047): o bônus vale para acertar e para o dano.
+    bonus_arma = int(dados_arma.get("bonus", 0))
+    bonus_ataque = prof + mod_atributo + bonus_arma + (-2 if investida else 0)
 
     ca_alvo = alvo.ca - (2 if alvo.efeitos.get("vulneravel", 0) else 0)
     resultado = motor.resolver_ataque(bonus_ataque, ca_alvo, rng, vantagem=vantagem)
@@ -244,6 +246,8 @@ def turno_jogador(
         {"rotulo": motor.ATRIBUTO_LABEL[attr_usado], "valor": mod_atributo},
         {"rotulo": "Proficiência", "valor": prof},
     ]
+    if bonus_arma:
+        partes_bonus.append({"rotulo": "Arma encantada", "valor": bonus_arma})
     if investida:
         partes_bonus.append({"rotulo": "Investida", "valor": -2})
     dados = DadosRolagem(
@@ -261,7 +265,7 @@ def turno_jogador(
     # dobra dados, não modificador). O ataque de monstro já vem com o mod
     # embutido no texto de data/monsters.json (parse_ataque_monstro), por
     # isso o ataque do inimigo (`turnos._atacar`) não repete essa soma.
-    dano = motor.calcular_dano(dados_arma["dano"], resultado.critico, rng) + mod_atributo
+    dano = motor.calcular_dano(dados_arma["dano"], resultado.critico, rng) + mod_atributo + bonus_arma
     if classe:
         dano += nivel // 2
         if nivel >= 5:

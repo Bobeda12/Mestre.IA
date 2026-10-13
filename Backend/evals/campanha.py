@@ -14,11 +14,10 @@ import random
 from collections import Counter
 from dataclasses import dataclass, field
 
-from app.services import combat
+from app.services import capitulo, combat, living_world
 from app.services import rules_engine as motor
 from app.services.loot import gerar_loot, recompensa_arco
 
-XP_PASSO_TRILHA = 50  # capitulo.XP_PASSO
 NIVEL_MAX = max(motor.XP_POR_NIVEL)
 ENCONTROS_POS_MAX = 20  # quanto jogar depois do nível máximo, para medir o "teto"
 
@@ -55,13 +54,13 @@ def simular(campanhas: int, passo_a_cada: int, semente: int) -> dict[int, Nivel]
             itens_no_nivel += len(saque.itens)
             encontros_no_nivel += 1
             if total % passo_a_cada == 0:
-                xp += XP_PASSO_TRILHA
+                xp += motor.xp_do_nivel(nivel, capitulo.XP_PASSO_FRACAO)
             # A cada arco (~8 encontros) a recompensa de arco e o XP de fim de arco.
             if total % 8 == 0:
                 arco = recompensa_arco(nivel, rng)
                 ouro_no_nivel += arco.ouro
                 itens_no_nivel += len(arco.itens)
-                xp += 60 + 20 * nivel
+                xp += motor.xp_do_nivel(nivel, living_world.XP_ARCO_FRACAO)
             alvo = _proximo_xp(nivel)
             if alvo is not None and xp >= alvo:
                 pn = por_nivel[nivel]

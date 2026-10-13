@@ -40,9 +40,11 @@ def ficha(nome: str, inventados: dict[str, ItemInventado] | None = None) -> dict
     arma = regras.get_weapon(nome)
     if arma is not None:
         return {
-            "nome": nome, "tipo": "arma", "descricao": f"{arma['dano']} {arma['tipo'].lower()}",
+            "nome": nome, "tipo": "arma",
+            "descricao": f"{arma['dano']} {arma['tipo'].lower()}" + (f", +{arma['bonus']} (encantada)" if arma.get("bonus") else ""),
             "tags": list(arma.get("propriedades", [])), "preco": arma.get("preco", 0), "dano": arma["dano"],
             "propriedades": arma.get("propriedades", []),
+            **({"bonus": arma["bonus"], "raridade": arma.get("raridade", "incomum")} if arma.get("bonus") else {}),
         }
     inv = (inventados or {}).get(nome)
     if inv is not None:

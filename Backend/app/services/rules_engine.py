@@ -28,11 +28,24 @@ PONTOS_DISPONIVEIS = 27
 # bônus de proficiência correspondente. A campanha é curta (o bestiário só
 # tem monstros de nível 1 e um chefe) e enxuta (decisão de escopo "D&D 5e
 # enxuto", PLANO_MESTRE.md §9): fica em 1–5, não os 20 níveis do livro.
+#
+# Curva da Fase 4 (ADR-0047, relatório 0006): cada nível custa de 3 a 7 encontros
+# típicos da faixa do herói. A curva antiga deixava um único abate subir de nível
+# do 4 em diante. Os valores são o XP médio do encontro na faixa vezes a quantidade
+# de encontros pretendida (3, 4, 4, 5, 5, 6, 6, 7, 7), arredondados.
 XP_POR_NIVEL: dict[int, int] = {
-    1: 0, 2: 100, 3: 240, 4: 420, 5: 650,
-    6: 930, 7: 1260, 8: 1640, 9: 2070, 10: 2550,
+    1: 0, 2: 150, 3: 425, 4: 1000, 5: 2400,
+    6: 4800, 7: 8500, 8: 14500, 9: 26500, 10: 45000,
 }
 NIVEL_MAXIMO = max(XP_POR_NIVEL)
+
+
+def xp_do_nivel(nivel: int, fracao: float, minimo: int = 10) -> int:
+    """XP que vale `fracao` do que falta para subir do nível `nivel`. É o que
+    mantém passo de trilha, pista, acordo e arco proporcionais ao nível, em vez
+    de constantes que ficavam irrisórias do 5 em diante."""
+    n = max(1, min(nivel, NIVEL_MAXIMO - 1))
+    return max(minimo, round((XP_POR_NIVEL[n + 1] - XP_POR_NIVEL[n]) * fracao))
 
 
 def bonus_proficiencia(nivel: int) -> int:

@@ -87,6 +87,9 @@ class DataManager:
         alto impacto na narração (narrator.py:montar_contexto)."""
         return [*self.monsters.get("Chefe", {}).keys(), *self.monsters.get("Chefe_Elite", {}).keys()]
 
+    def get_monstros_chefe_elite(self) -> list[str]:
+        return list(self.monsters.get("Chefe_Elite", {}).keys())
+
     def chefes_para_nivel(self, nivel: int) -> list[str]:
         """O chefe que um capítulo aberto neste nível pode sortear. Cada
         chefe tem `nivel_min` na ficha; valem os do degrau mais alto que o

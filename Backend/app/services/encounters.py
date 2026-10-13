@@ -221,7 +221,7 @@ def interagir_cenario(executor: "ToolExecutor", interacao: str) -> dict:
             return {
                 "resultado": "vitoria",
                 "objetivo_concluido": True,
-                **executor._aplicar_xp(60 + 20 * (executor.heroi.nivel or 1)),
+                **executor._aplicar_xp(motor.xp_do_nivel(executor.heroi.nivel or 1, 1 / 6)),
             }
     else:
         c_state.interacoes_usadas.append(interacao)

@@ -10,6 +10,7 @@ from app.domain.state import WorldState
 from app.infra import llm_client
 from app.services import capitulo
 from app.services import living_world as mundo
+from app.services import rules_engine as motor
 from app.services.tools import tools_para
 from tests.helpers import RngFixo
 from tests.test_living_world import agir, executor  # noqa: F401 — fixture
@@ -73,7 +74,7 @@ def test_conversar_cumpre_falar_pessoa_e_da_xp(executor):
     arco = _arco(executor)
     feito = arco.passos[0]
     assert feito.estado == "feito" and "Íria" in feito.evidencia and feito.turno_fim is not None
-    assert (executor.heroi.xp or 0) == xp + capitulo.XP_PASSO
+    assert (executor.heroi.xp or 0) == xp + motor.xp_do_nivel(executor.heroi.nivel or 1, capitulo.XP_PASSO_FRACAO)
     assert arco.passo_pendente is True
     assert any("Passo cumprido" in str(e) for e in executor.eventos)
 

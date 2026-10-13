@@ -482,7 +482,7 @@ def agir_no_mundo(executor: "ToolExecutor", acao: str, alvo: str, meio: str | No
             chave = f"descoberta:{local}:{entidade.id}"
             if chave not in executor.w_state.objetivos_concluidos:
                 executor.w_state.objetivos_concluidos.append(chave)
-                executor._aplicar_xp(20 + 10 * (executor.heroi.nivel or 1))
+                executor._aplicar_xp(motor.xp_do_nivel(executor.heroi.nivel or 1, 1 / 20))
     elif acao == "pegar":
         entidade.recolhido = True
         executor.heroi.inventario = [*executor.heroi.inventario, entidade.nome]
@@ -667,7 +667,7 @@ def intervir_conflito(executor: "ToolExecutor", conflito: str, abordagem: str, p
             chave = f"conflito:{alvo.id}"
             if chave not in executor.w_state.objetivos_concluidos:
                 executor.w_state.objetivos_concluidos.append(chave)
-                executor._aplicar_xp(80 + 20 * (executor.heroi.nivel or 1))
+                executor._aplicar_xp(motor.xp_do_nivel(executor.heroi.nivel or 1, 1 / 4))
     descricao = alvo.desfecho or f"{alvo.nome}: intervenção registrada ({abordagem})."
     executor.eventos.append(descricao)
     return _finalizar(executor, {"sucesso": True, "descricao": descricao}, significativo=True)
@@ -781,8 +781,8 @@ def painel_mundo(w_state, classe: str, privado: bool = False) -> dict:
 # quanto tempo passou.
 MIN_PASSOS_ARCO = 3
 MIN_MARCOS_ARCO = 2
-XP_ARCO_BASE = 60
-XP_ARCO_POR_NIVEL = 20
+NIVEL_FINAL_CAMPANHA = 8  # abaixo disto o chefe de elite não encerra a campanha
+XP_ARCO_FRACAO = 2 / 5  # de um nível; metade se o desfecho for "consequência"
 
 
 def arco_ativo(mundo) -> Arco | None:
@@ -878,7 +878,7 @@ def encerrar_arco(executor: "ToolExecutor", resumo_proposto: str = "", abandonar
     if resultado != "abandono":
         nivel = executor.heroi.nivel or 1
         saque = recompensa_arco(nivel, executor.rng or random.Random())
-        xp = XP_ARCO_BASE + XP_ARCO_POR_NIVEL * nivel
+        xp = motor.xp_do_nivel(nivel, XP_ARCO_FRACAO)
         if resultado == "consequencia":
             xp //= 2
             saque.itens = []
@@ -891,6 +891,13 @@ def encerrar_arco(executor: "ToolExecutor", resumo_proposto: str = "", abandonar
             executor.eventos.append(f"💰 Recompensa do arco: {saque.ouro} de ouro. Total: {executor.heroi.ouro}.")
         recompensa = {"xp": xp, "ouro": saque.ouro, "itens": saque.itens}
     arco.recompensa = recompensa
+    if (
+        resultado == "vitoria_chefe" and not w.campanha_concluida
+        and arco.chefe in regras.get_monstros_chefe_elite() and (executor.heroi.nivel or 1) >= NIVEL_FINAL_CAMPANHA
+    ):
+        w.campanha_concluida = True
+        w.marcos = [*w.marcos, f"Campanha concluída: {arco.chefe} caiu."][-LIMITE_MARCOS:]
+        executor.eventos.append(f"🏁 Campanha concluída! {arco.chefe} caiu e o mundo respira. A jornada continua.")
     if resultado != "abandono":
         for novo in revelar_locais(w, executor.heroi.nivel or 1, quantidade=2):
             executor.eventos.append(f"🗺️ Novo lugar conhecido: {novo}.")
