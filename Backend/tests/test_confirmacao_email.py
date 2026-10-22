@@ -234,3 +234,58 @@ class TestGoogleJaEntraVerificado:
         client.get(f"/auth/google/callback?code=fake-code&state={state}", follow_redirects=False)
 
         assert client.get("/auth/eu").json()["email_verificado"] is True
+
+
+# --- Envio por HTTPS (Render grátis bloqueia SMTP) --------------------------
+
+
+def test_gmail_api_troca_o_token_e_envia_a_mensagem(monkeypatch):
+    from app.infra import email as infra_email
+
+    chamadas = []
+
+    class Resposta:
+        def __init__(self, corpo):
+            self._corpo = corpo
+
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return self._corpo
+
+    def falso_post(url, **kw):
+        chamadas.append((url, kw))
+        return Resposta({"access_token": "tok"})
+
+    monkeypatch.setattr(infra_email.httpx, "post", falso_post)
+    monkeypatch.setattr(infra_email.settings, "gmail_refresh_token", "refresh")
+    monkeypatch.setattr(infra_email.settings, "gmail_remetente", "jogo@gmail.com")
+    monkeypatch.setattr(infra_email.settings, "smtp_email", None)
+
+    infra_email.enviar_email_confirmacao("alguem@example.com", "https://x/confirmar?token=abc")
+
+    assert chamadas[0][0] == "https://oauth2.googleapis.com/token"
+    assert chamadas[0][1]["data"]["refresh_token"] == "refresh"
+    assert chamadas[1][0] == "https://gmail.googleapis.com/gmail/v1/users/me/messages/send"
+    assert chamadas[1][1]["headers"]["Authorization"] == "Bearer tok"
+    assert chamadas[1][1]["timeout"] == infra_email._TEMPO_LIMITE_S
+    assert "raw" in chamadas[1][1]["json"]
+
+
+def test_falha_no_envio_vira_erro_claro_e_nao_trava(monkeypatch, client):
+    from app.infra import email as infra_email
+    from app.routers import auth as roteador_auth
+
+    def explode(*a, **kw):
+        raise OSError("rede bloqueada")
+
+    monkeypatch.setattr(infra_email.settings, "gmail_refresh_token", "refresh")
+    monkeypatch.setattr(infra_email.settings, "gmail_remetente", "jogo@gmail.com")
+    monkeypatch.setattr(infra_email.httpx, "post", explode)
+    monkeypatch.setattr(roteador_auth, "enviar_email_confirmacao", infra_email.enviar_email_confirmacao)
+
+    resp = client.post("/auth/registrar", json={"email": "novo@example.com", "senha": "senha-longa-123"})
+
+    assert resp.status_code == 503
+    assert "e-mail de confirmação" in resp.json()["detail"]

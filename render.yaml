@@ -43,6 +43,12 @@ services:
         value: https://mestre-ia-seven.vercel.app/api/auth/google/callback
       # Senha de app do Gmail (não a senha normal da conta) — SMTP de
       # confirmação de e-mail (ver settings.py).
+      # E-mail de confirmação pela API do Gmail (HTTPS). O SMTP abaixo NÃO
+      # funciona no Render grátis (portas bloqueadas): ver docs/diario/0062.
+      - key: GMAIL_REFRESH_TOKEN
+        sync: false
+      - key: GMAIL_REMETENTE
+        sync: false
       - key: SMTP_EMAIL
         sync: false
       - key: SMTP_SENHA_APP

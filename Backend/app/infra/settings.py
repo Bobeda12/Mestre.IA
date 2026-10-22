@@ -235,6 +235,16 @@ class Settings(BaseSettings):
     # próprio verificado no Resend, que custa dinheiro; a alternativa sem
     # custo é autenticar como uma conta Gmail de verdade (a reputação é da
     # conta, não do provedor de e-mail transacional).
+    #
+    # Mas o Render grátis BLOQUEIA SMTP de saída (portas 25/465/587, desde
+    # 26/09/2025): a conexão fica pendurada e o cadastro "carrega para sempre".
+    # Por isso o método preferido agora é a API do Gmail, por HTTPS (porta
+    # 443), que sai como a mesma conta Gmail. Usa o mesmo cliente OAuth do
+    # login com Google (`google_client_id`/`google_client_secret`) e um
+    # refresh token com o escopo gmail.send, gerado uma vez (ver o diário 0062).
+    gmail_refresh_token: str | None = None
+    gmail_remetente: str | None = None  # o endereço Gmail que autorizou o refresh token
+
     smtp_email: str | None = None
     smtp_senha_app: str | None = None  # "senha de app" do Google, não a senha normal da conta
     smtp_host: str = "smtp.gmail.com"
