@@ -192,5 +192,61 @@
     ],
     "preco": 8,
     "descricao": "Tábuas amarradas com couro. +2 CA; não combina com arma de duas mãos."
+  },
+  "Armadura de Couro +1": {
+    "tipo": "armadura",
+    "categoria": "leve",
+    "ca_base": 12,
+    "tags": [
+      "Leve"
+    ],
+    "preco": 200,
+    "descricao": "Couro endurecido. CA 11 + Destreza. Encantada: +1 CA.",
+    "raridade": "incomum"
+  },
+  "Cota de Malha +1": {
+    "tipo": "armadura",
+    "categoria": "pesada",
+    "ca_base": 17,
+    "forca_min": 13,
+    "tags": [
+      "Pesada"
+    ],
+    "preco": 400,
+    "descricao": "Anéis de ferro entrelaçados. CA 16, exige Força 13. Encantada: +1 CA.",
+    "raridade": "incomum"
+  },
+  "Armadura de Placas +1": {
+    "tipo": "armadura",
+    "categoria": "pesada",
+    "ca_base": 19,
+    "forca_min": 15,
+    "tags": [
+      "Pesada"
+    ],
+    "preco": 900,
+    "descricao": "Aço articulado da cabeça aos pés. CA 18, exige Força 15. Encantada: +1 CA.",
+    "raridade": "raro"
+  },
+  "Escudo +1": {
+    "tipo": "escudo",
+    "ca_bonus": 3,
+    "tags": [
+      "Pesada"
+    ],
+    "preco": 150,
+    "descricao": "Madeira reforçada com ferro. +2 CA; não combina com arma de duas mãos. Encantada: +1 CA.",
+    "raridade": "incomum"
+  },
+  "Armadura de Escamas +2": {
+    "tipo": "armadura",
+    "categoria": "media",
+    "ca_base": 16,
+    "tags": [
+      "Pesada"
+    ],
+    "preco": 800,
+    "descricao": "Placas sobrepostas sobre couro. CA 14 + Destreza (máx. 2). Encantada: +2 CA.",
+    "raridade": "raro"
   }
 }

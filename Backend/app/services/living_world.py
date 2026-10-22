@@ -2,6 +2,7 @@
 
 import json
 import random
+import re
 from typing import TYPE_CHECKING
 
 from pydantic import ValidationError
@@ -369,7 +370,7 @@ def agir_no_mundo(executor: "ToolExecutor", acao: str, alvo: str, meio: str | No
     cena = mundo.cenas.get(local)
     entidade = cena.entidades.get(alvo) if cena else None
     if entidade is None or entidade.recolhido:
-        return {"erro": "Esse alvo não existe no local atual. Registre a cena observada antes de agir."}
+        return {"erro": "Esse alvo ainda não está registrado. Se existir na cena, registre-o com registrar_cena e repita agir_no_mundo agora; se não existir, narre o jogador tentando e o mundo reagindo, sem recusar."}  # noqa: E501
     if acao == "examinar":
         return {
             "descricao": entidade.descricao,
@@ -481,7 +482,7 @@ def agir_no_mundo(executor: "ToolExecutor", acao: str, alvo: str, meio: str | No
             chave = f"descoberta:{local}:{entidade.id}"
             if chave not in executor.w_state.objetivos_concluidos:
                 executor.w_state.objetivos_concluidos.append(chave)
-                executor._aplicar_xp(20 + 10 * (executor.heroi.nivel or 1))
+                executor._aplicar_xp(motor.xp_do_nivel(executor.heroi.nivel or 1, 1 / 20))
     elif acao == "pegar":
         entidade.recolhido = True
         executor.heroi.inventario = [*executor.heroi.inventario, entidade.nome]
@@ -521,7 +522,9 @@ def agir_no_mundo(executor: "ToolExecutor", acao: str, alvo: str, meio: str | No
 
 def _agir_pessoa(executor: "ToolExecutor", pessoa: PessoaMundo, acao: str, proposta: str, meio: str | None) -> dict:
     mundo = executor.w_state.mundo
-    if pessoa.local != executor.w_state.local or pessoa.disposicao == "ausente":
+    if pessoa.disposicao == "morto":
+        return {"erro": f"{pessoa.nome} está morto(a) e não pode falar nem agir."}
+    if pessoa.local != executor.w_state.local or pessoa.indisponivel:
         return {"erro": "Essa pessoa não está presente."}
     if acao == "examinar":
         return {"descricao": pessoa.descricao, "disposicao": pessoa.disposicao}
@@ -619,7 +622,7 @@ def _agir_pessoa(executor: "ToolExecutor", pessoa: PessoaMundo, acao: str, propo
 
 def registrar_vinculo(executor: "ToolExecutor", npc: str, natureza: str, texto: str) -> dict:
     pessoa = executor.w_state.mundo.pessoas.get(npc)
-    if not pessoa or pessoa.local != executor.w_state.local or pessoa.disposicao == "ausente":
+    if not pessoa or pessoa.local != executor.w_state.local or pessoa.indisponivel:
         return {"erro": "O interlocutor precisa estar presente."}
     if natureza not in {"promessa", "boato", "suspeita"} or not 1 <= len(texto.strip()) <= 500:
         return {"erro": "Registre promessa, boato ou suspeita em até 500 caracteres."}
@@ -664,7 +667,7 @@ def intervir_conflito(executor: "ToolExecutor", conflito: str, abordagem: str, p
             chave = f"conflito:{alvo.id}"
             if chave not in executor.w_state.objetivos_concluidos:
                 executor.w_state.objetivos_concluidos.append(chave)
-                executor._aplicar_xp(80 + 20 * (executor.heroi.nivel or 1))
+                executor._aplicar_xp(motor.xp_do_nivel(executor.heroi.nivel or 1, 1 / 4))
     descricao = alvo.desfecho or f"{alvo.nome}: intervenção registrada ({abordagem})."
     executor.eventos.append(descricao)
     return _finalizar(executor, {"sucesso": True, "descricao": descricao}, significativo=True)
@@ -765,6 +768,10 @@ def painel_mundo(w_state, classe: str, privado: bool = False) -> dict:
         "especializacoes": mundo.especializacoes,
         "aptidao": {"nome": aptidao[0], "acoes": aptidao[1], "bonus": 2},
         "minutos": mundo.minutos,
+        "lugares": [
+            {"nome": n, "nivel": int((regras.get_location(n) or {}).get("nivel", 0) or 0), "atual": n == w_state.local}
+            for n in locais_conhecidos(w_state)
+        ],
     }
 
 
@@ -774,8 +781,8 @@ def painel_mundo(w_state, classe: str, privado: bool = False) -> dict:
 # quanto tempo passou.
 MIN_PASSOS_ARCO = 3
 MIN_MARCOS_ARCO = 2
-XP_ARCO_BASE = 60
-XP_ARCO_POR_NIVEL = 20
+NIVEL_FINAL_CAMPANHA = 8  # abaixo disto o chefe de elite não encerra a campanha
+XP_ARCO_FRACAO = 2 / 5  # de um nível; metade se o desfecho for "consequência"
 
 
 def arco_ativo(mundo) -> Arco | None:
@@ -871,7 +878,7 @@ def encerrar_arco(executor: "ToolExecutor", resumo_proposto: str = "", abandonar
     if resultado != "abandono":
         nivel = executor.heroi.nivel or 1
         saque = recompensa_arco(nivel, executor.rng or random.Random())
-        xp = XP_ARCO_BASE + XP_ARCO_POR_NIVEL * nivel
+        xp = motor.xp_do_nivel(nivel, XP_ARCO_FRACAO)
         if resultado == "consequencia":
             xp //= 2
             saque.itens = []
@@ -884,6 +891,16 @@ def encerrar_arco(executor: "ToolExecutor", resumo_proposto: str = "", abandonar
             executor.eventos.append(f"💰 Recompensa do arco: {saque.ouro} de ouro. Total: {executor.heroi.ouro}.")
         recompensa = {"xp": xp, "ouro": saque.ouro, "itens": saque.itens}
     arco.recompensa = recompensa
+    if (
+        resultado == "vitoria_chefe" and not w.campanha_concluida
+        and arco.chefe in regras.get_monstros_chefe_elite() and (executor.heroi.nivel or 1) >= NIVEL_FINAL_CAMPANHA
+    ):
+        w.campanha_concluida = True
+        w.marcos = [*w.marcos, f"Campanha concluída: {arco.chefe} caiu."][-LIMITE_MARCOS:]
+        executor.eventos.append(f"🏁 Campanha concluída! {arco.chefe} caiu e o mundo respira. A jornada continua.")
+    if resultado != "abandono":
+        for novo in revelar_locais(w, executor.heroi.nivel or 1, quantidade=2):
+            executor.eventos.append(f"🗺️ Novo lugar conhecido: {novo}.")
     rotulo = {"acordo": "um acordo", "consequencia": "consequências", "vitoria_chefe": "a queda do chefe",
               "abandono": "abandono"}[resultado]
     w.marcos = [*w.marcos, f"Arco encerrado: {arco.titulo} ({rotulo})."][-LIMITE_MARCOS:]
@@ -898,6 +915,97 @@ def encerrar_arco(executor: "ToolExecutor", resumo_proposto: str = "", abandonar
     executor.q_state.objetivo_missao = "Escolha o que fazer depois de " + arco.titulo + "."
     resultado_xp = executor._aplicar_xp(recompensa["xp"]) if recompensa["xp"] else {}
     return {"encerrado": True, "arco": arco.id, "resultado": resultado, "recompensa": recompensa, **resultado_xp}
+
+
+def pessoa_do_local(mundo, local: str, nome: str):
+    """A PessoaMundo viva do local que o jogador chama por `nome` (id, nome
+    inteiro ou uma parte dele: "Ruan" acha "Rei Ruan"). Mortos e ausentes não
+    contam: não se luta de novo com quem já caiu."""
+    alvo = nome.strip().casefold()
+    if not alvo:
+        return None
+    candidatas = [p for p in mundo.pessoas.values() if p.local == local and not p.indisponivel]
+    for p in candidatas:
+        if alvo in (p.id.casefold(), p.nome.strip().casefold()):
+            return p
+    for p in candidatas:
+        n = p.nome.strip().casefold()
+        if len(alvo) >= 3 and (alvo in n or n in alvo):
+            return p
+    return None
+
+
+# Verbos de violência contra alguém. "mata" não entra: é mato/floresta.
+_AGRESSAO = re.compile(
+    r"\b(?:mat(?:ar|o|ei|aria|aremos)|assassin\w+|esfaque\w+|apunhal\w+|degol\w+|estrangul\w+|enforc\w+|"
+    r"execut(?:ar|o|ei)|atac(?:ar|o|ei)|agred\w+|esmag\w+|decap\w+|trucid\w+|elimin(?:ar|o|ei)|"
+    r"acab(?:ar|o|ei)\s+com|parto\s+pra\s+cima|ataco|golpe(?:io|ar)?|espanc\w+|"
+    r"disparo\s+(?:contra|em)|atiro\s+(?:em|contra|nel[ae]))\b"
+)
+
+
+def detectar_agressao(acao: str, w_state) -> tuple[bool, "PessoaMundo | None"]:
+    """O jogador quer ferir alguém? Devolve (agressão, pessoa do mundo visada).
+    É texto simples de propósito: o servidor precisa saber disso sem depender
+    de o modelo lembrar de abrir o combate."""
+    texto = acao.casefold()
+    if not _AGRESSAO.search(texto):
+        return False, None
+    alvo = None
+    for p in w_state.mundo.pessoas.values():
+        if p.local != w_state.local or p.indisponivel:
+            continue
+        palavras = [p.nome.casefold(), *[w for w in p.nome.casefold().split() if len(w) >= 3]]
+        if any(w and w in texto for w in palavras):
+            alvo = p
+            break
+    return True, alvo
+
+
+def nivel_do_local(local: str, nivel_heroi: int) -> int:
+    """Perigo de um lugar para este herói: nunca abaixo do nível dele (lugar
+    seguro ou fácil não fica trivial) e, em lugar mais difícil, sobe junto.
+    Quem viaja para longe do que aguenta não é impedido, é desafiado."""
+    nivel_local = int((regras.get_location(local) or {}).get("nivel", 0) or 0)
+    return max(1, min(motor.NIVEL_MAXIMO, max(nivel_heroi, nivel_local)))
+
+
+def locais_conhecidos(w_state) -> list[str]:
+    """Visitados, descobertos, revelados por arco e o local de agora, na ordem
+    do catálogo (depois os inventados pelo narrador)."""
+    conhecidos = {w_state.local, *w_state.mundo.cenas, *w_state.locais_conhecidos, *w_state.locais_descobertos}
+    catalogo = [n for n in regras.get_locations_list() if n in conhecidos]
+    return catalogo + sorted(n for n in conhecidos if n not in catalogo)
+
+
+def revelar_locais(w_state, nivel_heroi: int, quantidade: int = 1) -> list[str]:
+    """Um arco fechado abre o mapa: os lugares do catálogo ainda desconhecidos
+    mais próximos do nível do herói (até 3 níveis acima) passam a ser
+    conhecidos. Sem sorteio: o mundo cresce na ordem de dificuldade."""
+    conhecidos = set(locais_conhecidos(w_state))
+    candidatos = sorted(
+        (int((regras.get_location(n) or {}).get("nivel", 0) or 0), n)
+        for n in regras.get_locations_list() if n not in conhecidos
+    )
+    novos = [n for nivel, n in candidatos if nivel <= nivel_heroi + 3][:quantidade]
+    w_state.locais_conhecidos = [*w_state.locais_conhecidos, *novos]
+    return novos
+
+
+def registrar_mortes(c_state, w_state) -> list[str]:
+    """Na vitória, quem era uma pessoa do mundo e caiu passa a `morto`: some
+    do comércio, da conversa e dos passos da trilha. Quem só recuou continua
+    vivo — matar é decisão do combate, não da narração."""
+    eventos: list[str] = []
+    for inimigo in c_state.inimigos:
+        pessoa = w_state.mundo.pessoas.get(inimigo.pessoa_id) if inimigo.pessoa_id else None
+        if pessoa is None or inimigo.hp > 0 or pessoa.disposicao == "morto":
+            continue
+        pessoa.disposicao = "morto"
+        pessoa.mercadoria = []
+        pessoa.estoque = {}
+        eventos.append(f"☠️ {pessoa.nome} está morto(a).")
+    return eventos
 
 
 def marcar_chefe_enfrentado(w_state) -> None:

@@ -1,5 +1,5 @@
 {
-  "_nota": "Saque por banda do bestiário (services/loot.py). 'ouro' é notação de dado; 'chance_item' em %; 'itens' são nomes do catálogo (items.json/weapons.json). 'arco' é a recompensa de fim de arco por faixa de nível (Fase 4).",
+  "_nota": "Saque por banda do bestiário (services/loot.py). 'ouro' é notação de dado; 'chance_item' em %; 'itens' são nomes do catálogo (items.json/weapons.json). 'arco' é a recompensa de fim de arco por faixa de nível (Fase 4). 'raros' (ADR-0047): rolagem à parte de 'chance_item'; itens encantados, mais valiosos que o catálogo.",
   "Nivel_1": {
     "ouro": "1d6",
     "chance_item": 25,
@@ -31,7 +31,17 @@
       "Cimitarra",
       "Escudo",
       "Armadura de Escamas"
-    ]
+    ],
+    "raros": {
+      "chance": 8,
+      "itens": [
+        "Espada Curta +1",
+        "Cimitarra +1",
+        "Adaga +1",
+        "Armadura de Couro +1",
+        "Escudo +1"
+      ]
+    }
   },
   "Nivel_4": {
     "ouro": "3d6+5",
@@ -42,7 +52,21 @@
       "Espada Longa",
       "Martelo de Guerra",
       "Cota de Malha"
-    ]
+    ],
+    "raros": {
+      "chance": 10,
+      "itens": [
+        "Espada Curta +1",
+        "Cimitarra +1",
+        "Adaga +1",
+        "Armadura de Couro +1",
+        "Escudo +1",
+        "Espada Longa +1",
+        "Arco Longo +1",
+        "Cota de Malha +1",
+        "Escudo +1"
+      ]
+    }
   },
   "Chefe": {
     "ouro": "4d6+10",
@@ -53,7 +77,16 @@
       "Espada Longa",
       "Machado Grande",
       "Arco Longo"
-    ]
+    ],
+    "raros": {
+      "chance": 60,
+      "itens": [
+        "Espada Longa +1",
+        "Arco Longo +1",
+        "Cota de Malha +1",
+        "Escudo +1"
+      ]
+    }
   },
   "arco": {
     "1": {
@@ -68,21 +101,55 @@
       "itens": [
         "Poção de Cura Maior",
         "Armadura de Escamas"
-      ]
+      ],
+      "raros": {
+        "chance": 30,
+        "itens": [
+          "Espada Curta +1",
+          "Cimitarra +1",
+          "Adaga +1",
+          "Armadura de Couro +1",
+          "Escudo +1"
+        ]
+      }
     },
     "5": {
       "ouro": "6d6+40",
       "itens": [
         "Poção de Cura Maior",
         "Cota de Malha"
-      ]
+      ],
+      "raros": {
+        "chance": 45,
+        "itens": [
+          "Espada Longa +1",
+          "Arco Longo +1",
+          "Cota de Malha +1",
+          "Escudo +1",
+          "Martelo de Guerra +2",
+          "Machado Grande +2"
+        ]
+      }
     },
     "8": {
       "ouro": "8d6+80",
       "itens": [
         "Poção de Cura Maior",
         "Armadura de Placas"
-      ]
+      ],
+      "raros": {
+        "chance": 60,
+        "itens": [
+          "Martelo de Guerra +2",
+          "Machado Grande +2",
+          "Armadura de Escamas +2",
+          "Armadura de Placas +1",
+          "Espada Longa +2, Lâmina da Aurora",
+          "Arco Longo +2, Arco do Falcão",
+          "Armadura de Placas +1",
+          "Martelo de Guerra +2"
+        ]
+      }
     }
   },
   "Nivel_5": {
@@ -94,7 +161,16 @@
       "Óleo de Lâmina",
       "Armadura de Escamas",
       "Espada Longa"
-    ]
+    ],
+    "raros": {
+      "chance": 12,
+      "itens": [
+        "Espada Longa +1",
+        "Arco Longo +1",
+        "Cota de Malha +1",
+        "Escudo +1"
+      ]
+    }
   },
   "Nivel_6": {
     "ouro": "5d6+15",
@@ -104,7 +180,20 @@
       "Cota de Malha",
       "Martelo de Guerra",
       "Arco Longo"
-    ]
+    ],
+    "raros": {
+      "chance": 14,
+      "itens": [
+        "Espada Longa +1",
+        "Arco Longo +1",
+        "Cota de Malha +1",
+        "Escudo +1",
+        "Martelo de Guerra +2",
+        "Machado Grande +2",
+        "Armadura de Escamas +2",
+        "Armadura de Placas +1"
+      ]
+    }
   },
   "Nivel_7": {
     "ouro": "6d6+25",
@@ -114,7 +203,16 @@
       "Poção de Foco",
       "Machado Grande",
       "Escudo"
-    ]
+    ],
+    "raros": {
+      "chance": 15,
+      "itens": [
+        "Martelo de Guerra +2",
+        "Machado Grande +2",
+        "Armadura de Escamas +2",
+        "Armadura de Placas +1"
+      ]
+    }
   },
   "Nivel_8": {
     "ouro": "7d6+40",
@@ -123,7 +221,20 @@
       "Poção de Cura Maior",
       "Armadura de Placas",
       "Rapier"
-    ]
+    ],
+    "raros": {
+      "chance": 18,
+      "itens": [
+        "Martelo de Guerra +2",
+        "Machado Grande +2",
+        "Armadura de Escamas +2",
+        "Armadura de Placas +1",
+        "Espada Longa +2, Lâmina da Aurora",
+        "Arco Longo +2, Arco do Falcão",
+        "Armadura de Placas +1",
+        "Martelo de Guerra +2"
+      ]
+    }
   },
   "Chefe_Elite": {
     "ouro": "8d6+80",
@@ -133,6 +244,16 @@
       "Poção de Cura Maior",
       "Machado Grande",
       "Arco Longo"
-    ]
+    ],
+    "raros": {
+      "chance": 100,
+      "itens": [
+        "Espada Longa +2, Lâmina da Aurora",
+        "Arco Longo +2, Arco do Falcão",
+        "Armadura de Placas +1",
+        "Martelo de Guerra +2",
+        "Espada Longa +3, Mata-Reis"
+      ]
+    }
   }
 }

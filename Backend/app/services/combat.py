@@ -13,6 +13,7 @@ import random
 from app.domain.eventos import DadosRolagem, EventoRolagem, EventoStatus
 from app.domain.state import Aliado, CombatState, Inimigo
 from app.infra.data_manager import regras
+from app.services import arquetipos
 from app.services import rules_engine as motor
 from app.services.class_abilities import CONJURADORES, dado_do_pulso, limite_foco, perfil_classe
 
@@ -77,6 +78,10 @@ def _criar_inimigo(nome: str, nome_exibicao: str | None = None) -> Inimigo | Non
         dano_dado=dano_dado,
         nome_ataque=nome_ataque,
         comportamento=dados.get("comportamento", ""),
+        papel=dados.get("papel", ""),
+        temperamento=dados.get("temperamento", ""),
+        persona=dados.get("persona", ""),
+        sprite=dados.get("sprite", ""),
     )
 
 
@@ -87,6 +92,7 @@ def iniciar_combate(
     rng: random.Random | None = None,
     nivel_heroi: int = 1,
     chefe_reservado: str | None = None,
+    perfis: dict[str, dict] | None = None,
 ) -> tuple[CombatState, list[str], int]:
     """Cria o combate a partir do bestiário real.
 
@@ -129,14 +135,21 @@ def iniciar_combate(
         nome_proposto = str(nome_proposto).strip()[:80]
         if not nome_proposto:
             continue
-        if regras.get_monster(nome_proposto) and nome_proposto in candidatos:
+        if regras.get_monster(nome_proposto) and (
+            nome_proposto in candidatos or nome_proposto in arquetipos.arquetipos_do_nivel(nivel_heroi)
+        ):
             inimigo = _criar_inimigo(nome_proposto)
             if inimigo:
                 pares.append((inimigo, nome_proposto))
             continue
-        if not candidatos:
+        # O narrador descreve quem é o inimigo (papel e temperamento); o
+        # servidor acha a ficha de papel do nível que combina. Sem afinidade,
+        # o sorteio da banda, como sempre foi.
+        perfil = (perfis or {}).get(nome_proposto.casefold()) or {}
+        escolhido = arquetipos.escolher(perfil.get("papel", ""), perfil.get("temperamento", ""), nivel_heroi, rng)
+        if escolhido is None and not candidatos:
             continue
-        arquetipo = dado.choice(candidatos)
+        arquetipo = escolhido or dado.choice(candidatos)
         inimigo = _criar_inimigo(arquetipo, nome_exibicao=nome_proposto)
         if inimigo:
             pares.append((inimigo, arquetipo))
@@ -145,9 +158,9 @@ def iniciar_combate(
         candidatos = regras.get_monstros_nivel_1()
         if candidatos:
             escolhido_nome = dado.choice(candidatos)
-            escolhido = _criar_inimigo(escolhido_nome)
-            if escolhido:
-                pares = [(escolhido, escolhido_nome)]
+            inimigo_sorteado = _criar_inimigo(escolhido_nome)
+            if inimigo_sorteado:
+                pares = [(inimigo_sorteado, escolhido_nome)]
 
     selecionados: list[tuple[Inimigo, str]] = []
     custo = 0
@@ -219,7 +232,9 @@ def turno_jogador(
         vantagem = _combinar_vantagem(vantagem, True)
         c_state.efeitos_heroi.pop("precisao", None)
     prof = motor.bonus_proficiencia(nivel)
-    bonus_ataque = prof + mod_atributo + (-2 if investida else 0)
+    # Arma encantada (ADR-0047): o bônus vale para acertar e para o dano.
+    bonus_arma = int(dados_arma.get("bonus", 0))
+    bonus_ataque = prof + mod_atributo + bonus_arma + (-2 if investida else 0)
 
     ca_alvo = alvo.ca - (2 if alvo.efeitos.get("vulneravel", 0) else 0)
     resultado = motor.resolver_ataque(bonus_ataque, ca_alvo, rng, vantagem=vantagem)
@@ -231,6 +246,8 @@ def turno_jogador(
         {"rotulo": motor.ATRIBUTO_LABEL[attr_usado], "valor": mod_atributo},
         {"rotulo": "Proficiência", "valor": prof},
     ]
+    if bonus_arma:
+        partes_bonus.append({"rotulo": "Arma encantada", "valor": bonus_arma})
     if investida:
         partes_bonus.append({"rotulo": "Investida", "valor": -2})
     dados = DadosRolagem(
@@ -248,7 +265,7 @@ def turno_jogador(
     # dobra dados, não modificador). O ataque de monstro já vem com o mod
     # embutido no texto de data/monsters.json (parse_ataque_monstro), por
     # isso o ataque do inimigo (`turnos._atacar`) não repete essa soma.
-    dano = motor.calcular_dano(dados_arma["dano"], resultado.critico, rng) + mod_atributo
+    dano = motor.calcular_dano(dados_arma["dano"], resultado.critico, rng) + mod_atributo + bonus_arma
     if classe:
         dano += nivel // 2
         if nivel >= 5:

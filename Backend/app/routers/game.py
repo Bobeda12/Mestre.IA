@@ -143,6 +143,18 @@ def _catalogo_itens(heroi: Personagem, mundo: WorldState) -> dict:
     return saida
 
 
+def _tempo_da_narracao(executor: ToolExecutor) -> None:
+    """Um turno que foi só narração (nadar no lago, conversar sem ferramenta)
+    também gasta tempo: sem isto o relógio do mundo e os conflitos paravam
+    enquanto o jogador se desviava do rumo (achado do teste ao vivo,
+    ADR-0048). Ações que já gastaram a ação do turno cuidaram disso."""
+    if executor.c_state.ativo or executor._acao_gasta:
+        return
+    from app.services.living_world import avancar_tempo
+
+    avancar_tempo(executor, 10)
+
+
 def _mundo_da_tela(painel: dict) -> dict:
     """Só o que a tela desenha do Mundo Vivo: a cena do local (palco), as
     pessoas (palco e aba Relações), as oportunidades (sinais da cena) e os
@@ -154,6 +166,7 @@ def _mundo_da_tela(painel: dict) -> dict:
         "descricao": painel.get("descricao", ""),
         "entidades": painel.get("entidades", []),
         "pessoas": painel.get("pessoas", []),
+        "lugares": painel.get("lugares", []),
         "emergencia": {"aprendizados": (painel.get("emergencia") or {}).get("aprendizados", [])},
         "imersao": {"oportunidades": (painel.get("imersao") or {}).get("oportunidades", [])},
     }
@@ -754,6 +767,7 @@ async def chat_endpoint(
                 narrativa, eventos_ferramentas, _chamadas = executar_turno(
                     msgs, executor, chamar_fn=chave.chamar_fn, tools=tools_para(c_state, user_input.action, w_state)
                 )
+                _tempo_da_narracao(executor)
         except ErroMestre as e:
             # Etapa 10 (A-7) — a mensagem de erro é um campo próprio, não
             # texto embutido em `narrativa` com `*(...)*`: o histórico
@@ -980,6 +994,7 @@ def chat_stream_endpoint(
                 )
                 return
 
+            _tempo_da_narracao(executor)
             narrativa = "".join(pedacos)
             eventos_ferramentas = executor.eventos
 

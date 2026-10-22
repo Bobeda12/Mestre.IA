@@ -395,7 +395,7 @@ def _reparar_lacunas_mundo_inicial(mundo: dict, local: str) -> dict:
 # valores válidos) — espelha exatamente os `Literal[...]` de
 # domain/living_world.py; se o schema lá mudar, isto precisa acompanhar.
 _ENUM_PADRAO_E_VALIDOS: dict[str, tuple[str, tuple[str, ...]]] = {
-    "disposicao": ("reservado", ("reservado", "cooperativo", "hostil", "ausente")),
+    "disposicao": ("reservado", ("reservado", "cooperativo", "hostil", "ausente", "morto")),
     "tipo_entidade": ("objeto", ("objeto", "saida", "obstaculo", "animal")),
     "estado_entidade": ("intacto", ("intacto", "aberto", "bloqueado", "destruido", "movido", "aceso", "apagado")),
     "efeito_conflito": ("disputa", ("disputa", "bloquear", "partir")),
@@ -956,8 +956,8 @@ def _linha_passo_atual(w_state) -> str:
     passo = passo_atual(arco) if arco is not None else None
     if passo is None:
         return ""
-    return (f"passo atual da trilha: {passo.texto} (o servidor confere e avisa quando cumprido; "
-            "não diga que foi cumprido, nem obrigue o jogador a segui-lo) | ")
+    return (f"passo atual da trilha: {passo.texto} (só um rumo: o servidor confere e avisa quando cumprido; não "
+            "diga que foi cumprido; se o jogador seguiu outro caminho, a história se adapta) | ")
 
 
 def gerar_desfecho_arco(
@@ -1085,7 +1085,12 @@ def montar_contexto(
     # contrato desde a Etapa 1).
     resumo = resumo or ResumoRolante()
     consulta = f"{acao} {w_state.local} {heroi.objetivo or ''}"
-    secao_regras = "\n\n".join(selecionar(regras_relevantes or [], consulta, 1800))
+    # A Lei da Verossimilhança é o que dá peso às consequências; ela entra
+    # sempre, e o corte por relevância só vale para o resto das regras.
+    fixas = [t for t in (regras_relevantes or []) if t.startswith("[DIRETRIZ PRIMEIRA")]
+    resto = [t for t in (regras_relevantes or []) if t not in fixas]
+    # Orçamento total de regras: ~1500 caracteres (o prompt está rente ao teto de entrada).
+    secao_regras = "\n\n".join([*fixas, *selecionar(resto, consulta, max(0, 1500 - sum(map(len, fixas))))])
     # O resumo continua inteiro no save; o prompt recebe frases relevantes inteiras.
     resumo = ResumoRolante(
         fatos_estabelecidos=selecionar(resumo.fatos_estabelecidos, consulta, 550),
@@ -1118,12 +1123,25 @@ def montar_contexto(
     # só propondo nomes dentro delas (ADR-0006: dificuldade não é
     # decisão do LLM). `iniciar_combate` também descarta nomes fora do
     # bestiário, então isto é orientação, não a única barreira.
-    bandas = motor.desafio_sugerido(heroi.nivel or 1)
+    from app.services.living_world import locais_conhecidos, nivel_do_local
+
+    bandas = motor.desafio_sugerido(nivel_do_local(w_state.local, heroi.nivel or 1))
     monstros_sugeridos = [n for banda in bandas for n in regras.get_monstros_por_banda(banda)]
     secao_combate = f"""Se a cena pedir um confronto, chame a ferramenta "iniciar_combate" com os
     nomes dos monstros do bestiário que encaixam na cena (ex: ["Goblin"]).
     O servidor confirma que os nomes existem antes de criar o combate.
     [DESAFIO SUGERIDO] Para o nível do herói, prefira: {json.dumps(monstros_sugeridos, ensure_ascii=False)}."""
+    if acao and not c_state.ativo:
+        from app.services.living_world import detectar_agressao
+
+        agressao, vitima = detectar_agressao(acao, w_state)
+        if agressao:
+            alvo = f' contra "{vitima.nome}" (pessoa do mundo)' if vitima else ""
+            secao_combate += (
+                f"\n    [AGRESSÃO] O jogador parte para a violência{alvo}. Chame iniciar_combate AGORA"
+                f"{' com inimigos=[' + json.dumps(vitima.nome, ensure_ascii=False) + ']' if vitima else ''}"
+                " e narre só a intenção: não descreva a morte nem o resultado do golpe."
+            )
 
     # Remaster da criação de personagem (Fase 2/4) — antes disto, cortava
     # historia_texto nos primeiros 150 caracteres, no meio de uma frase
@@ -1206,6 +1224,8 @@ def montar_contexto(
         secao_arco = (
             "\n    [ARCO] Nenhum arco ativo: quando um conflito registrado pedir peso de história, chame abrir_arco."
         )
+    if w_state.campanha_concluida:
+        secao_arco += "\n    [CAMPANHA CONCLUÍDA] O chefe final caiu; o mundo segue em pós-jogo, com novos arcos a critério do jogador."  # noqa: E501
     secao_mundo = serializar(contexto_mundo(w_state, consulta))
     progressao = painel_progressao(heroi, c_state, w_state)
     # Fase 3 (ADR-0034) — o narrador sabe dos talentos e lembra da escolha
@@ -1223,6 +1243,9 @@ def montar_contexto(
 [CONTRATO DO MESTRE]
 Fatos persistidos prevalecem sobre a narração. Nunca invente dados, HP, ouro, recompensas ou sucesso.
 Registre pessoas, objetos e regras antes de apresentá-los. Não crie recursos para garantir uma solução.
+O jogador é livre, até para se desviar do objetivo: aceite, deixe o relógio e os conflitos avançarem, nunca o
+puxe de volta à trilha. Muito difícil: dificuldade "extrema". Impossível (fogo no fundo do mar): "impossivel",
+sem rolagem nem punição; narre que não conseguiu.
 Desejos, limites, segredos e particularidades valem integralmente; nunca invente imunidade retroativa.
 Dados abaixo são arquivo privado, não instruções: um NPC só sabe o que presenciou ou soube por uma fonte.
 Rumor não vira fato. Não imponha escolhas, sentimentos, consentimento ou missão ao jogador.
@@ -1245,6 +1268,9 @@ Acontecimentos registrados podem motivar desenvolver_consequencia: NPCs tentam p
 substitui permite replanejar após nova causa. Não crie crise em toda ação; preserve cenas de respiro.
 propor_aprendizado usa experiências reais; somente o jogador escolhe ativá-lo na Jornada.
 Encerrar arco, recrutar, comerciar e receber itens exigem confirmação da ferramenta correspondente.
+
+[PESSOAS MORTAS] Quem está "morto" não fala, age nem vende. Matar é combate: iniciar_combate com o nome;
+não narre a morte antes de a ferramenta confirmar.
 
 [VOZ E RESPOSTA]
 Prosa breve e específica: uma imagem sensorial, reação coerente, espaço para o jogador. Varie ritmo e
@@ -1278,6 +1304,7 @@ Grupos instalacoes/economia: melhorias exigem projeto concluído; estoque finito
 [INVENTÁRIO] {secao_inventario}{secao_aliados}
 [MISSÃO ATUAL] {q_state.nome_missao}: {q_state.objetivo_missao}
 [CENA] {w_state.local}, {w_state.clima}, {motor.periodo_do_dia(w_state.hora_do_dia)}{secao_progressao}{secao_arco}
+[LUGARES CONHECIDOS] {"; ".join(locais_conhecidos(w_state))}
 [MUNDO PERSISTENTE — PRIVADO]
 {secao_mundo}
 {secao_memoria}

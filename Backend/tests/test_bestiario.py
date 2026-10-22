@@ -90,5 +90,9 @@ def test_todo_arquetipo_tem_sprite():
     def slug(n):
         base = "".join(c for c in unicodedata.normalize("NFD", n) if unicodedata.category(c) != "Mn").lower()
         return re.sub(r"^-|-$", "", re.sub(r"[^a-z0-9]+", "-", base))
-    faltam = [n for g in regras.monsters.values() for n in g if not (pasta / f"{slug(n)}.png").exists()]
+    # Arquétipos de papel pedem a arte emprestada de uma criatura (`sprite`).
+    faltam = [
+        n for g in regras.monsters.values() for n, f in g.items()
+        if not (pasta / f"{slug(f.get('sprite', n))}.png").exists()
+    ]
     assert faltam == []

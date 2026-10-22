@@ -67,6 +67,66 @@
       "fortes": [
         "reflexo"
       ]
+    },
+    "Saqueador Medroso": {
+      "hp": 11,
+      "ac": 13,
+      "forca": 9,
+      "destreza": 14,
+      "ataque": "Faca (+4 para acertar, 1d4+2 dano)",
+      "comportamento": "Ataca de surpresa e foge ao primeiro sangue.",
+      "xp": 50,
+      "alcance": "corpo",
+      "tatica": "covarde",
+      "foge_abaixo": 0.5,
+      "fortes": [
+        "reflexo"
+      ],
+      "por_papel": true,
+      "papel": "ladino",
+      "temperamento": "medroso",
+      "persona": "Fala baixo e olha as saídas. Larga o butim e implora quando se vê ferido.",
+      "sprite": "capitao-bandido"
+    },
+    "Valentão de Taverna": {
+      "hp": 12,
+      "ac": 11,
+      "forca": 14,
+      "destreza": 9,
+      "ataque": "Cacete (+4 para acertar, 1d6+2 dano)",
+      "comportamento": "Briguento. Não recua para não perder a pose.",
+      "xp": 50,
+      "alcance": "corpo",
+      "tatica": "bruto",
+      "foge_abaixo": 0,
+      "fortes": [
+        "vigor"
+      ],
+      "por_papel": true,
+      "papel": "bruto",
+      "temperamento": "orgulhoso",
+      "persona": "Fanfarrão: provoca antes de bater e se recusa a admitir derrota na frente dos outros.",
+      "sprite": "orc"
+    },
+    "Aprendiz Fanático": {
+      "hp": 8,
+      "ac": 12,
+      "forca": 8,
+      "destreza": 13,
+      "ataque": "Faísca (+4 para acertar, 1d6+2 dano)",
+      "comportamento": "Conjura de longe, convicto de que sua causa é a certa.",
+      "xp": 50,
+      "alcance": "distancia",
+      "tatica": "atirador",
+      "foge_abaixo": 0,
+      "fortes": [
+        "vontade"
+      ],
+      "por_papel": true,
+      "papel": "mago",
+      "temperamento": "fanatico",
+      "persona": "Fala em nome de um mestre que o jogador nunca viu. Não negocia, não foge.",
+      "sprite": "lich-menor"
     }
   },
   "Nivel_2": {
@@ -122,6 +182,74 @@
       "fortes": [
         "reflexo"
       ]
+    },
+    "Guarda Corrupto": {
+      "hp": 21,
+      "ac": 15,
+      "forca": 13,
+      "destreza": 11,
+      "ataque": "Espada Curta (+4 para acertar, 1d6+2 dano)",
+      "comportamento": "Chama reforço ao se ver perdendo.",
+      "xp": 100,
+      "alcance": "corpo",
+      "tatica": "agressivo",
+      "foge_abaixo": 0.25,
+      "fortes": [
+        "vigor"
+      ],
+      "por_papel": true,
+      "papel": "guarda",
+      "temperamento": "astuto",
+      "persona": "Fala em nome da lei, mas aceita suborno. Recua para chamar os colegas se o negócio azeda.",
+      "sprite": "capitao-bandido"
+    },
+    "Assassino de Aluguel": {
+      "hp": 15,
+      "ac": 14,
+      "forca": 11,
+      "destreza": 16,
+      "ataque": "Adaga Envenenada (+5 para acertar, 1d6+3 dano)",
+      "comportamento": "Frio. Prefere o golpe certo à luta longa.",
+      "xp": 100,
+      "alcance": "corpo",
+      "tatica": "agressivo",
+      "foge_abaixo": 0.2,
+      "fortes": [
+        "reflexo"
+      ],
+      "habilidade": {
+        "nome": "Veneno",
+        "gatilho": "no_acerto",
+        "resistencia": "vigor",
+        "condicao": "envenenado",
+        "duracao": 3,
+        "cd": 11
+      },
+      "por_papel": true,
+      "papel": "assassino",
+      "temperamento": "sadico",
+      "persona": "Sorri pouco e fala menos. Gosta de ver o medo antes do golpe final.",
+      "sprite": "capitao-bandido"
+    },
+    "Nobre Duelista": {
+      "hp": 19,
+      "ac": 15,
+      "forca": 10,
+      "destreza": 16,
+      "ataque": "Florete (+5 para acertar, 1d6+3 dano)",
+      "comportamento": "Luta por honra e estilo; nunca ataca quem está caído.",
+      "xp": 100,
+      "alcance": "corpo",
+      "tatica": "implacavel",
+      "foge_abaixo": 0,
+      "fortes": [
+        "reflexo"
+      ],
+      "por_papel": true,
+      "papel": "nobre",
+      "temperamento": "orgulhoso",
+      "persona": "Exige ser tratado por título. Perde a calma se for humilhado, e aceita rendição de quem o vence com honra.",
+      "sprite": "cavaleiro-negro"
     }
   },
   "Nivel_3": {
@@ -178,6 +306,54 @@
         "condicao": "amedrontado",
         "duracao": 2
       }
+    },
+    "Capitão da Guarda": {
+      "hp": 28,
+      "ac": 16,
+      "forca": 14,
+      "destreza": 12,
+      "ataque": "Montante (+5 para acertar, 2d6+2 dano)",
+      "comportamento": "Disciplinado. Luta em formação e não abandona o posto.",
+      "xp": 200,
+      "alcance": "corpo",
+      "tatica": "matilha",
+      "foge_abaixo": 0,
+      "fortes": [
+        "vigor"
+      ],
+      "por_papel": true,
+      "papel": "comandante",
+      "temperamento": "honrado",
+      "persona": "Cumpre ordens e cobra o mesmo dos seus. Ouve argumentos, mas não trai o juramento.",
+      "sprite": "capitao-bandido"
+    },
+    "Sacerdote Fanático": {
+      "hp": 26,
+      "ac": 14,
+      "forca": 12,
+      "destreza": 10,
+      "ataque": "Maça Sagrada (+5 para acertar, 1d8+3 dano)",
+      "comportamento": "Cego pela fé. Luta até o fim em nome do seu deus.",
+      "xp": 200,
+      "alcance": "corpo",
+      "tatica": "implacavel",
+      "foge_abaixo": 0,
+      "fortes": [
+        "vontade"
+      ],
+      "habilidade": {
+        "nome": "Praga",
+        "gatilho": "no_acerto",
+        "resistencia": "vontade",
+        "cd": 12,
+        "condicao": "enfraquecido",
+        "duracao": 2
+      },
+      "por_papel": true,
+      "papel": "clerigo",
+      "temperamento": "fanatico",
+      "persona": "Reza em voz alta enquanto bate. Vê o jogador como pecador a purificar.",
+      "sprite": "wight"
     }
   },
   "Nivel_4": {
@@ -218,6 +394,66 @@
         "condicao": "enfraquecido",
         "duracao": 2
       }
+    },
+    "Rei Medroso": {
+      "hp": 36,
+      "ac": 15,
+      "forca": 11,
+      "destreza": 10,
+      "ataque": "Cetro Real (+5 para acertar, 2d6+2 dano)",
+      "comportamento": "Esconde-se atrás dos guardas e foge cedo.",
+      "xp": 400,
+      "alcance": "corpo",
+      "tatica": "covarde",
+      "foge_abaixo": 0.6,
+      "fortes": [
+        "vontade"
+      ],
+      "por_papel": true,
+      "papel": "nobre",
+      "temperamento": "medroso",
+      "persona": "Fala alto para esconder o tremor. Promete qualquer coisa para salvar a vida e quebra a promessa depois.",
+      "sprite": "cavaleiro-negro"
+    },
+    "Mago Renegado": {
+      "hp": 34,
+      "ac": 14,
+      "forca": 9,
+      "destreza": 14,
+      "ataque": "Raio Arcano (+6 para acertar, 3d6+2 dano)",
+      "comportamento": "Calculista. Mantém distância e recua ferido.",
+      "xp": 400,
+      "alcance": "distancia",
+      "tatica": "atirador",
+      "foge_abaixo": 0.3,
+      "fortes": [
+        "vontade"
+      ],
+      "por_papel": true,
+      "papel": "mago",
+      "temperamento": "astuto",
+      "persona": "Estuda o adversário antes de agir. Negocia informação em troca da própria pele.",
+      "sprite": "lich-menor"
+    },
+    "Caçador de Recompensas": {
+      "hp": 40,
+      "ac": 16,
+      "forca": 14,
+      "destreza": 15,
+      "ataque": "Besta Pesada (+6 para acertar, 2d8+3 dano)",
+      "comportamento": "Profissional. Só luta por contrato.",
+      "xp": 400,
+      "alcance": "distancia",
+      "tatica": "atirador",
+      "foge_abaixo": 0,
+      "fortes": [
+        "reflexo"
+      ],
+      "por_papel": true,
+      "papel": "assassino",
+      "temperamento": "honrado",
+      "persona": "Não faz perguntas e não guarda rancor. Se o contrato cair, vai embora.",
+      "sprite": "capitao-bandido"
     }
   },
   "Nivel_5": {
@@ -273,6 +509,54 @@
         "condicao": "contido",
         "duracao": 1
       }
+    },
+    "Cavaleiro Traidor": {
+      "hp": 40,
+      "ac": 17,
+      "forca": 15,
+      "destreza": 11,
+      "ataque": "Espada Bastarda (+6 para acertar, 2d8+3 dano)",
+      "comportamento": "Orgulhoso. Despreza quem luta sem honra.",
+      "xp": 450,
+      "alcance": "corpo",
+      "tatica": "implacavel",
+      "foge_abaixo": 0,
+      "fortes": [
+        "vigor"
+      ],
+      "por_papel": true,
+      "papel": "comandante",
+      "temperamento": "orgulhoso",
+      "persona": "Carrega a vergonha de um juramento quebrado e a cobre com arrogância.",
+      "sprite": "cavaleiro-negro"
+    },
+    "Feiticeira da Cinza": {
+      "hp": 34,
+      "ac": 14,
+      "forca": 9,
+      "destreza": 15,
+      "ataque": "Lança de Brasa (+6 para acertar, 3d8 dano)",
+      "comportamento": "Prazer na destruição. Mira de longe.",
+      "xp": 450,
+      "alcance": "distancia",
+      "tatica": "atirador",
+      "foge_abaixo": 0,
+      "fortes": [
+        "vontade"
+      ],
+      "habilidade": {
+        "nome": "Chamas",
+        "gatilho": "no_acerto",
+        "resistencia": "reflexo",
+        "cd": 13,
+        "condicao": "queimando",
+        "duracao": 2
+      },
+      "por_papel": true,
+      "papel": "mago",
+      "temperamento": "sadico",
+      "persona": "Ri baixo enquanto queima. Quanto mais o alvo grita, mais ela se anima.",
+      "sprite": "lich-menor"
     }
   },
   "Nivel_6": {
@@ -320,6 +604,54 @@
       "fortes": [
         "reflexo"
       ]
+    },
+    "Inquisidor Fanático": {
+      "hp": 46,
+      "ac": 16,
+      "forca": 14,
+      "destreza": 11,
+      "ataque": "Mangual Sagrado (+6 para acertar, 2d8+3 dano)",
+      "comportamento": "Zelote. Persegue o alvo até a morte.",
+      "xp": 700,
+      "alcance": "corpo",
+      "tatica": "implacavel",
+      "foge_abaixo": 0,
+      "fortes": [
+        "vontade"
+      ],
+      "habilidade": {
+        "nome": "Chamas sagradas",
+        "gatilho": "no_acerto",
+        "resistencia": "reflexo",
+        "cd": 14,
+        "condicao": "queimando",
+        "duracao": 2
+      },
+      "por_papel": true,
+      "papel": "clerigo",
+      "temperamento": "fanatico",
+      "persona": "Interroga antes de golpear. Qualquer dúvida do jogador vira confissão de culpa.",
+      "sprite": "wight"
+    },
+    "Mestre Assassino": {
+      "hp": 40,
+      "ac": 17,
+      "forca": 12,
+      "destreza": 18,
+      "ataque": "Lâminas Gêmeas (+7 para acertar, 2d6+5 dano)",
+      "comportamento": "Letal e paciente. Some e volta quando ferido.",
+      "xp": 700,
+      "alcance": "corpo",
+      "tatica": "agressivo",
+      "foge_abaixo": 0.25,
+      "fortes": [
+        "reflexo"
+      ],
+      "por_papel": true,
+      "papel": "assassino",
+      "temperamento": "astuto",
+      "persona": "Fala pouco, sabe tudo sobre o alvo. Respeita quem lhe dá trabalho de verdade.",
+      "sprite": "capitao-bandido"
     }
   },
   "Nivel_7": {
@@ -376,6 +708,55 @@
       "fortes": [
         "vigor"
       ]
+    },
+    "Rei Tirano": {
+      "hp": 56,
+      "ac": 17,
+      "forca": 15,
+      "destreza": 12,
+      "ataque": "Espada Real (+7 para acertar, 2d8+4 dano)",
+      "comportamento": "Cruel. Comanda reforços e luta cercado dos seus.",
+      "xp": 1100,
+      "alcance": "corpo",
+      "tatica": "matilha",
+      "foge_abaixo": 0,
+      "fortes": [
+        "vontade"
+      ],
+      "por_papel": true,
+      "papel": "nobre",
+      "temperamento": "sadico",
+      "persona": "Governa pelo medo e acha que o mundo lhe deve obediência. Não aceita rendição de rebelde.",
+      "sprite": "cavaleiro-negro"
+    },
+    "Arquimago Orgulhoso": {
+      "hp": 48,
+      "ac": 15,
+      "forca": 9,
+      "destreza": 15,
+      "ataque": "Raio Prismático (+7 para acertar, 4d6+2 dano)",
+      "comportamento": "Despreza adversários fracos; um bom argumento o fere mais que a espada.",
+      "xp": 1100,
+      "alcance": "distancia",
+      "tatica": "atirador",
+      "foge_abaixo": 0.2,
+      "fortes": [
+        "vontade"
+      ],
+      "habilidade": {
+        "nome": "Raio",
+        "gatilho": "acao",
+        "recarga": 3,
+        "resistencia": "reflexo",
+        "cd": 15,
+        "dano": "3d6",
+        "meio": true
+      },
+      "por_papel": true,
+      "papel": "mago",
+      "temperamento": "orgulhoso",
+      "persona": "Corrige a gramática do jogador no meio do combate. Humilhado, perde a precisão.",
+      "sprite": "lich-menor"
     }
   },
   "Nivel_8": {
@@ -433,6 +814,46 @@
       "fortes": [
         "vigor"
       ]
+    },
+    "General Implacável": {
+      "hp": 66,
+      "ac": 18,
+      "forca": 17,
+      "destreza": 12,
+      "ataque": "Montante de Guerra (+8 para acertar, 2d10+5 dano)",
+      "comportamento": "Veterano. Não se abala e não pede trégua.",
+      "xp": 2300,
+      "alcance": "corpo",
+      "tatica": "implacavel",
+      "foge_abaixo": 0,
+      "fortes": [
+        "vigor"
+      ],
+      "por_papel": true,
+      "papel": "comandante",
+      "temperamento": "honrado",
+      "persona": "Respeita um oponente à altura e cumpre o que promete, até na derrota.",
+      "sprite": "cavaleiro-negro"
+    },
+    "Rei Louco": {
+      "hp": 60,
+      "ac": 16,
+      "forca": 14,
+      "destreza": 14,
+      "ataque": "Cetro Rachado (+8 para acertar, 2d8+5 dano)",
+      "comportamento": "Imprevisível. Muda de tática sem aviso.",
+      "xp": 1800,
+      "alcance": "corpo",
+      "tatica": "agressivo",
+      "foge_abaixo": 0,
+      "fortes": [
+        "vontade"
+      ],
+      "por_papel": true,
+      "papel": "nobre",
+      "temperamento": "sadico",
+      "persona": "Fala com quem não está lá. Ora gargalha, ora chora, e bate forte em ambos.",
+      "sprite": "cavaleiro-negro"
     }
   },
   "Chefe_Elite": {

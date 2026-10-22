@@ -91,6 +91,8 @@ def contexto_mundo(w_state, consulta: str, limite: int = 6500) -> dict:
             peso += 12
         if local and ref.startswith(("particularidades/", "pessoas/")):
             peso += 8
+        if local and ref.startswith("pessoas/") and dados.get("disposicao") == "morto":
+            peso += 20
         if local and dados.get("estado") in {"disponivel", "ativo"}:
             peso += 8
         if local and ref.startswith("oportunidades/"):

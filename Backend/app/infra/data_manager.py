@@ -87,6 +87,9 @@ class DataManager:
         alto impacto na narração (narrator.py:montar_contexto)."""
         return [*self.monsters.get("Chefe", {}).keys(), *self.monsters.get("Chefe_Elite", {}).keys()]
 
+    def get_monstros_chefe_elite(self) -> list[str]:
+        return list(self.monsters.get("Chefe_Elite", {}).keys())
+
     def chefes_para_nivel(self, nivel: int) -> list[str]:
         """O chefe que um capítulo aberto neste nível pode sortear. Cada
         chefe tem `nivel_min` na ficha; valem os do degrau mais alto que o
@@ -104,7 +107,7 @@ class DataManager:
         """Bestiário por banda de nível (Nivel_1..Nivel_4, Chefe) — usado pelo
         escalonamento de perigo (rules_engine.desafio_sugerido) para sugerir
         encontros compatíveis com o nível do herói."""
-        return list(self.monsters.get(banda, {}).keys())
+        return [n for n, f in self.monsters.get(banda, {}).items() if not f.get("por_papel")]
 
     def get_weapon(self, nome: str) -> dict | None:
         exato = self._indice_armas.get(_normalizar(nome), nome)

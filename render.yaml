@@ -47,8 +47,12 @@ services:
         sync: false
       - key: SMTP_SENHA_APP
         sync: false
+      # Mesma regra do GOOGLE_REDIRECT_URI: `/auth/confirmar` seta o cookie de
+      # sessão e redireciona pro front, então o link do e-mail tem que passar
+      # pelo proxy da Vercel. Direto no Render, o cookie ficaria no domínio
+      # onrender.com e o usuário voltaria deslogado.
       - key: CONFIRMACAO_EMAIL_URL
-        value: https://mestre-ia-backend.onrender.com/auth/confirmar
+        value: https://mestre-ia-seven.vercel.app/api/auth/confirmar
       # Langfuse Cloud (região US) — opcional, tracing fica desligado sem isto.
       - key: LANGFUSE_PUBLIC_KEY
         sync: false

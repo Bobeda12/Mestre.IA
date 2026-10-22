@@ -20,7 +20,7 @@ def _presente(executor: "ToolExecutor", alvo: str) -> bool:
         return True
     pessoa = w.mundo.pessoas.get(alvo)
     if pessoa:
-        return pessoa.local == w.local and pessoa.disposicao != "ausente"
+        return pessoa.local == w.local and not pessoa.indisponivel
     cena = w.mundo.cenas.get(w.local)
     entidade = cena.entidades.get(alvo) if cena else None
     return bool(entidade and not entidade.recolhido and entidade.estado != "destruido")
@@ -69,8 +69,13 @@ def registrar_particularidade(executor: "ToolExecutor", particularidade: dict) -
 def resolver_intencao(executor: "ToolExecutor", proposta: dict) -> dict:
     p = Intencao.model_validate(proposta)
     estado = executor.w_state.mundo
+    if p.dificuldade == "impossivel":
+        # Sem rolagem e sem punição: o que a ficção não permite só não acontece.
+        descricao = f"{p.intencao}: impossível; o herói tenta e não consegue."
+        executor.eventos.append(descricao)
+        return {"sucesso": False, "impossivel": True, "descricao": descricao}
     if not _presente(executor, p.alvo):
-        return {"erro": "Alvo ausente. Use IDs do mundo, heroi ou o nome do local atual."}
+        return {"erro": "Alvo não registrado na cena. Se for plausível aqui, registre-o com registrar_cena e repita resolver_intencao agora; se não existir, narre a tentativa e o mundo reagindo, sem recusar."}  # noqa: E501
     if p.meio and p.meio not in (executor.heroi.inventario or []) and not _presente(executor, p.meio):
         return {"erro": "O meio precisa existir no inventário ou na cena."}
     for referencia in p.particularidades:
@@ -131,7 +136,7 @@ def resolver_intencao(executor: "ToolExecutor", proposta: dict) -> dict:
     ))
     sucesso = mundo._testar(
         executor, "improvisar", p.alvo, p.atributo,
-        {"simples": 10, "arriscada": 15, "dificil": 20}[p.dificuldade], assinatura, bonus + int(preparada),
+        {"simples": 10, "arriscada": 15, "dificil": 20, "extrema": 24}[p.dificuldade], assinatura, bonus + int(preparada),  # noqa: E501
     )
     if sucesso is None:
         return {"erro": "Esta tentativa já falhou. Mude o meio, as condições ou o efeito pretendido."}
@@ -182,7 +187,7 @@ def desenvolver_consequencia(executor: "ToolExecutor", consequencia: dict) -> di
         return {"existente": estado.consequencias[proposta.id].model_dump()}
     origem = next((a for a in estado.acontecimentos if a.id == proposta.origem), None)
     pessoa = estado.pessoas.get(proposta.agente)
-    if not origem or not pessoa or pessoa.local != proposta.local or pessoa.disposicao == "ausente":
+    if not origem or not pessoa or pessoa.local != proposta.local or pessoa.indisponivel:
         return {"erro": "Vincule um acontecimento real e um agente presente no local da iniciativa."}
     if origem.local != pessoa.local and not any(k.texto == origem.descricao for k in pessoa.conhecimentos):
         return {"erro": "O agente não conhece esse acontecimento distante; a notícia precisa chegar primeiro."}
@@ -257,7 +262,7 @@ def escolher_aprendizado(executor: "ToolExecutor", aprendizado: str) -> dict:
 def painel_emergente(w_state, privado: bool = False) -> dict:
     estado = w_state.mundo
     particularidades = [p for p in estado.particularidades.values() if p.local == w_state.local]
-    pessoas = {p.id for p in estado.pessoas.values() if p.local == w_state.local and p.disposicao != "ausente"}
+    pessoas = {p.id for p in estado.pessoas.values() if p.local == w_state.local and not p.indisponivel}
     prefixo = f"{w_state.local}:"
     return {
         "acontecimentos": [a.model_dump() for a in estado.acontecimentos[-8:]],

@@ -30,6 +30,14 @@ class Inimigo(BaseModel):
     comportamento: str = ""
     arquetipo: str = ""
     afastado: bool = False
+    # Quando o inimigo é uma pessoa do mundo (PessoaMundo.id): a vitória sobre
+    # ele a marca como morta; sem isso o NPC "morria" só na prosa.
+    pessoa_id: str = ""
+    # Banco de arquétipos de papel (ADR-0046): quem é e como se comporta.
+    papel: str = ""
+    temperamento: str = ""
+    persona: str = ""
+    sprite: str = ""  # arte emprestada de uma criatura do bestiário
     xp: int = 0
     intencao: str = "atacar"
     efeitos: dict[str, int] = {}
@@ -158,6 +166,13 @@ class WorldState(BaseModel):
     # da validação estrita antiga, só que o registro agora pode acontecer
     # em tempo de jogo, não só nos arquivos JSON).
     locais_descobertos: dict[str, LocalDescoberto] = {}
+    # Lugares do catálogo (`data/locations.json`) que o herói já ouviu falar,
+    # além dos que visitou. Viajar a um lugar desconhecido continua livre; isto
+    # só decide o que o jogo oferece e mostra (ADR-0045).
+    locais_conhecidos: list[str] = []
+    # Final de campanha (ADR-0047): o chefe de elite do arco caiu com o herói
+    # já forte. O mundo segue (pós-jogo); só deixa de ser "o primeiro ciclo".
+    campanha_concluida: bool = False
     # Fase 1 (ADR-0033) — itens que o narrador criou por `dar_item` fora do
     # catálogo: só nome, descrição e tags fechadas; nunca números.
     itens_inventados: dict[str, ItemInventado] = {}

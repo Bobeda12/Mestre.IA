@@ -8,6 +8,7 @@ import pytest
 from app.domain.living_world import CondicaoPasso, Passo
 from app.domain.state import CombatState, Inimigo
 from app.services import living_world as mundo
+from app.services import rules_engine as motor
 from app.services.emergent_start import criar_origem, validar_mundo_inicial
 from tests.helpers import RngFixo
 from tests.test_living_world import agir, executor  # noqa: F401 — fixture
@@ -77,7 +78,7 @@ def test_consequencia_da_metade_sem_item(executor):
     mundo.registrar_fato(executor, "b")
     r, ok = agir(executor, "encerrar_arco")
     assert ok and r["resultado"] == "consequencia" and r["recompensa"]["itens"] == []
-    assert r["recompensa"]["xp"] == (mundo.XP_ARCO_BASE + mundo.XP_ARCO_POR_NIVEL * executor.heroi.nivel) // 2
+    assert r["recompensa"]["xp"] == motor.xp_do_nivel(executor.heroi.nivel, mundo.XP_ARCO_FRACAO) // 2
 
 
 def test_abandono_encerra_sem_recompensa(executor):
@@ -141,3 +142,31 @@ def test_tools_de_arco_so_fora_de_combate():
     fora = {t["function"]["name"] for t in tools_para(CombatState(ativo=False))}
     dentro = {t["function"]["name"] for t in tools_para(CombatState(ativo=True))}
     assert {"abrir_arco", "encerrar_arco"} <= fora and not {"abrir_arco", "encerrar_arco"} & dentro
+
+
+def _fechar_arco_do_chefe(executor, chefe, nivel):
+    executor.heroi.nivel = nivel
+    arco = mundo.arco_ativo(executor.w_state.mundo)
+    arco.chefe, arco.chefe_enfrentado = chefe, True
+    _passos_feitos(executor)
+    mundo.registrar_fato(executor, "a")
+    mundo.registrar_fato(executor, "b")
+    return agir(executor, "encerrar_arco")
+
+
+def test_chefe_de_elite_com_heroi_forte_conclui_a_campanha(executor):
+    assert executor.w_state.campanha_concluida is False
+    r, ok = _fechar_arco_do_chefe(executor, "Lich Menor", 8)
+    assert ok and r["resultado"] == "vitoria_chefe"
+    assert executor.w_state.campanha_concluida is True
+    assert any("Campanha concluída" in str(e) for e in executor.eventos)
+
+
+def test_chefe_comum_ou_heroi_fraco_nao_conclui_a_campanha(executor):
+    r, ok = _fechar_arco_do_chefe(executor, "Bugbear", 8)
+    assert ok and executor.w_state.campanha_concluida is False
+
+
+def test_chefe_de_elite_com_heroi_fraco_nao_conclui(executor):
+    r, ok = _fechar_arco_do_chefe(executor, "Lich Menor", 3)
+    assert ok and executor.w_state.campanha_concluida is False

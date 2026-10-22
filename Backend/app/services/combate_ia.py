@@ -115,8 +115,16 @@ def _estado(inimigo: Inimigo) -> str:
     return f"{saude}, {inimigo.distancia}"
 
 
+def _jeitos(c_state: CombatState) -> str:
+    """O temperamento de quem tem persona (banco de arquétipos, ADR-0046)."""
+    linhas = [f"- {i.nome}: {i.persona[:160]}" for i in c_state.inimigos[:6] if i.persona and i.hp > 0]
+    return "\n".join(linhas)
+
+
 def prompt_narracao(heroi, c_state: CombatState, local: str, fatos: list[str]) -> str:
     inimigos = "; ".join(f"{i.nome} ({_estado(i)})" for i in c_state.inimigos[:6]) or "nenhum de pé"
+    jeitos = _jeitos(c_state)
+    jeitos = f"Jeito de cada inimigo (só para o tom; não crie falas nem fatos):\n{jeitos}\n" if jeitos else ""
     vida = "por um fio" if heroi.hp_max and heroi.hp_atual / heroi.hp_max < 0.25 else "de pé"
     if heroi.hp_atual <= 0:
         vida = "caído, inconsciente"
@@ -124,7 +132,7 @@ def prompt_narracao(heroi, c_state: CombatState, local: str, fatos: list[str]) -
     return (
         "Você é o narrador de um RPG de fantasia. Narre UMA rodada de combate que já foi resolvida.\n"
         f"Herói: {heroi.nome}, {heroi.raca} {heroi.classe} ({vida}). Local: {local[:80] or 'campo aberto'}.\n"
-        f"Inimigos: {inimigos}.\n"
+        f"Inimigos: {inimigos}.\n{jeitos}"
         f"O que aconteceu, na ordem (fatos já decididos; não mude nem acrescente nenhum):\n{lista}\n\n"
         "Escreva 2 ou 3 frases em português do Brasil, no presente, tratando o herói por \"você\" (nunca "
         "\"tu\") e sem adjetivo que lhe dê gênero. Mostre o movimento e o impacto. Sem números, sem termos de "
@@ -178,7 +186,9 @@ def julgamento_padrao(texto: str, alvo: str) -> JulgamentoImproviso:
 
 def prompt_improviso(texto: str, heroi, c_state: CombatState, cenario: str) -> str:
     atributos = ", ".join(f"{a} {v}" for a, v in (heroi.atributos or {}).items())
-    inimigos = "; ".join(f"{i.id} = {i.nome} ({i.distancia})" for i in vivos(c_state)[:6])
+    inimigos = "; ".join(
+        f"{i.id} = {i.nome} ({i.distancia}{', ' + i.temperamento if i.temperamento else ''})" for i in vivos(c_state)[:6]  # noqa: E501
+    )
     itens = ", ".join((heroi.inventario or [])[:10]) or "nada"
     efeitos = "\n".join(f"- {nome}: {descricao}" for nome, descricao in EFEITOS.items())
     return (
@@ -189,7 +199,8 @@ def prompt_improviso(texto: str, heroi, c_state: CombatState, cenario: str) -> s
         "Decida três coisas, sem inventar nada fora das listas:\n"
         "1. atributo que a ação exige: forca, destreza, constituicao, inteligencia, sabedoria ou carisma.\n"
         "2. dificuldade: facil (qualquer um faz), media, ou dificil (ousado, ou depende de algo que talvez "
-        "nem exista na cena).\n"
+        "nem exista na cena). O temperamento do inimigo conta: intimidar um medroso é mais fácil, "
+        "humilhar um orgulhoso o desequilibra, mas um fanático não recua.\n"
         f"3. efeito, se der certo (escolha o mais modesto que combina com a ação):\n{efeitos}\n"
         'Em "alvo", o id do inimigo visado (ex.: i1), ou "" se a ação não mira ninguém.\n'
         'Responda APENAS JSON: {"atributo": "...", "dificuldade": "...", "efeito": "...", "alvo": "..."}'

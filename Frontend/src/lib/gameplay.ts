@@ -72,6 +72,8 @@ export interface InimigoVisual {
   max_hp: number;
   ca: number;
   arquetipo?: string;
+  /** Arte emprestada de uma criatura do bestiário (arquétipos de papel). */
+  sprite?: string;
   afastado?: boolean;
   intencao?: string;
   comportamento?: string;
@@ -133,6 +135,7 @@ export interface MundoPersistente {
   // (sinais da cena) e os aprendizados (aba Poderes). Projetos, organizações,
   // remessas e conflitos seguem no servidor, sem painel (ADR-0039).
   local: string; descricao: string; entidades: EntidadeMundo[]; pessoas: PessoaMundo[];
+  lugares?: { nome: string; nivel: number; atual: boolean }[];
   imersao?: { oportunidades: { id: string; percepcao: string; risco: string; alvo: string }[] };
   emergencia?: {
     aprendizados: { id: string; nome: string; descricao: string; atributo: string; alvo: string; ativo: boolean }[];
@@ -151,7 +154,7 @@ export function slugMonstro(nome: string): string {
 
 /** The name remains the exact server target; only the visual uses an archetype. */
 export function spriteInimigo(inimigo: InimigoVisual): string {
-  const candidatos = [inimigo.arquetipo, inimigo.nome].filter(Boolean).map(n => slugMonstro(n as string));
+  const candidatos = [inimigo.sprite, inimigo.arquetipo, inimigo.nome].filter(Boolean).map(n => slugMonstro(n as string));
   const direto = candidatos.find(s => SPRITES_MONSTROS.has(s));
   if (direto) return `/assets/monstros/${direto}.png`;
   const nome = `${inimigo.arquetipo ?? ''} ${inimigo.nome}`.toLowerCase();

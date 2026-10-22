@@ -164,11 +164,12 @@ class ToolExecutor:
         `investir`, `atacar_com_aliado` e o terreno fechavam a luta cada um
         por conta própria e só `_verificar_vitoria` avisava o arco — um chefe
         morto por ataque básico nunca contava como enfrentado."""
-        from app.services.living_world import marcar_chefe_enfrentado
+        from app.services.living_world import marcar_chefe_enfrentado, registrar_mortes
 
         self.c_state.ativo = False
         self.c_state.resultado = "vitoria"
         self.eventos.append(mensagem)
+        self.eventos.extend(registrar_mortes(self.c_state, self.w_state))
         if self.c_state.chefe_do_arco:
             marcar_chefe_enfrentado(self.w_state)
         return {"resultado": "vitoria", **self._conceder_xp(self.c_state.inimigos)}
@@ -546,6 +547,15 @@ class ToolExecutor:
         self.w_state.hora_do_dia = (self.w_state.hora_do_dia + 2) % 24
         self.eventos.append(f"🧭 Vocês seguem para {destino}.")
         resultado = {"local": destino, "descricao": dados.get("descricao", "")}
+        # O mundo é livre para ir a qualquer lugar; o perigo é que escala.
+        from app.services.living_world import nivel_do_local
+
+        if regras.get_location(destino) and destino not in self.w_state.locais_conhecidos:
+            self.w_state.locais_conhecidos = [*self.w_state.locais_conhecidos, destino]
+        perigo = nivel_do_local(destino, self._nivel())
+        resultado["perigo_nivel"] = perigo
+        if perigo > self._nivel():
+            self.eventos.append(f"⚠️ Lugar perigoso: criaturas de nível {perigo}.")
         # Fase 6 da revisão de gameplay — encontro aleatório de viagem: 1
         # em 20 é emboscada, 20 em 20 é achado. O servidor só gera o
         # evento; a IA reage a ele (narra e chama iniciar_combate/dar_item
@@ -778,7 +788,7 @@ class ToolExecutor:
         pessoa = mundo.pessoas.get(npc) or next(
             (p for p in mundo.pessoas.values() if p.nome.strip().lower() == npc.strip().lower()), None
         )
-        if pessoa is None or pessoa.local != self.w_state.local or pessoa.disposicao == "ausente":
+        if pessoa is None or pessoa.local != self.w_state.local or pessoa.indisponivel:
             return {"erro": f"'{npc}' não está aqui"}
         if not pessoa.mercadoria:
             return {"erro": f"{pessoa.nome} não tem nada para vender nem compra nada"}
@@ -848,18 +858,35 @@ class ToolExecutor:
         self.eventos.append(f"🤝 Reputação com {npc}: {atual:+d} → {novo:+d} ({motivo or 'sem motivo informado'}).")
         return {"npc": npc, "reputacao": novo}
 
-    def iniciar_combate(self, inimigos: list[str], cenario: str | None = None, chefe: bool = False) -> dict:
+    def iniciar_combate(
+        self, inimigos: list[str], cenario: str | None = None, chefe: bool = False, perfis: list[dict] | None = None
+    ) -> dict:
         if self.c_state.ativo:
             return {"erro": "já há um combate ativo"}
         from app.services.living_world import arco_ativo
 
         arco = arco_ativo(self.w_state.mundo)
         reservado = arco.chefe if (chefe and arco is not None and arco.chefe and not arco.chefe_enfrentado) else None
+        from app.services.living_world import nivel_do_local
+
         novo, eventos, dano_surpresa = combat.iniciar_combate(
-            inimigos, self.heroi.atributos, self.heroi.defesa, self.rng, nivel_heroi=self._nivel(),
+            inimigos, self.heroi.atributos, self.heroi.defesa, self.rng,
+            nivel_heroi=nivel_do_local(self.w_state.local, self._nivel()),
+            perfis={
+                str(p.get("nome", "")).strip().casefold(): p
+                for p in (perfis or []) if isinstance(p, dict)
+            },
             chefe_reservado=reservado,
         )
         novo.chefe_do_arco = reservado is not None
+        # Quem o jogador ataca pelo nome de uma pessoa do mundo continua sendo
+        # essa pessoa: o vínculo (e não só a "pele") decide quem morre.
+        from app.services.living_world import pessoa_do_local
+
+        for inimigo in novo.inimigos:
+            pessoa = pessoa_do_local(self.w_state.mundo, self.w_state.local, inimigo.nome)
+            if pessoa is not None:
+                inimigo.pessoa_id = pessoa.id
         from app.services.encounters import preparar_encontro
 
         preparar_encontro(novo, self.w_state, cenario)
@@ -1674,6 +1701,19 @@ TOOLS_SCHEMA: list[dict] = [*WORLD_TOOLS,
                             "— a ficha vem de um arquétipo real do nível certo."
                         ),
                     },
+                    "perfis": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "nome": {"type": "string"},
+                                "papel": {"type": "string", "description": "rei, guarda, ladrão, mago, assassino, bruto, general, sacerdote"},  # noqa: E501
+                                "temperamento": {"type": "string", "description": "medroso, orgulhoso, fanático, astuto, cruel, honrado"},  # noqa: E501
+                            },
+                            "required": ["nome"],
+                        },
+                        "description": "Quem cada inimigo narrativo é: o servidor escolhe a ficha do nível que combina.",  # noqa: E501
+                    },
                     "cenario": {
                         "type": "string", "enum": ["duelo", "emboscada", "ritual", "resgate", "cerco", "cacada"],
                         "description": "Tipo coerente com a cena; ritual e resgate só quando já existem na história.",
@@ -1832,12 +1872,19 @@ def tools_para(c_state: CombatState, acao: str | None = None, w_state: WorldStat
         "progressao": {"aprend", "capitulo", "missao", "objetivo", "arco"},
         "recompensas": {"recrut", "aliado", "receb", "recompensa"},
         "criacao": {"novo", "nova", "desconhecid"},
-        "combate": {"atac", "lutar", "combate", "agredir"},
+        "combate": {"atac", "lut", "combat", "agredir", "duel", "batalh", "enfrent", "brig"},
         "imersao": {"convers", "lembr", "pista", "apelido", "celebr", "conviv", "investig"},
     }
     for grupo, raizes in gatilhos.items():
         if any(p.startswith(raiz) for p in palavras for raiz in raizes):
             ativas |= GRUPOS_FERRAMENTAS[grupo]
+    # "matar", "esfaquear"... não são raízes de palavra do gatilho acima: a
+    # violência é detectada pelo servidor e abre as ferramentas de combate.
+    if w_state is not None and not c_state.ativo:
+        from app.services.living_world import detectar_agressao
+
+        if detectar_agressao(acao, w_state)[0]:
+            ativas |= GRUPOS_FERRAMENTAS["combate"]
     if w_state is not None and not c_state.ativo:
         if w_state.local not in w_state.mundo.cenas:
             ativas |= GRUPOS_FERRAMENTAS["criacao"]

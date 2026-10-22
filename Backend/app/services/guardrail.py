@@ -144,6 +144,23 @@ def validar_narrativa(texto: str, heroi: Personagem, c_state: CombatState, w_sta
                     violacoes.append(f"trata '{inimigo.nome}' (já morto) como se ainda estivesse agindo")
                     break
 
+    # Pessoas do mundo: quem está morto não age, e a morte de quem está vivo
+    # só existe depois que o combate a registra (`registrar_mortes`).
+    for pessoa in w_state.mundo.pessoas.values():
+        nome = pessoa.nome.strip().lower()
+        if not nome or pessoa.local != w_state.local:
+            continue
+        if pessoa.disposicao == "morto":
+            for verbo in ("diz", "responde", "sorri", "fala", "ri", "grita", "pergunta", "levanta", "ataca"):
+                if f"{nome} {verbo}" in texto_lower:
+                    violacoes.append(f"'{pessoa.nome}' está morto(a), mas a narrativa o(a) faz agir")
+                    break
+        elif not pessoa.indisponivel:
+            for verbo in ("morre", "tomba morto", "cai morto", "cai morta", "tomba morta", "é morto", "é morta", "jaz"):
+                if f"{nome} {verbo}" in texto_lower:
+                    violacoes.append(f"narra a morte de '{pessoa.nome}' sem o combate ter registrado isso")
+                    break
+
     # Local que existe no bestiário de locais mas não é o local atual, citado
     # como se o herói estivesse lá, sem ter havido `mover` para chegar.
     for nome_local in regras.get_locations_list():

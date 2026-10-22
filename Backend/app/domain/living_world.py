@@ -74,16 +74,24 @@ class PessoaMundo(BaseModel):
     necessidade: str = Field(default="", max_length=120)
     # Fase 1 (ADR-0033) — nomes do catálogo que esta pessoa vende; preços
     # são do servidor (services/items.py). Vazio = não é mercador.
-    mercadoria: list[str] = Field(default_factory=list, max_length=8)
+    mercadoria: list[str] = Field(
+        default_factory=list, max_length=8,
+        description="Nomes do catálogo à venda; cidades grandes podem vender encantados (ex.: 'Espada Longa +1', 250 po).",  # noqa: E501
+    )
     segredo: str = Field(default="", max_length=600)
     segredo_revelado: bool = False
     # O herói já conversou com esta pessoa (a trilha do capítulo confere isto).
     ouvida: bool = False
     confianca: int = Field(default=0, ge=-100, le=100)
-    disposicao: Literal["reservado", "cooperativo", "hostil", "ausente"] = "reservado"
+    disposicao: Literal["reservado", "cooperativo", "hostil", "ausente", "morto"] = "reservado"
     conhecimentos: list[Conhecimento] = Field(default_factory=list, max_length=40)
     lembrancas: list[str] = Field(default_factory=list, max_length=40)
     promessas: list[str] = Field(default_factory=list, max_length=20)
+
+    @property
+    def indisponivel(self) -> bool:
+        """Quem partiu ou morreu não conversa, não vende e não age."""
+        return self.disposicao in ("ausente", "morto")
 
 
 class ConflitoMundo(BaseModel):
