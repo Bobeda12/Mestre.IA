@@ -76,7 +76,7 @@ class PessoaMundo(BaseModel):
     # são do servidor (services/items.py). Vazio = não é mercador.
     mercadoria: list[str] = Field(
         default_factory=list, max_length=8,
-        description="Nomes do catálogo à venda; cidades grandes podem vender encantados (ex.: 'Espada Longa +1', 250 po).",
+        description="Nomes do catálogo à venda; cidades grandes podem vender encantados (ex.: 'Espada Longa +1', 250 po).",  # noqa: E501
     )
     segredo: str = Field(default="", max_length=600)
     segredo_revelado: bool = False

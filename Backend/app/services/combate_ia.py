@@ -187,7 +187,7 @@ def julgamento_padrao(texto: str, alvo: str) -> JulgamentoImproviso:
 def prompt_improviso(texto: str, heroi, c_state: CombatState, cenario: str) -> str:
     atributos = ", ".join(f"{a} {v}" for a, v in (heroi.atributos or {}).items())
     inimigos = "; ".join(
-        f"{i.id} = {i.nome} ({i.distancia}{', ' + i.temperamento if i.temperamento else ''})" for i in vivos(c_state)[:6]
+        f"{i.id} = {i.nome} ({i.distancia}{', ' + i.temperamento if i.temperamento else ''})" for i in vivos(c_state)[:6]  # noqa: E501
     )
     itens = ", ".join((heroi.inventario or [])[:10]) or "nada"
     efeitos = "\n".join(f"- {nome}: {descricao}" for nome, descricao in EFEITOS.items())

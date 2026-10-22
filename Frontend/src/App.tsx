@@ -4,6 +4,7 @@ import Home from './components/Home';
 import CharacterCreation from './components/CharacterCreation';
 import GameChat from './components/GameChat';
 import Login from './components/Login';
+import Privacidade from './components/Privacidade';
 import Carregando from './components/Carregando';
 import { useAuth } from './lib/auth';
 
@@ -53,6 +54,8 @@ function App() {
 
           {/* Login por senha + Google opcional (Etapa 8) */}
           <Route path="/entrar" element={<Login />} />
+
+          <Route path="/privacidade" element={<Privacidade />} />
 
           {/* Rota 2: Criação de Personagem */}
           <Route

@@ -30,7 +30,7 @@ def test_em_combate_o_tempo_e_do_motor_de_turnos():
 
 def test_luta_e_duelo_abrem_as_ferramentas_de_combate():
     ex = _executor()
-    for frase in ("Eu o desafio para um duelo e começo a luta contra ele.", "Vou enfrentar o capitão.", "Quero uma briga"):
+    for frase in ("Eu o desafio para um duelo e começo a luta contra ele.", "Vou enfrentar o capitão.", "Quero uma briga"):  # noqa: E501
         nomes = {t["function"]["name"] for t in tools_para(ex.c_state, frase, ex.w_state)}
         assert "iniciar_combate" in nomes, frase
     nomes = {t["function"]["name"] for t in tools_para(ex.c_state, "Converso com o ferreiro", ex.w_state)}

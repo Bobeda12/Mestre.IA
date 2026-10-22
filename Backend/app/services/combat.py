@@ -146,7 +146,7 @@ def iniciar_combate(
         # servidor acha a ficha de papel do nível que combina. Sem afinidade,
         # o sorteio da banda, como sempre foi.
         perfil = (perfis or {}).get(nome_proposto.casefold()) or {}
-        escolhido = arquetipos.escolher(perfil.get("papel", ""), perfil.get("temperamento", ""), nivel_heroi, dado)
+        escolhido = arquetipos.escolher(perfil.get("papel", ""), perfil.get("temperamento", ""), nivel_heroi, rng)
         if escolhido is None and not candidatos:
             continue
         arquetipo = escolhido or dado.choice(candidatos)
@@ -158,9 +158,9 @@ def iniciar_combate(
         candidatos = regras.get_monstros_nivel_1()
         if candidatos:
             escolhido_nome = dado.choice(candidatos)
-            escolhido = _criar_inimigo(escolhido_nome)
-            if escolhido:
-                pares = [(escolhido, escolhido_nome)]
+            inimigo_sorteado = _criar_inimigo(escolhido_nome)
+            if inimigo_sorteado:
+                pares = [(inimigo_sorteado, escolhido_nome)]
 
     selecionados: list[tuple[Inimigo, str]] = []
     custo = 0

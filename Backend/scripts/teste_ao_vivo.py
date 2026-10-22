@@ -102,7 +102,7 @@ def _conta(client: TestClient) -> None:
 
 def turno(client: TestClient, sid: str, texto: str) -> dict:
     if _estado(sid)["combate"].get("ativo"):
-        return {"http": 0, "narrativa": "", "eventos": [], "ferramentas": [], "erro": True, "pulado": "combate ainda ativo"}
+        return {"http": 0, "narrativa": "", "eventos": [], "ferramentas": [], "erro": True, "pulado": "combate ainda ativo"}  # noqa: E501
     antes = len(CHAMADAS_FERRAMENTA)
     r = client.post("/chat", json={"session_id": sid, "action": texto})
     corpo = r.json() if r.headers.get("content-type", "").startswith("application/json") else {"texto": r.text}
@@ -253,7 +253,7 @@ def main() -> None:
     criado = client.post("/create_character", json={
         "nome": "Teste", "raca": "Humano", "classe": "Guerreiro", "alinhamento": "Neutro",
         "background": "Andarilho", "objetivo": "Descobrir o que aconteceu com minha vila",
-        "atributos": {"forca": 15, "destreza": 14, "constituicao": 13, "inteligencia": 12, "sabedoria": 10, "carisma": 8},
+        "atributos": {"forca": 15, "destreza": 14, "constituicao": 13, "inteligencia": 12, "sabedoria": 10, "carisma": 8},  # noqa: E501
     })
     if criado.status_code != 200:
         print("falha ao criar personagem:", criado.status_code, criado.text[:300])

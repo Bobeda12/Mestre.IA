@@ -370,7 +370,7 @@ def agir_no_mundo(executor: "ToolExecutor", acao: str, alvo: str, meio: str | No
     cena = mundo.cenas.get(local)
     entidade = cena.entidades.get(alvo) if cena else None
     if entidade is None or entidade.recolhido:
-        return {"erro": "Esse alvo ainda não está registrado. Se existir na cena, registre-o com registrar_cena e repita agir_no_mundo agora; se não existir, narre o jogador tentando e o mundo reagindo, sem recusar."}
+        return {"erro": "Esse alvo ainda não está registrado. Se existir na cena, registre-o com registrar_cena e repita agir_no_mundo agora; se não existir, narre o jogador tentando e o mundo reagindo, sem recusar."}  # noqa: E501
     if acao == "examinar":
         return {
             "descricao": entidade.descricao,

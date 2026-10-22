@@ -87,7 +87,7 @@ def _media(xs: list[int]) -> float:
 def relatorio(por_nivel: dict[int, Nivel], campanhas: int, passo_a_cada: int) -> str:
     linhas = [
         f"# Simulação de campanha ({campanhas} campanhas, 1 passo de trilha a cada {passo_a_cada} encontros)\n",
-        "| Nível | Encontros p/ subir | Ouro ganho | Itens ganhos | Arquétipos distintos | Mais frequente (% dos encontros) |",
+        "| Nível | Encontros p/ subir | Ouro ganho | Itens ganhos | Arquétipos distintos | Mais frequente (% dos encontros) |",  # noqa: E501
         "|---|---|---|---|---|---|",
     ]
     for n, d in por_nivel.items():
@@ -96,7 +96,7 @@ def relatorio(por_nivel: dict[int, Nivel], campanhas: int, passo_a_cada: int) ->
         topo = f"{top[0][0]} ({100 * top[0][1] / total:.0f}%)" if top and total else "-"
         rotulo = f"{n}+ (teto, {ENCONTROS_POS_MAX} enc.)" if n == NIVEL_MAX else str(n)
         linhas.append(
-            f"| {rotulo} | {_media(d.encontros):.1f} | {_media(d.ouro):.0f} | {_media(d.itens):.1f} | {len(d.vistos)} | {topo} |"
+            f"| {rotulo} | {_media(d.encontros):.1f} | {_media(d.ouro):.0f} | {_media(d.itens):.1f} | {len(d.vistos)} | {topo} |"  # noqa: E501
         )
     return "\n".join(linhas)
 

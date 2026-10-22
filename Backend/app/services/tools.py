@@ -1707,12 +1707,12 @@ TOOLS_SCHEMA: list[dict] = [*WORLD_TOOLS,
                             "type": "object",
                             "properties": {
                                 "nome": {"type": "string"},
-                                "papel": {"type": "string", "description": "rei, guarda, ladrão, mago, assassino, bruto, general, sacerdote"},
-                                "temperamento": {"type": "string", "description": "medroso, orgulhoso, fanático, astuto, cruel, honrado"},
+                                "papel": {"type": "string", "description": "rei, guarda, ladrão, mago, assassino, bruto, general, sacerdote"},  # noqa: E501
+                                "temperamento": {"type": "string", "description": "medroso, orgulhoso, fanático, astuto, cruel, honrado"},  # noqa: E501
                             },
                             "required": ["nome"],
                         },
-                        "description": "Quem cada inimigo narrativo é: o servidor escolhe a ficha do nível que combina.",
+                        "description": "Quem cada inimigo narrativo é: o servidor escolhe a ficha do nível que combina.",  # noqa: E501
                     },
                     "cenario": {
                         "type": "string", "enum": ["duelo", "emboscada", "ritual", "resgate", "cerco", "cacada"],

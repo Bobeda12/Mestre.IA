@@ -3,14 +3,12 @@
 
 import random
 
-from app.domain.state import CombatState
 from app.infra.data_manager import regras
 from app.services import arquetipos, combat, combate_ia
-from tests.helpers import RngFixo
 
 
 def _luta(nomes, nivel, perfis=None, rng=None):
-    estado, _, _ = combat.iniciar_combate(nomes, {"destreza": 10}, 15, rng or random.Random(1), nivel_heroi=nivel, perfis=perfis)
+    estado, _, _ = combat.iniciar_combate(nomes, {"destreza": 10}, 15, rng or random.Random(1), nivel_heroi=nivel, perfis=perfis)  # noqa: E501
     return estado
 
 

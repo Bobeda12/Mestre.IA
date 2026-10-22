@@ -1225,7 +1225,7 @@ def montar_contexto(
             "\n    [ARCO] Nenhum arco ativo: quando um conflito registrado pedir peso de história, chame abrir_arco."
         )
     if w_state.campanha_concluida:
-        secao_arco += "\n    [CAMPANHA CONCLUÍDA] O chefe final caiu; o mundo segue em pós-jogo, com novos arcos a critério do jogador."
+        secao_arco += "\n    [CAMPANHA CONCLUÍDA] O chefe final caiu; o mundo segue em pós-jogo, com novos arcos a critério do jogador."  # noqa: E501
     secao_mundo = serializar(contexto_mundo(w_state, consulta))
     progressao = painel_progressao(heroi, c_state, w_state)
     # Fase 3 (ADR-0034) — o narrador sabe dos talentos e lembra da escolha

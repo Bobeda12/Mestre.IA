@@ -236,7 +236,7 @@ class TestSubirNivel:
         assert resultado.hp_ganho == 7  # 1d10 (rolou 6) + mod con 1
 
     def test_hp_ganho_nunca_fica_abaixo_de_um(self):
-        resultado = subir_nivel(xp_atual=XP_POR_NIVEL[2], nivel_atual=1, dado_vida=6, mod_constituicao=-5, rng=RngFixo([1]))
+        resultado = subir_nivel(xp_atual=XP_POR_NIVEL[2], nivel_atual=1, dado_vida=6, mod_constituicao=-5, rng=RngFixo([1]))  # noqa: E501
         assert resultado.hp_ganho == 1
 
     def test_nivel_maximo_nao_sobe_mais(self):

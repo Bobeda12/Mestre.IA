@@ -28,6 +28,7 @@ export default function Login() {
   const [email, setEmail] = useState('');
   const [senha, setSenha] = useState('');
   const [confirmarSenha, setConfirmarSenha] = useState('');
+  const [aceitouTermos, setAceitouTermos] = useState(false);
   // Etapa 10 (A-2) — depois de criar conta, mostra a tela de confirmação
   // na hora, em vez de navegar pro jogo pra só então travar em /criar.
   const [emailRecemRegistrado, setEmailRecemRegistrado] = useState<string | null>(null);
@@ -183,6 +184,9 @@ export default function Login() {
         <p className="text-gray-400 text-xs mt-2 font-rpg">
           Seu progresso fica salvo neste navegador. Limpou os dados, perdeu o herói.
         </p>
+        <p className="text-gray-500 text-xs mt-1 font-rpg">
+          Ao jogar, você concorda com a <Link to="/privacidade" className="text-rpg-gold underline">privacidade e os termos</Link>.
+        </p>
         {jogarComoConvidado.isError && (
           <p className="text-red-400 text-sm mt-2 font-rpg">Não deu para começar agora. Tenta de novo em alguns minutos.</p>
         )}
@@ -236,13 +240,26 @@ export default function Login() {
               {confirmarSenha && !senhasConferem && (
                 <p className="text-red-400 text-xs font-rpg">As senhas não são iguais.</p>
               )}
+
+              <label className="flex items-start gap-2 mt-3 text-xs text-gray-300 font-rpg cursor-pointer">
+                <input
+                  type="checkbox"
+                  required
+                  checked={aceitouTermos}
+                  onChange={(e) => setAceitouTermos(e.target.checked)}
+                  className="mt-0.5 accent-rpg-gold"
+                />
+                <span>
+                  Li e aceito a <Link to="/privacidade" target="_blank" className="text-rpg-gold underline">privacidade e os termos</Link>.
+                </span>
+              </label>
             </>
           )}
 
           <PixelButton
             type="submit"
             variant="dourado"
-            disabled={entrar.isPending || !email || !senha || !senhasConferem}
+            disabled={entrar.isPending || !email || !senha || !senhasConferem || (modo === 'criar' && !aceitouTermos)}
             className="w-full py-4 text-[10px] md:text-xs mt-4"
           >
             {entrar.isPending ? <Carregando /> : modo === 'entrar' ? 'ENTRAR' : 'CRIAR CONTA'}
