@@ -1,0 +1,20 @@
+name: manter-acordado
+
+# O Render grátis dorme depois de ~15 min sem pedidos, e o primeiro acesso
+# depois disso leva de 30 a 60 s. Este ping a cada 10 min mantém o backend
+# acordado. `/health` não toca o banco, então o Neon continua podendo suspender.
+# O GitHub atrasa crons em horários de pico; se um ping atrasar, o servidor
+# pode dormir de vez em quando. Para algo mais firme, um monitor externo
+# (UptimeRobot, 5 min) faz o mesmo papel.
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Chamar /health
+        run: curl -fsS --retry 3 --retry-delay 10 --max-time 60 https://mestre-ia-backend.onrender.com/health
