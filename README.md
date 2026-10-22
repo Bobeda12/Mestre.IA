@@ -92,3 +92,7 @@ docs/         ADRs, diário, relatórios, arquitetura, runbook
 ```
 
 Para entender as decisões, comece por [`docs/arquitetura.md`](docs/arquitetura.md) e depois pelos ADRs.
+
+## Licença
+
+[MIT](LICENSE). O código pode ser usado, copiado e modificado, mantendo o aviso de copyright. Os recursos de terceiros (trilha sonora, efeitos, sprites, retratos e ícones) mantêm as licenças de origem e não estão cobertos por ela; todos estão listados em [`docs/CREDITOS.md`](docs/CREDITOS.md).
