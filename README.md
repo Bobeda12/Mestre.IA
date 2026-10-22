@@ -7,9 +7,9 @@
 **🎮 [Jogue agora: mestre-ia-seven.vercel.app](https://mestre-ia-seven.vercel.app)** · entre como convidado, sem cadastro.
 Roda em planos gratuitos, então há um limite diário de turnos e cada resposta pode levar de 20 a 40 segundos. Dá para usar a sua própria chave do Gemini e não gastar a cota compartilhada.
 
-| Entrada | Uma partida |
-|---|---|
-| ![Tela de entrada](docs/imagens/entrada.jpg) | ![Partida em andamento: ficha do herói, narração do Mestre e ações sugeridas](docs/imagens/partida.jpg) |
+![Uma partida: criação do herói, conversa com o narrador e um duelo decidido pelo motor de regras](docs/imagens/partida.gif)
+
+*Uma partida real em produção: o herói é criado, o narrador conduz a cena e um duelo é resolvido pelo motor de regras, com rolagens, iniciativa, o contra-ataque que deixa o herói com 1 PV, saque e retorno à exploração.*
 
 ## A ideia: juiz × narrador
 
