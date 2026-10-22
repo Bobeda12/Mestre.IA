@@ -12,6 +12,7 @@ import { PIXEL_BUTTON_CLASS, pixelButtonBorderStyle } from '../lib/pixelButtonEs
 import Carregando from './Carregando';
 import MapaDeFundo from './MapaDeFundo';
 import BotaoConfig from './BotaoConfig';
+import SobreOProjeto from './SobreOProjeto';
 
 // Etapa 14 (revisão) — a tela de login tinha passado inteira por fora do
 // sistema pixel: `font-sans` (Geist), cantos arredondados e ícones
@@ -51,7 +52,10 @@ export default function Login() {
   // a um erro no meio do caminho (ver ADR-0014).
   const opcoes = useQuery({
     queryKey: ['auth-opcoes'],
-    queryFn: async () => (await api.get<{ google_disponivel: boolean }>('/auth/opcoes')).data,
+    queryFn: async () =>
+      (await api.get<{ google_disponivel: boolean; turnos_por_dia?: { convidado: number; conta: number } }>(
+        '/auth/opcoes',
+      )).data,
   });
 
   const senhasConferem = modo === 'entrar' || senha === confirmarSenha;
@@ -159,6 +163,8 @@ export default function Login() {
         <h1 className="text-base md:text-lg font-pixel-title text-rpg-gold mb-6 leading-relaxed">
           {modo === 'entrar' ? 'ENTRAR' : 'CRIAR CONTA'}
         </h1>
+
+        <SobreOProjeto turnosPorDia={opcoes.data?.turnos_por_dia} />
 
         {confirmado === '1' && (
           <PanelFrame borderWidth={6} className="bg-emerald-950/80 mb-4 p-3 flex items-center justify-center gap-2">

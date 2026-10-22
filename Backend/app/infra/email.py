@@ -33,27 +33,70 @@ logger = logging.getLogger(__name__)
 
 _ASSUNTO_CONFIRMACAO = "Confirme seu e-mail no Mestre.IA"
 
-# Deliberadamente simples — nada de botão grande, card ou cor de marca
-# (Etapa 10, achado ao vivo): um e-mail parecido com "card de marketing",
-# vindo de uma conta nova, é exatamente o padrão que o filtro de spam do
-# Gmail mais desconfia. Texto corrido com um link normal, como uma pessoa
-# escreveria, tem taxa de entrega melhor até a conta construir reputação
-# própria (o que só acontece com tempo/uso, não tem atalho técnico).
-_HTML_CONFIRMACAO = """\
-<div style="font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.5;color:#1a1a1a;">
-  <p>Oi!</p>
-  <p>Confirme seu e-mail para continuar jogando o Mestre.IA:</p>
-  <p><a href="{link}">{link}</a></p>
-  <p>O link vale por 24 horas.</p>
-  <p>Se você não criou essa conta, pode ignorar esta mensagem.</p>
-</div>
+# Visual do jogo (pergaminho e dourado sobre fundo escuro), feito para e-mail:
+# tabelas, CSS inline e nenhuma imagem (clientes bloqueiam imagens e fontes da
+# web). A cor de fundo vai em `bgcolor` além do CSS, porque alguns clientes
+# ignoram o `background`. Há sempre o link por extenso e uma versão em texto
+# puro, que ajudam tanto a entrega quanto quem não vê HTML.
+_HTML_CONFIRMACAO = """<!doctype html>
+<html lang="pt-BR">
+<body style="margin:0;padding:0;background:#0f0e0b;" bgcolor="#0f0e0b">
+  <div style="display:none;max-height:0;overflow:hidden;opacity:0;">
+    Falta um passo para a sua aventura começar. O link vale por 24 horas.
+  </div>
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#0f0e0b"
+         style="background:#0f0e0b;">
+    <tr><td align="center" style="padding:32px 16px;">
+      <table role="presentation" width="520" cellpadding="0" cellspacing="0" bgcolor="#1a1712"
+             style="max-width:520px;width:100%;background:#1a1712;border:2px solid #c5a059;">
+        <tr><td align="center" style="padding:32px 32px 8px 32px;">
+          <div style="font-family:Georgia,'Times New Roman',serif;font-size:13px;letter-spacing:4px;
+                      color:#c5a059;">&mdash;&nbsp; RPG NARRADO POR IA &nbsp;&mdash;</div>
+          <div style="font-family:Georgia,'Times New Roman',serif;font-size:34px;font-weight:bold;
+                      color:#f3ead6;margin-top:10px;letter-spacing:2px;">
+            MESTRE<span style="color:#c5a059;">.IA</span>
+          </div>
+        </td></tr>
+        <tr><td style="padding:8px 32px;"><div style="height:2px;background:#4a3b2a;"></div></td></tr>
+        <tr><td style="padding:16px 32px 8px 32px;font-family:Georgia,'Times New Roman',serif;
+                       font-size:17px;line-height:1.6;color:#d4c5a9;">
+          <p style="margin:0 0 14px 0;color:#f3ead6;font-size:20px;">Falta um passo para a sua aventura começar.</p>
+          <p style="margin:0;">Confirme seu e-mail para guardar seus heróis e continuar de onde parou.</p>
+        </td></tr>
+        <tr><td align="center" style="padding:24px 32px;">
+          <a href="{link}" target="_blank"
+             style="display:inline-block;background:#c5a059;color:#0f0e0b;text-decoration:none;
+                    font-family:Georgia,'Times New Roman',serif;font-size:16px;font-weight:bold;
+                    letter-spacing:1px;padding:14px 32px;border:2px solid #f3ead6;">
+            CONFIRMAR MEU E-MAIL
+          </a>
+        </td></tr>
+        <tr><td style="padding:0 32px 8px 32px;font-family:Georgia,'Times New Roman',serif;
+                       font-size:13px;line-height:1.6;color:#9c8f77;">
+          O link vale por 24 horas. Se o botão não funcionar, copie e cole este endereço no navegador:
+          <div style="margin-top:8px;word-break:break-all;color:#c5a059;font-size:12px;">{link}</div>
+        </td></tr>
+        <tr><td style="padding:24px 32px 32px 32px;font-family:Georgia,'Times New Roman',serif;
+                       font-size:12px;line-height:1.6;color:#7d725f;">
+          Você recebeu esta mensagem porque alguém criou uma conta no Mestre.IA com este e-mail.
+          Se não foi você, pode ignorar: nada acontece sem o clique.<br>
+          Mestre.IA é um projeto independente, em fase de testes.
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>
 """
 
 _TEXTO_CONFIRMACAO = (
-    "Oi!\n\n"
-    "Confirme seu e-mail para continuar jogando o Mestre.IA:\n\n{link}\n\n"
+    "MESTRE.IA\n\n"
+    "Falta um passo para a sua aventura começar.\n\n"
+    "Confirme seu e-mail para guardar seus heróis e continuar de onde parou:\n\n{link}\n\n"
     "O link vale por 24 horas.\n\n"
-    "Se você não criou essa conta, pode ignorar esta mensagem."
+    "Você recebeu esta mensagem porque alguém criou uma conta no Mestre.IA com este e-mail. "
+    "Se não foi você, pode ignorar: nada acontece sem o clique.\n\n"
+    "Mestre.IA é um projeto independente, em fase de testes."
 )
 
 
