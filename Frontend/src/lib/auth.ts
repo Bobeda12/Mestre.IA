@@ -1,4 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { isAxiosError } from 'axios';
 import { api } from './api';
 
 interface Usuario {
@@ -11,9 +12,13 @@ interface Usuario {
 }
 
 // Etapa 8: fonte única de verdade sobre "estou logado?" — uma query contra
-// GET /auth/eu. 401 não é um erro de rede, é a resposta "não autenticado"
-// (retry:false já é o default global de App.tsx), então aqui ele vira
-// `usuario: null` em vez de derrubar a tela com um erro.
+// GET /auth/eu. Só 401/403 significam "não autenticado" e viram `usuario: null`.
+//
+// Qualquer outra falha (500, rede, o Render acordando de um sono de 30 a 60 s)
+// NÃO é "deslogado": antes, o `catch` engolia tudo como `null` e a rota
+// protegida jogava a pessoa no login por causa de um soluço do servidor. Agora
+// o erro sobe, a query tenta de novo com espera crescente (até ~35 s, o tempo de
+// o Render acordar) e `carregando` fica verdadeiro durante as tentativas.
 export function useAuth() {
   const query = useQuery({
     queryKey: ['auth'],
@@ -21,16 +26,22 @@ export function useAuth() {
       try {
         const res = await api.get<Usuario>('/auth/eu');
         return res.data;
-      } catch {
-        return null;
+      } catch (erro) {
+        if (isAxiosError(erro) && (erro.response?.status === 401 || erro.response?.status === 403)) return null;
+        throw erro;
       }
     },
+    retry: 6,
+    retryDelay: (tentativa) => Math.min(1000 * 2 ** tentativa, 10000),
   });
 
   return {
     usuario: query.data ?? null,
     carregando: query.isLoading,
     logado: !!query.data,
+    // Esgotou as tentativas: o servidor não respondeu. Diferente de "deslogado".
+    servidorIndisponivel: query.isError,
+    tentarDeNovo: () => query.refetch(),
   };
 }
 
