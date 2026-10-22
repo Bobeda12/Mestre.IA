@@ -21,11 +21,32 @@ const queryClient = new QueryClient({
 // isto só evita a viagem: manda direto pra /entrar em vez de deixar o
 // jogador digitar tudo do wizard pra descobrir isso só no fim.
 function RotaProtegida({ children }: { children: React.ReactNode }) {
-  const { usuario, logado, carregando } = useAuth();
+  const { usuario, logado, carregando, servidorIndisponivel, tentarDeNovo } = useAuth();
   if (carregando) {
     return (
       <div className="min-h-[100dvh] w-full bg-rpg-darker flex items-center justify-center">
         <Carregando tamanho={10} rotulo="Carregando" />
+      </div>
+    );
+  }
+  // Servidor fora do ar não é "deslogado": mandar para o login esconderia o
+  // problema e, para convidado, parecia que o herói tinha sumido.
+  if (servidorIndisponivel) {
+    return (
+      <div className="min-h-[100dvh] w-full bg-rpg-darker flex items-center justify-center px-4">
+        <div className="max-w-sm text-center font-rpg">
+          <h1 className="text-base font-pixel-title text-rpg-gold mb-4 leading-relaxed">SERVIDOR ACORDANDO</h1>
+          <p className="text-gray-300 text-sm mb-6">
+            O servidor está demorando para responder. Seu progresso está salvo. Tente de novo em instantes.
+          </p>
+          <button
+            type="button"
+            onClick={() => tentarDeNovo()}
+            className="border-2 border-rpg-gold text-rpg-gold px-6 py-3 text-xs uppercase tracking-widest hover:bg-rpg-gold hover:text-black transition-colors"
+          >
+            Tentar de novo
+          </button>
+        </div>
       </div>
     );
   }
