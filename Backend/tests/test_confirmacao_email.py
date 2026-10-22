@@ -289,3 +289,22 @@ def test_falha_no_envio_vira_erro_claro_e_nao_trava(monkeypatch, client):
 
     assert resp.status_code == 503
     assert "e-mail de confirmação" in resp.json()["detail"]
+
+
+def test_falha_do_google_registra_o_motivo_no_log(monkeypatch, caplog):
+    import httpx
+
+    from app.infra import email as infra_email
+
+    def recusa(url, **kw):
+        requisicao = httpx.Request("POST", url)
+        return httpx.Response(400, json={"error": "invalid_grant"}, request=requisicao)
+
+    monkeypatch.setattr(infra_email.settings, "gmail_refresh_token", "refresh")
+    monkeypatch.setattr(infra_email.settings, "gmail_remetente", "jogo@gmail.com")
+    monkeypatch.setattr(infra_email.httpx, "post", recusa)
+
+    with caplog.at_level("ERROR"), pytest.raises(infra_email.ErroEnvioEmail):
+        infra_email.enviar_email_confirmacao("alguem@example.com", "https://x/confirmar?token=abc")
+
+    assert "invalid_grant" in caplog.text

@@ -138,6 +138,17 @@ def enviar_email_confirmacao(destinatario: str, link: str) -> None:
             _enviar_via_resend(destinatario, link)
         else:
             logger.info("[dev] link de confirmação para %s: %s", destinatario, link)
+    except httpx.HTTPStatusError as erro:
+        # O motivo de verdade vem no corpo (ex.: `invalid_grant`, `invalid_client`);
+        # só o "400 Bad Request" não diz se o erro é do token ou do cliente OAuth.
+        # O corpo de erro do Google não traz segredos.
+        logger.error(
+            "falha ao enviar e-mail de confirmação: %s: %s | resposta: %s",
+            type(erro).__name__,
+            erro,
+            erro.response.text[:300],
+        )
+        raise ErroEnvioEmail(str(erro)) from erro
     except Exception as erro:
         logger.error("falha ao enviar e-mail de confirmação: %s: %s", type(erro).__name__, erro)
         raise ErroEnvioEmail(str(erro)) from erro
