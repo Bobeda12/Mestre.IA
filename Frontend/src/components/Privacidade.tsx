@@ -22,7 +22,7 @@ export default function Privacidade() {
 
         <h2 className={H2}>O que guardamos</h2>
         <ul className="list-disc pl-5 space-y-1">
-          <li>E-mail e senha (a senha fica protegida por hash, nunca em texto puro), se você criar conta.</li>
+          <li>E-mail e senha (a senha fica protegida por hash, nunca em texto puro), se você criar conta. O e-mail de confirmação é enviado pelo Gmail.</li>
           <li>Seus personagens e a história de cada partida: suas ações, o que o narrador respondeu e o estado do jogo.</li>
           <li>Um registro simples de uso, só com o tipo de evento (por exemplo, "jogou um turno"), a hora e a sua conta. Não inclui o texto que você escreveu.</li>
           <li>Um cookie de sessão para manter você logado. Não usamos cookies de publicidade nem de rastreamento.</li>
@@ -30,11 +30,11 @@ export default function Privacidade() {
 
         <h2 className={H2}>Para onde vai o que você escreve</h2>
         <p>
-          O texto das suas jogadas é enviado ao Google (Gemini) para gerar a narração. Não escreva dados pessoais
+          O texto das suas jogadas é enviado ao Google (Gemini) para gerar a narração e, quando a cota do Gemini acaba, a um provedor de reserva (Groq). Não escreva dados pessoais
           sensíveis no jogo. Se você usar a sua própria chave do Gemini, ela é usada apenas durante a jogada e não é
           guardada no servidor.
         </p>
-        <p className="mt-2">Não vendemos nem compartilhamos seus dados com mais ninguém.</p>
+        <p className="mt-2">Não vendemos seus dados nem os compartilhamos com ninguém além dos serviços citados acima.</p>
 
         <h2 className={H2}>Jogar sem conta</h2>
         <p>

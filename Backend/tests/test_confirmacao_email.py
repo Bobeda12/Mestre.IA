@@ -308,3 +308,17 @@ def test_falha_do_google_registra_o_motivo_no_log(monkeypatch, caplog):
         infra_email.enviar_email_confirmacao("alguem@example.com", "https://x/confirmar?token=abc")
 
     assert "invalid_grant" in caplog.text
+
+
+def test_email_de_confirmacao_tem_botao_link_por_extenso_e_texto_puro():
+    from app.infra import email as infra_email
+
+    link = "https://exemplo.test/auth/confirmar?token=abc.def"
+    html = infra_email._HTML_CONFIRMACAO.format(link=link)
+    texto = infra_email._TEXTO_CONFIRMACAO.format(link=link)
+
+    assert f'href="{link}"' in html  # o botão
+    assert html.count(link) == 2  # botão + link por extenso, para quando o botão não funciona
+    assert "CONFIRMAR MEU E-MAIL" in html
+    assert link in texto  # versão sem HTML
+    assert "<" not in texto

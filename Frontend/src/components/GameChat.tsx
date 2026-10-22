@@ -1552,7 +1552,7 @@ export default function GameChat() {
             <div className="absolute bottom-24 left-1/2 -translate-x-1/2 z-40 w-[calc(100%-2rem)] max-w-md animate-fade-in">
                 <PanelFrame borderWidth={6} className="bg-gray-900/95 p-3 flex items-center gap-3 shadow-xl backdrop-blur-sm">
                     <PixelIcon name="coroa" size={20} className="shrink-0" />
-                    <p className="text-xs text-gray-300 flex-1">Curtindo? Crie uma conta pra não perder esse herói.</p>
+                    <p className="text-xs text-gray-300 flex-1">Curtindo? Crie uma conta: seu herói fica salvo e você ganha mais turnos por dia.</p>
                     <button
                         onClick={() => setModalReivindicarAberto(true)}
                         className="text-xs font-bold text-black bg-rpg-gold hover:bg-white px-3 py-1.5 shrink-0"
@@ -1647,9 +1647,9 @@ export default function GameChat() {
                     <div className="bg-gray-900 p-6">
                         <h2 className="font-rpg text-lg text-rpg-gold mb-1">Cota do servidor esgotada</h2>
                         <p className="text-xs text-gray-400 leading-relaxed mb-4">
-                            Todo mundo divide a mesma cota gratuita de IA, e ela já foi usada por hoje. Pra
-                            continuar jogando sem esperar amanhã, cole sua própria chave gratuita do Google
-                            AI Studio nas Opções — leva menos de um minuto.
+                            Mestre.IA é um protótipo gratuito: todo mundo divide a mesma cota de IA, e ela já foi
+                            usada por hoje. Pra continuar sem esperar amanhã, cole sua própria chave gratuita
+                            do Google AI Studio nas Opções — leva menos de um minuto.
                         </p>
                         <div className="flex gap-2">
                             <button

@@ -78,8 +78,13 @@ def _pendente_expirado(pendente: RegistroPendente) -> bool:
 def opcoes() -> dict:
     """O front usa isto pra decidir se mostra o botão "Entrar com Google" —
     sem `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` configurados, o fluxo
-    OAuth não tem como funcionar (ver ADR-0014)."""
-    return {"google_disponivel": google_disponivel()}
+    OAuth não tem como funcionar (ver ADR-0014). Também informa os tetos
+    diários de turnos, para o aviso da tela de entrada nunca ficar
+    desatualizado em relação ao que o servidor realmente aplica."""
+    return {
+        "google_disponivel": google_disponivel(),
+        "turnos_por_dia": {"convidado": settings.teto_turnos_convidado, "conta": settings.teto_turnos_conta},
+    }
 
 
 def _enviar_confirmacao_ou_503(email: str, link: str) -> None:

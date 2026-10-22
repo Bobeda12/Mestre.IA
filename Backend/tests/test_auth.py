@@ -290,7 +290,10 @@ def test_opcoes_google_desabilitado_sem_credenciais(client, monkeypatch):
 
     monkeypatch.setattr(settings, "google_client_id", None)
     monkeypatch.setattr(settings, "google_client_secret", None)
-    assert client.get("/auth/opcoes").json() == {"google_disponivel": False}
+    corpo = client.get("/auth/opcoes").json()
+    assert corpo["google_disponivel"] is False
+    # O aviso da tela de entrada usa estes números; vêm do mesmo teto que o servidor aplica.
+    assert corpo["turnos_por_dia"] == {"convidado": settings.teto_turnos_convidado, "conta": settings.teto_turnos_conta}
 
 
 def test_google_iniciar_sem_configuracao_devolve_503(client, monkeypatch):
