@@ -43,8 +43,10 @@ export default function Privacidade() {
 
         <h2 className={H2}>Seus direitos</h2>
         <p>
-          Você pode pedir para ver, corrigir ou apagar os seus dados (LGPD) pelo contato desta página. Apagamos a
-          conta e tudo o que está ligado a ela.
+          Você tem direito de ver, corrigir ou apagar os seus dados (LGPD).
+          {EMAIL_CONTATO
+            ? ' Peça pelo contato desta página e apagamos a conta e tudo o que está ligado a ela.'
+            : ' Para pedir, procure o autor do projeto pelo repositório no GitHub (Bobeda12/Mestre.IA).'}
         </p>
 
         <h2 className={H2}>Regras de uso</h2>
