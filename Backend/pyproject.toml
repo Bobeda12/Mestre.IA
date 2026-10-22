@@ -23,6 +23,7 @@ dependencies = [
     # OpenAI-compatible (`base_url` diferente por cliente), então um SDK só
     # serve os dois em app/infra/llm_client.py.
     "openai>=3.3,<4",
+    "sentry-sdk[fastapi]>=2,<3",
 ]
 
 [dependency-groups]

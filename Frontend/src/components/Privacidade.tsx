@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom';
+import { ALERTA_DE_ERROS_ATIVO } from '../lib/alertaDeErros';
 
 // Pré-lançamento — termos e privacidade numa página só, em linguagem simples.
 // O texto descreve o que o código faz hoje (conferido em Backend/app/infra/db.py,
@@ -25,6 +26,9 @@ export default function Privacidade() {
           <li>E-mail e senha (a senha fica protegida por hash, nunca em texto puro), se você criar conta.</li>
           <li>Seus personagens e a história de cada partida: suas ações, o que o narrador respondeu e o estado do jogo.</li>
           <li>Um registro simples de uso, só com o tipo de evento (por exemplo, "jogou um turno"), a hora e a sua conta. Não inclui o texto que você escreveu.</li>
+          {ALERTA_DE_ERROS_ATIVO && (
+            <li>Relatórios de erro técnico (o que quebrou e em qual tela), enviados ao Sentry. Não incluem o texto que você escreveu, seu IP nem seus cookies.</li>
+          )}
           <li>Um cookie de sessão para manter você logado. Não usamos cookies de publicidade nem de rastreamento.</li>
         </ul>
 

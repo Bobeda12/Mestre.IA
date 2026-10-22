@@ -7,6 +7,7 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 
+from app.infra.erros import iniciar_alerta_de_erros
 from app.infra.rate_limit import limiter
 from app.infra.settings import settings
 from app.routers import auth, byok, character, game, options, oraculo, personagens, regras
@@ -19,6 +20,9 @@ from app.routers.auth import ErroLogin
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
 
 logger = logging.getLogger(__name__)
+
+# Antes de criar o `app`, para o Sentry instrumentar o FastAPI desde o início.
+iniciar_alerta_de_erros()
 
 # Etapa 14 (ADR-0023) — não há mais `lifespan` nenhum aqui: o modelo de
 # embedding que precisava de um preload em memória no boot (Etapa 10, A-6)

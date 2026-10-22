@@ -1,4 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react';
+import { reportarErro } from '../lib/alertaDeErros';
 
 // Pré-lançamento — sem isto, uma exceção em qualquer componente deixava a
 // tela inteira em branco, sem saída para o jogador. O servidor guarda o
@@ -15,6 +16,7 @@ export default class ErrorBoundary extends Component<Props, Estado> {
 
   componentDidCatch(erro: Error, info: ErrorInfo) {
     console.error('Falha de renderização', erro, info.componentStack);
+    reportarErro(erro);
   }
 
   render() {

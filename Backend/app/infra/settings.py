@@ -189,6 +189,10 @@ class Settings(BaseSettings):
     # `Langfuse.auth_check()` contra a conta real desta etapa.
     langfuse_host: str = "https://us.cloud.langfuse.com"
 
+    # Pré-lançamento — alerta de erros não tratados (app/infra/erros.py). Mesmo
+    # padrão do Langfuse: sem o DSN, fica desligado em vez de quebrar.
+    sentry_dsn: str | None = None
+
     # Etapa 10 (A-3) — teto de turnos por usuário/dia. A chave da Groq é
     # uma só, do autor; sem isto, dez amigos animados no mesmo dia drenam
     # a cota compartilhada de todo mundo. Convidado tem teto menor: quem

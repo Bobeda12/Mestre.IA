@@ -3,6 +3,9 @@ import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.tsx'
 import ErrorBoundary from './components/ErrorBoundary.tsx'
+import { iniciarAlertaDeErros } from './lib/alertaDeErros.ts'
+
+iniciarAlertaDeErros()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

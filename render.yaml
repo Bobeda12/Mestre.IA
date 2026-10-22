@@ -53,6 +53,10 @@ services:
       # onrender.com e o usuário voltaria deslogado.
       - key: CONFIRMACAO_EMAIL_URL
         value: https://mestre-ia-seven.vercel.app/api/auth/confirmar
+      # Sentry (sentry.io, projeto Python/FastAPI) — opcional, o alerta de
+      # erros fica desligado sem isto. Descrito em docs/diario/0061.
+      - key: SENTRY_DSN
+        sync: false
       # Langfuse Cloud (região US) — opcional, tracing fica desligado sem isto.
       - key: LANGFUSE_PUBLIC_KEY
         sync: false
