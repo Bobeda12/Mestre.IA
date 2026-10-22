@@ -3,7 +3,10 @@ Mesmo padrão condicional do Google (`services/auth.google_disponivel`) e
 do Langfuse (`infra/tracing.py`): sem nenhum método configurado, a função
 loga o link em vez de falhar — dev continua funcionando sem conta nenhuma.
 
-Dois métodos, nessa ordem de prioridade:
+Três métodos, nessa ordem de prioridade:
+0. **API do Gmail** (`gmail_refresh_token`) — HTTPS, porta 443. É o único que
+   funciona no Render grátis, que bloqueia as portas SMTP. Sai da mesma conta
+   Gmail, então mantém a boa entrega do método abaixo.
 1. **SMTP do Gmail** (`smtp_email`/`smtp_senha_app`) — autentica como uma
    conta Gmail de verdade via "senha de app". A reputação de entrega é da
    conta, não de um provedor de e-mail transacional compartilhado — é
@@ -14,12 +17,14 @@ Dois métodos, nessa ordem de prioridade:
    cai em spam com frequência por ser compartilhado entre milhares de
    contas, sem SPF/DKIM alinhado a este projeto especificamente."""
 
+import base64
 import logging
 import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.utils import formatdate, make_msgid
 
+import httpx
 import resend
 
 from app.infra.settings import settings
@@ -52,7 +57,16 @@ _TEXTO_CONFIRMACAO = (
 )
 
 
-def _enviar_via_smtp(destinatario: str, link: str, email_remetente: str, senha_app: str) -> None:
+# Todo método de rede tem tempo limite: sem ele, uma porta bloqueada deixava o
+# cadastro pendurado para sempre (achado ao vivo no lançamento, ver diário 0062).
+_TEMPO_LIMITE_S = 15
+
+
+class ErroEnvioEmail(Exception):
+    """O e-mail não saiu (rede, credencial, cota). O router transforma em 503."""
+
+
+def _montar_mensagem(destinatario: str, link: str, email_remetente: str) -> MIMEMultipart:
     msg = MIMEMultipart("alternative")
     msg["Subject"] = _ASSUNTO_CONFIRMACAO
     msg["From"] = f"Mestre.IA <{email_remetente}>"
@@ -67,8 +81,35 @@ def _enviar_via_smtp(destinatario: str, link: str, email_remetente: str, senha_a
     # parte que conseguem renderizar, texto puro é o fallback (RFC 2046).
     msg.attach(MIMEText(_TEXTO_CONFIRMACAO.format(link=link), "plain"))
     msg.attach(MIMEText(_HTML_CONFIRMACAO.format(link=link), "html"))
+    return msg
 
-    with smtplib.SMTP(settings.smtp_host, settings.smtp_porta) as servidor:
+
+def _enviar_via_gmail_api(destinatario: str, link: str, remetente: str, refresh_token: str) -> None:
+    token = httpx.post(
+        "https://oauth2.googleapis.com/token",
+        data={
+            "client_id": settings.google_client_id,
+            "client_secret": settings.google_client_secret,
+            "refresh_token": refresh_token,
+            "grant_type": "refresh_token",
+        },
+        timeout=_TEMPO_LIMITE_S,
+    )
+    token.raise_for_status()
+    msg = _montar_mensagem(destinatario, link, remetente)
+    bruto = base64.urlsafe_b64encode(msg.as_bytes()).decode()
+    resposta = httpx.post(
+        "https://gmail.googleapis.com/gmail/v1/users/me/messages/send",
+        headers={"Authorization": f"Bearer {token.json()['access_token']}"},
+        json={"raw": bruto},
+        timeout=_TEMPO_LIMITE_S,
+    )
+    resposta.raise_for_status()
+
+
+def _enviar_via_smtp(destinatario: str, link: str, email_remetente: str, senha_app: str) -> None:
+    msg = _montar_mensagem(destinatario, link, email_remetente)
+    with smtplib.SMTP(settings.smtp_host, settings.smtp_porta, timeout=_TEMPO_LIMITE_S) as servidor:
         servidor.starttls()
         servidor.login(email_remetente, senha_app)
         servidor.send_message(msg)
@@ -88,9 +129,15 @@ def _enviar_via_resend(destinatario: str, link: str) -> None:
 
 
 def enviar_email_confirmacao(destinatario: str, link: str) -> None:
-    if settings.smtp_email and settings.smtp_senha_app:
-        _enviar_via_smtp(destinatario, link, settings.smtp_email, settings.smtp_senha_app)
-    elif settings.resend_api_key:
-        _enviar_via_resend(destinatario, link)
-    else:
-        logger.info("[dev] link de confirmação para %s: %s", destinatario, link)
+    try:
+        if settings.gmail_refresh_token and settings.gmail_remetente:
+            _enviar_via_gmail_api(destinatario, link, settings.gmail_remetente, settings.gmail_refresh_token)
+        elif settings.smtp_email and settings.smtp_senha_app:
+            _enviar_via_smtp(destinatario, link, settings.smtp_email, settings.smtp_senha_app)
+        elif settings.resend_api_key:
+            _enviar_via_resend(destinatario, link)
+        else:
+            logger.info("[dev] link de confirmação para %s: %s", destinatario, link)
+    except Exception as erro:
+        logger.error("falha ao enviar e-mail de confirmação: %s: %s", type(erro).__name__, erro)
+        raise ErroEnvioEmail(str(erro)) from erro

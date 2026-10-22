@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.domain.auth import LoginRequest, RegistrarRequest, ReivindicarRequest
 from app.infra.db import RegistroPendente, Usuario, get_db
-from app.infra.email import enviar_email_confirmacao
+from app.infra.email import ErroEnvioEmail, enviar_email_confirmacao
 from app.infra.rate_limit import limiter
 from app.infra.settings import settings
 from app.services.auth import (
@@ -82,6 +82,19 @@ def opcoes() -> dict:
     return {"google_disponivel": google_disponivel()}
 
 
+def _enviar_confirmacao_ou_503(email: str, link: str) -> None:
+    """Falha no envio vira uma resposta clara (503), não um carregamento
+    infinito nem um 500 genérico: o front mostra o `detail` e a pessoa tenta de
+    novo. O pendente já foi gravado, então tentar outra vez é seguro."""
+    try:
+        enviar_email_confirmacao(email, link)
+    except ErroEnvioEmail:
+        raise HTTPException(
+            status_code=503,
+            detail="Não deu para enviar o e-mail de confirmação agora. Tente de novo em instantes.",
+        ) from None
+
+
 @router.post("/registrar", status_code=200)
 @limiter.limit("10/minute")
 def registrar(request: Request, req: RegistrarRequest, db: Session = Depends(get_db)) -> dict:
@@ -101,7 +114,7 @@ def registrar(request: Request, req: RegistrarRequest, db: Session = Depends(get
     _upsert_registro_pendente(db, req.email, senha_hash, usuario_id=None)
     token = criar_token_registro_pendente(req.email, senha_hash)
     link = f"{settings.confirmacao_email_url}?token={token}"
-    enviar_email_confirmacao(req.email, link)
+    _enviar_confirmacao_ou_503(req.email, link)
     return {"email": req.email}
 
 
@@ -144,7 +157,7 @@ def reivindicar(
     _upsert_registro_pendente(db, req.email, senha_hash, usuario_id=current_user.id)
     token = criar_token_reivindicacao_pendente(current_user.id, req.email, senha_hash)
     link = f"{settings.confirmacao_email_url}?token={token}"
-    enviar_email_confirmacao(req.email, link)
+    _enviar_confirmacao_ou_503(req.email, link)
     return {"email": req.email}
 
 
