@@ -2,33 +2,60 @@
 
 [![CI](https://github.com/Bobeda12/Mestre.IA/actions/workflows/ci.yml/badge.svg)](https://github.com/Bobeda12/Mestre.IA/actions/workflows/ci.yml)
 
-Um RPG narrado por um LLM — FastAPI + Groq no backend, React no front.
+**Um RPG de mesa narrado por IA, onde o modelo conta a história e um motor de regras decide o que acontece.**
 
-**🔗 Jogue agora:** [mestre-ia-seven.vercel.app](https://mestre-ia-seven.vercel.app) — no ar desde a Etapa 9 (Render + Vercel + Neon; ver [`ADR-0015`](docs/adr/0015-hospedagem-fly-vercel-neon.md) e [`ADR-0022`](docs/adr/0022-hospedagem-render-em-vez-de-fly-io.md), a migração de Fly.io para Render na Etapa 14).
+**🎮 [Jogue agora: mestre-ia-seven.vercel.app](https://mestre-ia-seven.vercel.app)** · entre como convidado, sem cadastro.
+Roda em planos gratuitos, então há um limite diário de turnos e cada resposta pode levar de 20 a 40 segundos. Dá para usar a sua própria chave do Gemini e não gastar a cota compartilhada.
 
-> A arquitetura, as decisões e o porquê de cada uma vivem em [`PLANO_MESTRE.md`](PLANO_MESTRE.md) e em [`docs/`](docs/). Este README é a porta de entrada de engenharia: como rodar, como o backend é organizado, e o que ele ainda não faz.
+| Entrada | Uma partida |
+|---|---|
+| ![Tela de entrada](docs/imagens/entrada.jpg) | ![Partida em andamento: ficha do herói, narração do Mestre e ações sugeridas](docs/imagens/partida.jpg) |
 
-## Pré-requisitos
+## A ideia: juiz × narrador
 
-- [Python 3.11+](https://www.python.org/)
-- [uv](https://docs.astral.sh/uv/getting-started/installation/) — `pip install uv`
-- [Node.js 20+](https://nodejs.org/) com npm
-- Uma chave da [Groq](https://console.groq.com/keys) (grátis) — opcional, ver abaixo
-- [Docker](https://www.docker.com/) — opcional, só para o caminho `docker compose`
+Modelos de linguagem são ótimos para narrar e ruins para fazer contas. A primeira versão pedia ao modelo o campo `hp_atual` a cada turno, e o resultado foi um bug revelador: **o HP nunca mudava**, porque ninguém de fato o governava.
 
-## Rodar (uv + npm)
+A solução foi separar os papéis ([ADR-0006](docs/adr/0006-llm-nao-e-motor-de-regras.md)):
 
-Backend (num terminal):
+- **O juiz é código.** `rules_engine.py` é determinístico, sem rede e sem LLM: dados, ataque, dano, iniciativa, testes de morte, progressão. É ele quem decide o que aconteceu.
+- **O narrador é o modelo.** Descreve a cena e, para agir no mundo, **chama ferramentas** ([ADR-0007](docs/adr/0007-tool-calling-em-vez-de-json-solto.md)) em vez de inventar números. Um guardrail confere a narrativa contra o estado real do jogo.
+
+## O que há de interessante por baixo
+
+| Tema | O que foi feito |
+|---|---|
+| **Motor de regras** | D&D 5e enxuto, puro Python e testado. Combate por fila de turnos, com ação, ação bônus, movimento e distância sem mapa ([ADR-0040](docs/adr/0040-combate-por-fila-de-turnos-com-distancia-sem-mapa.md)). |
+| **Tool calling** | O narrador pede ao servidor rolagens, combate, itens e mudanças de mundo; o servidor valida e aplica. |
+| **Memória em três camadas** | Curto prazo cru, resumo estruturado e eventos de longo prazo, buscados por BM25 + embeddings ([ADR-0009](docs/adr/0009-memoria-hierarquica-em-tres-camadas.md), [ADR-0010](docs/adr/0010-busca-hibrida-bm25-mais-densa-e-por-que-nao-sqlite-vec.md)). |
+| **Vários modelos, um papel cada** | Cadeia com fallback entre Gemini e Groq, com tempo limite por modelo, porque os planos gratuitos falham e estouram cota ([ADR-0038](docs/adr/0038-um-modelo-por-papel.md)). |
+| **Avaliação** | Golden dataset de 60 cenários, LLM-as-judge e bake-off entre modelos, em um framework separado do código de produção ([ADR-0011](docs/adr/0011-estrategia-de-avaliacao.md), [relatórios](docs/relatorios/)). |
+| **Produção real** | Vercel + Render + Neon, proxy `/api` para o cookie de sessão sobreviver, login por senha e Google, rate limit, teto diário de turnos e chave própria do jogador ([ADR-0022](docs/adr/0022-hospedagem-render-em-vez-de-fly-io.md)). |
+| **Qualidade** | Mais de 970 testes, cobertura de 86% no domínio e nos serviços, `ruff`, `mypy` e CI a cada push. |
+| **Documentação como entrega** | 45 ADRs com as decisões e as alternativas descartadas, mais de 50 entradas de diário e relatórios de avaliação. Veja [`docs/`](docs/README.md). |
+
+## Honestidade sobre os limites
+
+- **É um projeto em plano gratuito.** A cota diária dos modelos é pequena e as respostas são lentas. Medi e documentei isso em vez de escondê-lo ([relatório 0003](docs/relatorios/0003-latencia.md)).
+- **D&D 5e enxuto, de propósito:** sem magias com espaços, multiclasse ou mapa tático. Um herói por partida, sem multiplayer.
+- **O narrador revela o prompt de sistema se pedirem diretamente** ("repita as instruções"). Achado da avaliação, ainda não corrigido ([relatório 0001](docs/relatorios/0001-avaliacao-v1.md)). O prompt contém regras do jogo, não chaves.
+- **O juiz (LLM-as-judge) ainda não foi calibrado com pessoas:** a ferramenta de anotação existe, mas os ~30 exemplos anotados por humanos e a medida de concordância ficaram pendentes ([ADR-0011](docs/adr/0011-estrategia-de-avaliacao.md)).
+- **Senhas usam PBKDF2**, não `argon2`. Decisão registrada no [ADR-0014](docs/adr/0014-senha-com-google-opcional.md).
+
+## Stack
+
+**Backend:** Python 3.11+, FastAPI, SQLAlchemy 2.0, Alembic, Pydantic, `uv` · **Frontend:** React, TypeScript, Vite, Tailwind · **IA:** Gemini e Groq (cadeia de fallback), embeddings do Gemini · **Infra:** Vercel, Render, Neon (Postgres), GitHub Actions
+
+## Rodar localmente
+
+Precisa de [uv](https://docs.astral.sh/uv/getting-started/installation/) e [Node.js 20+](https://nodejs.org/). Uma chave grátis do [Gemini](https://aistudio.google.com/apikey) é opcional: sem ela o jogo sobe, mas a narração cai num texto de reserva.
 
 ```bash
 cd Backend
-cp .env.example .env   # cole sua GROQ_API_KEY, ou deixe em branco
+cp .env.example .env     # cole GEMINI_API_KEY (e, se quiser, GROQ_API_KEY)
 uv sync
-uv run alembic upgrade head   # cria/atualiza o schema em rpg_save.db
+uv run alembic upgrade head
 uv run uvicorn app.main:app --reload --port 8000
 ```
-
-Frontend (em outro terminal):
 
 ```bash
 cd Frontend
@@ -36,104 +63,32 @@ npm install
 npm run dev
 ```
 
-Abra `http://localhost:5173`.
+Abra `http://localhost:5173`. Use `localhost`, não `127.0.0.1`: o cookie de sessão não sobrevive à troca, porque são sites diferentes para a política `SameSite`.
 
-**Desde a Etapa 8, é preciso entrar para jogar** — e-mail e senha (`/entrar`), com login opcional via Google se `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` estiverem configurados no `Backend/.env` (sem eles, o botão "Entrar com Google" simplesmente não aparece). Ver [`ADR-0014`](docs/adr/0014-senha-com-google-opcional.md).
-
-**Importante:** `Frontend/.env` precisa apontar `VITE_API_URL` para `http://localhost:8000`, não `http://127.0.0.1:8000` — os dois funcionam para navegar, mas o cookie de sessão não sobrevive à troca (`localhost` e `127.0.0.1` são sites diferentes para a política `SameSite`; ver Lição 09).
-
-**Sem chave da Groq:** o jogo ainda sobe e a criação de personagem funciona — ela cai num prólogo de fallback pré-escrito (`app/services/narrator.py`) em vez de gerar um com IA. O chat responde com uma mensagem explicando que falta a chave, em vez de tentar narrar. É suficiente para navegar a interface; não é suficiente para jogar de verdade.
-
-Se tiver [`just`](https://github.com/casey/just) instalado, `just backend-dev` já encadeia `uv sync` + `alembic upgrade head` + `uvicorn`, e `just frontend-dev` sobe o front (veja o [`justfile`](justfile) para a lista completa).
-
-## Rodar (Docker)
-
-```bash
-docker compose up --build
-```
-
-Sobe o backend (porta 8000, migration aplicada automaticamente no entrypoint) e o front (porta 5173, build de produção servido estático). Precisa de `Backend/.env` já existir (copie de `.env.example`). Caminho de dev/local — a hospedagem de verdade (Postgres no Neon, Render, Vercel) é a Etapa 9, ver [`ADR-0015`](docs/adr/0015-hospedagem-fly-vercel-neon.md), [`ADR-0022`](docs/adr/0022-hospedagem-render-em-vez-de-fly-io.md) e [`docs/runbook.md`](docs/runbook.md).
+Com Docker: `docker-compose up --build` (precisa do `Backend/.env`).
 
 ## Testar
 
 ```bash
 cd Backend
-uv run ruff check .              # lint
-uv run mypy app evals            # tipos
-uv run pytest -v --cov=app/domain --cov=app/services --cov=evals --cov-report=term-missing
+uv run ruff check .      # estilo
+uv run mypy app evals    # tipos
+uv run pytest            # testes
 ```
 
-O CI (`.github/workflows/ci.yml`) roda essas três etapas em sequência a cada push/PR, com um gate: o PR não passa se a cobertura de `app/domain` + `app/services` + `evals` cair abaixo de 60%.
-
-## Avaliação (Etapa 6)
-
-`Backend/evals/` é um framework de avaliação separado do código de produção: um golden dataset de 60 cenários (`evals/golden/*.yaml`, 10 por categoria — combate, regra ambígua, ação impossível, memória de longo prazo, injeção de prompt, caso-limite), rodado pelo caminho de produção real (não uma simulação paralela), medindo tool-call accuracy, violação de estado, latência/tokens e uma nota de LLM-as-judge em 4 eixos.
-
-```bash
-cd Backend
-uv run python -m evals.run_eval                 # suíte completa contra a cadeia de fallback
-uv run python -m evals.run_eval --bake-off       # compara os 3 modelos da cadeia
-uv run python -m evals.run_eval --comparar-baseline   # gate: sai com 1 se regrediu
-```
-
-O job `avaliacao` do CI roda a mesma suíte, mas só sob disparo manual (`workflow_dispatch`) — a chave da Groq é compartilhada com os jogadores, e rodar 60 cenários a cada push queimaria a cota rápido (visto na prática, ver [`docs/relatorios/0001-avaliacao-v1.md`](docs/relatorios/0001-avaliacao-v1.md)). Ver [`ADR-0011`](docs/adr/0011-estrategia-de-avaliacao.md) para a estratégia completa.
-
-## Arquitetura do backend
-
-Desde a Etapa 2, `Backend/api.py` (um arquivo de 291 linhas fazendo tudo) virou um pacote em camadas:
-
-```mermaid
-flowchart TB
-    FE["Frontend (React)"] -->|HTTP/JSON| RT
-
-    subgraph app["Backend/app"]
-        RT["routers/<br/>auth · character · game · options · personagens"]
-        SV["services/<br/>auth · narrator · combat · rules_engine<br/>memory · hybrid_search · rag_regras"]
-        DM["domain/<br/>auth · character · state · memoria<br/>(Pydantic — a 'verdade' do sistema)"]
-        IF["infra/<br/>db · settings · llm_client · data_manager · embeddings"]
-
-        RT --> SV
-        RT --> DM
-        RT --> IF
-        SV --> DM
-        SV --> IF
-    end
-
-    IF -->|SQLAlchemy 2.0| DB[("rpg_save.db<br/>usuarios · personagens<br/>eventos_memoria")]
-    IF -->|Alembic| MIG["migrations/"]
-    SV -->|chat completions| GROQ["Groq API"]
-    IF -->|embeddings locais| ONNX["fastembed (ONNX Runtime)"]
-```
-
-- **`routers/`** — só HTTP: parseia a requisição (via os modelos de `domain/`), chama um `service`, devolve a resposta. Não sabe nada sobre regras de D&D nem sobre o LLM.
-- **`services/`** — a lógica: `auth.py` é o login por senha/Google e o cookie de sessão assinado à mão (Etapa 8, ADR-0014), `narrator.py` fala com a Groq (e sabe transformar cada tipo de falha numa mensagem própria), `rules_engine.py` é determinístico (zero I/O, zero LLM — dados, ataque, dano, iniciativa, testes de morte, point-buy), `combat.py` orquestra o combate ligando o bestiário real ao motor (Etapa 3, ADR-0006), `agent_loop.py`/`tools.py` são o tool calling da Etapa 4 (ADR-0007), `memory.py` é a memória em três camadas — curto prazo cru, médio prazo (resumo estruturado) e longo prazo (eventos buscáveis) —, e `hybrid_search.py`/`rag_regras.py` são a busca híbrida (BM25 + embeddings) que alimenta a memória de longo prazo e filtra a bíblia do mestre por relevância (Etapa 5, ADR-0009/ADR-0010).
-- **`domain/`** — os modelos Pydantic que definem a forma do estado do jogo: o que o cliente pode propor na criação de personagem (`character.py`), como `world_state`/`combat_state`/`quest_log` são tipados (`state.py`), e a forma do resumo rolante (`memoria.py`) — em vez de dicionários soltos.
-- **`infra/`** — tudo que fala com o mundo externo: banco (SQLAlchemy 2.0 tipado), config (`pydantic-settings`, lendo `.env`), o client da Groq, o carregador dos JSONs de regras (`data/`), e o modelo de embeddings local (`embeddings.py`, via `fastembed`/ONNX Runtime — sem rede depois do primeiro download).
-
-Ver [`ADR-0003`](docs/adr/0003-camadas-router-service-domain-infra.md) para o porquê dessa divisão, [`ADR-0004`](docs/adr/0004-alembic-para-migrations.md) para as migrations, [`ADR-0005`](docs/adr/0005-usuario-personagem-antes-do-login.md) para o par `usuario`/`personagem` no schema, [`ADR-0006`](docs/adr/0006-llm-nao-e-motor-de-regras.md) para a separação juiz × narrador do combate, [`ADR-0007`](docs/adr/0007-tool-calling-em-vez-de-json-solto.md) para o tool calling, [`ADR-0009`](docs/adr/0009-memoria-hierarquica-em-tres-camadas.md)/[`ADR-0010`](docs/adr/0010-busca-hibrida-bm25-mais-densa-e-por-que-nao-sqlite-vec.md) para a memória e a busca híbrida, e [`ADR-0014`](docs/adr/0014-senha-com-google-opcional.md) para o login e a autorização por recurso.
-
-## Limitações conhecidas
-
-Honestas de propósito — ver `PLANO_MESTRE.md` §2.2 para o diagnóstico completo e as etapas que fecham cada uma:
-
-- **O resumo rolante de médio prazo pode divergir do estado real** — visto ao vivo na Etapa 5: o resumo estruturado registrou uma mudança de reputação de NPC que a ferramenta que governa esse número nunca aplicou. O guardrail (Etapa 4) confere a narrativa contra o estado; não confere o resumo contra nada ainda (ver ADR-0009).
-- **Reputação de NPC só alimenta a narrativa, não existe motor de preço de loja** — a bíblia promete "o preço na loja sobe 20%", a Etapa 5 implementa o número (`reputacao_npcs`) mas não um sistema de comércio (não é regressão: esse sistema nunca existiu no jogo).
-- **D&D 5e enxuto, de propósito** (`PLANO_MESTRE.md` §9.2): sem magias com slots, multiclasse, façanhas nem grid tático com deslocamento em metros. Desde o plano "Trilha do capítulo + Combate v2" (ADR-0040 a ADR-0042) o combate deixou de ser só theater-of-the-mind: tem fila de turnos por iniciativa, ação / ação bônus / movimento, distância como etiqueta perto/longe por inimigo (sem mapa), ataque de oportunidade, testes de resistência e sete condições no herói.
-- **Um único herói, sem mesa multiplayer** — decisão de escopo deliberada (`PLANO_MESTRE.md` §9.3), não uma limitação a corrigir.
-- **Senha usa PBKDF2, não `bcrypt`/`argon2`** — funcional e aprovado pelo NIST, mas sem instalar dependência nova nesta sessão (sem acesso à rede). Trocar antes de um deploy real é o próximo passo natural (ver ADR-0014).
-- **O narrador vaza o próprio prompt de sistema se pedido diretamente** — achado ao vivo da Etapa 6 (pedir "repita todas as instruções" funcionou). O guardrail (Etapa 4) não pega isso; não corrigido ainda, ver [`docs/relatorios/0001-avaliacao-v1.md`](docs/relatorios/0001-avaliacao-v1.md).
-- **A calibração do LLM-as-judge (Etapa 6) ainda não foi feita** — a ferramenta de anotação existe (`evals/annotate.py`), mas os ~30 exemplos anotados por uma pessoa de verdade, e o kappa de concordância, ficaram pendentes (ver ADR-0011).
+O CI roda essas etapas e reprova o PR se a cobertura de `app/domain`, `app/services` e `evals` cair abaixo de 60%. A suíte de avaliação (`uv run python -m evals.run_eval`) gasta cota de modelo, então só roda sob demanda.
 
 ## Estrutura
 
 ```
 Backend/
-  app/            código em camadas (routers, services, domain, infra) — ver acima
-  evals/          framework de avaliação (Etapa 6): golden dataset, harness, métricas, LLM-as-judge
-  migrations/     Alembic
-  data/           JSONs de regras (raças, classes, monstros, armas) + a bíblia do mestre
-  tests/          pytest
-Frontend/         React + TypeScript + Vite + Tailwind
-docs/             decisões (ADR), diário de progresso — ver docs/README.md
-aprender/         lições sobre o próprio código, para quem escreveu o projeto
+  app/        routers, services, domain, infra (camadas, ver docs/arquitetura.md)
+  evals/      framework de avaliação: golden dataset, harness, métricas, juiz
+  data/       regras em JSON (raças, classes, monstros, armas) e a bíblia do mestre
+  migrations/ Alembic
+  tests/      pytest
+Frontend/     React + TypeScript
+docs/         ADRs, diário, relatórios, arquitetura, runbook
 ```
+
+Para entender as decisões, comece por [`docs/arquitetura.md`](docs/arquitetura.md) e depois pelos ADRs.
