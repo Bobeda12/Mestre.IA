@@ -4,6 +4,8 @@
 
 **Um RPG de mesa narrado por IA, onde o modelo conta a história e um motor de regras decide o que acontece.**
 
+O código foi escrito por agentes de IA (Claude Code). Eu defini o que construir, o escopo, as regras e a arquitetura, e acompanhei cada decisão técnica, registrada nos [ADRs](docs/adr/).
+
 **🎮 [Jogue agora: mestre-ia-seven.vercel.app](https://mestre-ia-seven.vercel.app)** · entre como convidado, sem cadastro.
 Roda em planos gratuitos, então há um limite diário de turnos e cada resposta pode levar de 20 a 40 segundos. Dá para usar a sua própria chave do Gemini e não gastar a cota compartilhada.
 
